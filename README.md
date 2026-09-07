@@ -1,3 +1,119 @@
 # dsh-plugins
 
-Plugins for DeepSeek Harness — companion UI, email, Matrix, speech, memory, and image generation.
+**Six independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, and image generation—in one pnpm workspace.**
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm run typecheck && corepack pnpm run test && corepack pnpm run build
+```
+
+The workspace targets Node.js 24, pnpm 11.22.0, and the DSH `0.1.2-rc.1`
+contract family (Cordis `4.0.2`, Schemastery `3.18.2`). The public package
+identities and versions remain independent.
+
+## Packages
+
+| Package | Purpose |
+|---|---|
+| `@lamplitisles/dsh-companion` | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior. |
+| `@lamplitisles/dsh-mail` | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth. |
+| `@lamplitisles/dsh-matrix` | Matrix room reading, search, and explicit message delivery through DSH tools. |
+| `@lamplitisles/kepos-speech` | Tagged TTS playback and optional Qwen ASR through an isolated Host service. |
+| `@lamplitisles/kepos-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection. |
+| `@lamplitisles/dsh-imagegen` | DSH image generation and editing under the active workspace. |
+
+`@lamplitisles/imagegen-core` is a private workspace implementation detail. It
+is bundled into Imagegen's Host artifact and is not a publication target.
+
+## Workspace commands
+
+Install once from the repository root:
+
+```sh
+corepack pnpm install --frozen-lockfile
+```
+
+Run the complete local checks:
+
+```sh
+corepack pnpm run typecheck
+corepack pnpm run test
+corepack pnpm run build
+corepack pnpm run pack:check
+```
+
+Run one package from the same workspace:
+
+```sh
+corepack pnpm --filter @lamplitisles/dsh-mail run test
+corepack pnpm --filter @lamplitisles/dsh-mail run build
+```
+
+The Companion browser suite is opt-in because it needs Playwright's browser
+installation:
+
+```sh
+corepack pnpm run test:e2e
+```
+
+## Packed-artifact verification
+
+`pack:check` builds every package, creates real `pnpm pack` tarballs in a
+test-owned temporary directory, and checks the expanded manifests, Host and
+Loader entry points, Cordis patches, declarations, required notices, peer
+versions, and dependency closure. It also confirms that Imagegen contains no
+private-core import or runtime dependency.
+
+For the full installed-Host gate, point the command at an existing official
+DSH `0.1.2-rc.1` executable. The check creates isolated homes, caches, profiles,
+and loopback ports and removes them when it finishes:
+
+```sh
+DSH_CLI=/absolute/path/to/dsh corepack pnpm run artifact:smoke
+```
+
+This gate activates all six packed artifacts through the real DSH Host/Loader
+and uses fakes for provider behavior. It does not send mail or Matrix traffic,
+call a paid image provider, use credentials, or mutate a live profile.
+
+## Independent releases
+
+Each public package is released on its own version. A maintainer first runs the
+workspace checks and then selects exactly one public package with its matching
+`v<semver>` tag:
+
+```sh
+DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
+  @lamplitisles/dsh-mail v0.1.0 .release-artifacts/dsh-mail
+```
+
+The command validates the package metadata, builds/inspects the actual tarball,
+runs that package's packed Host gate, and prints the artifact path and npm
+dist-tag. Invalid, private, or unknown package selections and malformed tags
+fail before an artifact is prepared. The private Imagegen core cannot be
+selected.
+
+Publication is a separate, maintainer-driven registry boundary. After the
+verified artifact has been reviewed, an operator may publish that tarball with
+their existing npm credentials, for example:
+
+```sh
+npm publish .release-artifacts/dsh-mail/lamplitisles-dsh-mail-0.1.0.tgz \
+  --access public --tag latest
+```
+
+No npm credentials, trust configuration, automated publication, deployment,
+or tag cutover is performed by this repository's local release preparation.
+Use `og` for Forgejo operations and follow the package's versioning policy.
+
+## Documentation and provenance
+
+Package READMEs describe each plugin's runtime contract and configuration. The
+import boundary and pinned source snapshots are recorded in
+[`docs/IMPORTS.md`](docs/IMPORTS.md). Contributor and agent workflow guidance
+is in [`AGENTS.md`](AGENTS.md).
+
+## License
+
+The workspace is Apache-2.0. Individual packages retain their imported
+license and third-party notices; see each package directory.

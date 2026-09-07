@@ -1,0 +1,4 @@
+.scratch/
+node_modules/
+dist/
+pnpm-lock.yaml

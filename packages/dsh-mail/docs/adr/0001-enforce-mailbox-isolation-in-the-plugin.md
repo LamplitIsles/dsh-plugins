@@ -1,0 +1,3 @@
+# Enforce mailbox isolation in the plugin
+
+The upstream mailbox MCP exposes all mailboxes to a connected client, while the Agent must own exactly one mailbox. The DSH plugin will embed MCPorter with an explicit, programmatically registered upstream server and a fixed selected tool set; it will expose purpose-built mail tools that take no mailbox identifier and always apply its configured Agent mailbox. It will not mount the upstream MCP's discovered tools directly. This preserves unrestricted sending from the Agent mailbox while making cross-mailbox access impossible through the model-facing API.

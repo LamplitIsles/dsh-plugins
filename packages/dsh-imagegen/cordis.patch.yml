@@ -1,0 +1,4 @@
+- insert:
+    - id: lamplitisles-kepos-imagegen
+      name: "@lamplitisles/dsh-imagegen"
+      inject: [attachments, fs, settings, tools]

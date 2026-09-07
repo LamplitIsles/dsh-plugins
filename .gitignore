@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+test-results/
+playwright-report/
+*.tgz
+.release-artifacts/
+.cache/
+.pnpm-store/

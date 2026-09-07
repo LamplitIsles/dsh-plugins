@@ -1,0 +1,135 @@
+.kepos-imagegen__card {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-shadow-lv1);
+}
+
+.kepos-imagegen__notice {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.kepos-imagegen__status {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.kepos-imagegen__thumbnail {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-code-block);
+  cursor: zoom-in;
+}
+
+.kepos-imagegen__thumbnail:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l1);
+}
+
+.kepos-imagegen__thumbnail:focus-visible,
+.kepos-imagegen__button:focus-visible,
+.kepos-imagegen__close:focus-visible {
+  outline: 2px solid var(--dsw-alias-interactive-border-focus);
+  outline-offset: 2px;
+}
+
+.kepos-imagegen__image {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.kepos-imagegen__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.kepos-imagegen__path {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-markdown-code-block-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kepos-imagegen__button,
+.kepos-imagegen__close {
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.kepos-imagegen__button {
+  padding: 6px 10px;
+  font: inherit;
+}
+
+.kepos-imagegen__button:hover:not(:disabled),
+.kepos-imagegen__close:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-primary);
+}
+
+.kepos-imagegen__button:disabled,
+.kepos-imagegen__thumbnail:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.kepos-imagegen__lightbox {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+
+.kepos-imagegen__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+}
+
+.kepos-imagegen__preview {
+  position: relative;
+  max-width: min(100%, 1600px);
+  max-height: calc(100vh - 80px);
+  border-radius: 12px;
+  box-shadow: var(--dsw-shadow-lv3);
+  object-fit: contain;
+}
+
+.kepos-imagegen__close {
+  position: fixed;
+  z-index: 1;
+  top: 20px;
+  right: 20px;
+  padding: 6px 10px;
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kepos-imagegen__thumbnail,
+  .kepos-imagegen__button,
+  .kepos-imagegen__close {
+    transition: none;
+  }
+}

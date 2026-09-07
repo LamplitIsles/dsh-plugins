@@ -1,0 +1,6 @@
+# DSH profile bundle for companion-oriented Hindsight memory.
+#
+- insert:
+    - id: kepos-hindsight
+      name: "@lamplitisles/kepos-hindsight"
+      inject: [agents, settings, systemPrompt, tools]

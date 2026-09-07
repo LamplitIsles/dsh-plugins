@@ -1,0 +1,36 @@
+{
+  "name": "@lamplitisles/dsh-plugins",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Plugins for DeepSeek Harness — companion UI, email, Matrix, speech, memory, and image generation.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "http://forgejo.localhost:17480/LamplitIsles/dsh-plugins.git"
+  },
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "pnpm run typecheck:root && pnpm --filter \"./packages/*\" run typecheck",
+    "typecheck:root": "tsc --noEmit",
+    "test": "pnpm --filter \"./packages/*\" run test && pnpm run test:release",
+    "test:release": "vitest run tests/release.test.ts",
+    "test:e2e": "pnpm --filter @lamplitisles/dsh-companion run test:e2e",
+    "build": "pnpm --filter \"./packages/*\" run build",
+    "pack:check": "pnpm run build && tsx scripts/pack-check.ts",
+    "pack:all": "tsx scripts/pack.ts",
+    "artifact:smoke": "tsx scripts/artifact-smoke.ts",
+    "release:check": "tsx scripts/release.ts check",
+    "release:prepare": "tsx scripts/release.ts prepare"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

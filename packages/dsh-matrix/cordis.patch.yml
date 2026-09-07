@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-matrix
+      name: "@lamplitisles/dsh-matrix"
+      inject: [connection, credentials, settings, tools, systemPrompt, workspaceRegistry, sessionController]

@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-mail
+      name: "@lamplitisles/dsh-mail"
+      inject: [webServer, connection, credentials, settings, tools]
