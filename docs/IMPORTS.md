@@ -29,7 +29,7 @@ this delivery. Keet and unrelated bridge, infrastructure, and TTS projects are
 outside this workspace.
 
 Each public package retains its own npm name and version. The root pnpm lockfile
-is the only workspace lockfile, and the package manifests point to the
-Forgejo-hosted delivery repository:
+is the only workspace lockfile. Forgejo remains the source of truth; package
+metadata points to its public GitHub mirror for npm provenance:
 
-`http://forgejo.localhost:17480/LamplitIsles/dsh-plugins.git`
+`https://github.com/LamplitIsles/dsh-plugins.git`

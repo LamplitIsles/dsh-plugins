@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export const REPOSITORY_URL =
-  "http://forgejo.localhost:17480/LamplitIsles/dsh-plugins.git" as const;
+  "https://github.com/LamplitIsles/dsh-plugins.git" as const;
 export const DSH_RC_VERSION = "0.1.2-rc.1" as const;
 export const CORDIS_VERSION = "4.0.2" as const;
 export const SCHEMASTERY_VERSION = "3.18.2" as const;
@@ -223,7 +223,8 @@ export function checkReleaseManifest(
   if (manifest.name !== entry.name) errors.push(`package name must be ${entry.name}.`);
   if (manifest.version !== version) errors.push(`${entry.name} version does not match ${tag}.`);
   if (manifest.private === true) errors.push(`${entry.name} must be publishable.`);
-  if (manifest.repository?.type !== "git" || manifest.repository?.url !== REPOSITORY_URL) {
+  if (manifest.repository?.type !== "git" || manifest.repository?.url !== REPOSITORY_URL ||
+      manifest.repository?.directory !== `packages/${entry.directory}`) {
     errors.push(`${entry.name} has the wrong repository metadata.`);
   }
   if (

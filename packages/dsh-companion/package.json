@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "http://forgejo.localhost:17480/LamplitIsles/dsh-plugins.git",
+    "url": "https://github.com/LamplitIsles/dsh-plugins.git",
     "directory": "packages/dsh-companion"
   },
   "type": "module",

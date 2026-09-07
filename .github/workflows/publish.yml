@@ -1,0 +1,87 @@
+name: Publish npm package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish (version must already be committed)
+        required: true
+        type: choice
+        options:
+          - dsh-companion
+          - dsh-mail
+          - dsh-matrix
+          - dsh-speech
+          - dsh-hindsight
+          - dsh-imagegen
+      version:
+        description: Exact manifest version, without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ inputs.package }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'LamplitIsles/dsh-plugins' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_PACKAGE: ${{ inputs.package }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install toolchain and dependencies
+        run: |
+          npm install --global npm@11.17.0
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+      - name: Validate release identity and registry availability
+        id: preflight
+        run: corepack pnpm exec tsx scripts/publish-preflight.ts "$RELEASE_PACKAGE" "v$RELEASE_VERSION"
+      - name: Typecheck and test
+        run: |
+          corepack pnpm run typecheck
+          corepack pnpm run test
+      - name: Build and inspect all six tarballs
+        run: corepack pnpm run pack:check
+      - name: Install isolated official DSH runtime
+        run: |
+          mkdir -p "$RUNNER_TEMP/dsh-runtime"
+          corepack pnpm --dir "$RUNNER_TEMP/dsh-runtime" add --ignore-scripts --config.enable-global-virtual-store=false --config.node-linker=isolated @deepseek-ai/dsh@0.1.2-rc.1
+          echo "DSH_CLI=$RUNNER_TEMP/dsh-runtime/node_modules/.bin/dsh" >> "$GITHUB_ENV"
+      - name: Verify packed Host and prepare selected release
+        run: corepack pnpm run release:prepare -- "$RELEASE_PACKAGE" "v$RELEASE_VERSION" "$RUNNER_TEMP/npm-release"
+      - name: Publish verified tarball using OIDC
+        env:
+          NPM_CHANNEL: ${{ steps.preflight.outputs.channel }}
+        run: |
+          corepack pnpm exec tsx scripts/publish-preflight.ts "$RELEASE_PACKAGE" "v$RELEASE_VERSION"
+          shopt -s nullglob
+          artifacts=("$RUNNER_TEMP/npm-release/"*.tgz)
+          test "${#artifacts[@]}" -eq 1
+          npm publish "${artifacts[0]}" --registry=https://registry.npmjs.org --access public --tag "$NPM_CHANNEL" --provenance
+      - name: Verify public registry propagation
+        run: |
+          for attempt in $(seq 1 12); do
+            echo "Registry verification attempt $attempt/12"
+            if npm view "@lamplitisles/$RELEASE_PACKAGE@$RELEASE_VERSION" version --registry=https://registry.npmjs.org --prefer-online; then exit 0; fi
+            sleep 5
+          done
+          echo 'Publish returned success, but registry verification timed out. Inspect npm before retrying.' >&2
+          exit 1

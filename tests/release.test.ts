@@ -11,6 +11,7 @@ import {
   versionFromTag,
 } from "../scripts/release-shared.js";
 import { parseReleaseRequest } from "../scripts/release.js";
+import { checkRegistryVersion } from "../scripts/publish-preflight.js";
 
 const fixtures: string[] = [];
 
@@ -25,7 +26,7 @@ async function fixture(overrides: Record<string, unknown> = {}): Promise<string>
     JSON.stringify({
       name: entry.name,
       version: "0.1.0",
-      repository: { type: "git", url: "http://forgejo.localhost:17480/LamplitIsles/dsh-plugins.git" },
+      repository: { type: "git", url: "https://github.com/LamplitIsles/dsh-plugins.git", directory: "packages/dsh-companion" },
       publishConfig: { registry: "https://registry.npmjs.org", access: "public" },
       ...overrides,
     }),
@@ -38,6 +39,23 @@ afterEach(async () => {
 });
 
 describe("workspace release selection", () => {
+  it("rejects published versions and stable latest regressions", () => {
+    expect(() => checkRegistryVersion("0.2.3", { versions: { "0.2.3": {} } })).toThrow("already published");
+    expect(() => checkRegistryVersion("0.1.0", { "dist-tags": { latest: "0.2.3" } })).toThrow("must be newer");
+    expect(() => checkRegistryVersion("0.2.3+build", { "dist-tags": { latest: "0.2.3" } })).toThrow("must be newer");
+    expect(() => checkRegistryVersion("0.1.0+build-one", { "dist-tags": { latest: "0.2.3" } })).toThrow("must be newer");
+    expect(() => checkRegistryVersion("0.2.4", { "dist-tags": { latest: "0.2.4-beta.0" } })).not.toThrow();
+    expect(() => checkRegistryVersion("0.2.4", { "dist-tags": { latest: "0.2.3" } })).not.toThrow();
+    expect(() => checkRegistryVersion("0.3.0-beta.0", { "dist-tags": { latest: "0.2.3" } })).not.toThrow();
+    expect(() => checkRegistryVersion("0.1.0-beta.0", {})).not.toThrow();
+  });
+
+  it("rejects a wrong monorepo package directory", async () => {
+    const root = await fixture({ repository: { type: "git", url: "https://github.com/LamplitIsles/dsh-plugins.git", directory: "packages/dsh-mail" } });
+    expect(checkReleaseManifest(root, PUBLIC_PACKAGES[0], "v0.1.0")).toContain(
+      "@lamplitisles/dsh-companion has the wrong repository metadata.",
+    );
+  });
   it("selects only public package identities", () => {
     expect(packageFor("@lamplitisles/dsh-mail")?.directory).toBe("dsh-mail");
     expect(packageFor("dsh-mail")?.name).toBe("@lamplitisles/dsh-mail");
@@ -65,7 +83,7 @@ describe("workspace release selection", () => {
     expect(DSH_RC_VERSION).toBe("0.1.2-rc.1");
   });
 
-  it("reports wrong Forgejo metadata before any host gate", async () => {
+  it("reports wrong public repository metadata before any host gate", async () => {
     const root = await fixture({ repository: { type: "git", url: "https://example.invalid/old.git" } });
     expect(checkReleaseManifest(root, PUBLIC_PACKAGES[0], "v0.1.0")).toContain(
       "@lamplitisles/dsh-companion has the wrong repository metadata.",

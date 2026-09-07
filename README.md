@@ -93,6 +93,11 @@ dist-tag. Invalid, private, or unknown package selections and malformed tags
 fail before an artifact is prepared. Imagegen is selected only through its
 public package identity.
 
+The GitHub mirror provides a manual, single-package OIDC publishing workflow.
+Configure its `npm` environment and each package's Trusted Publisher using
+[`docs/npm-publishing.md`](docs/npm-publishing.md). It uses ordinary
+`npm publish`, not staged publishing, and never changes package versions.
+
 Publication is a separate, maintainer-driven registry boundary. After the
 verified artifact has been reviewed, an operator may publish that tarball with
 their existing npm credentials, for example:
@@ -102,7 +107,7 @@ npm publish .release-artifacts/dsh-mail/lamplitisles-dsh-mail-0.1.0.tgz \
   --access public --tag latest
 ```
 
-No npm credentials, trust configuration, automated publication, deployment,
+No npm credentials, trust configuration, publication, deployment,
 or tag cutover is performed by this repository's local release preparation.
 Use `og` for Forgejo operations and follow the package's versioning policy.
 
