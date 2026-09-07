@@ -45,16 +45,20 @@ client to load successfully.
 ## Artifacts and releases
 
 Use `corepack pnpm run pack:check` or the package's filtered `pack-smoke` to
-inspect actual `pnpm pack` output. A release selects exactly one public package
-and an exact `v<semver>` tag:
+inspect actual `pnpm pack` output. Local `release:prepare` selects exactly one
+public package and its exact manifest version as a `v<semver>` argument:
 
 ```sh
 DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
   @lamplitisles/dsh-mail v0.1.0 .release-artifacts/dsh-mail
 ```
 
-Review the produced tarball before the separate, operator-driven `npm publish`
-registry action. Release preparation does not publish, deploy, create trust
+For requested releases, check npm versions/dist-tags and open a PR updating the
+selected packages' versions and any required release changes. Merging that PR
+publishes each changed package independently through the GitHub mirror, without
+Git tags. One PR may update one or more packages; follow
+[`docs/npm-publishing.md`](docs/npm-publishing.md) for setup and recovery.
+Local release preparation does not publish, deploy, create trust
 configuration, or modify credentials. Use `og` for Forgejo clone/pull/push,
 authentication, tags, comments, and CI operations.
 

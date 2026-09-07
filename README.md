@@ -78,9 +78,18 @@ call a paid image provider, use credentials, or mutate a live profile.
 
 ## Independent releases
 
-Each public package is released on its own version. A maintainer first runs the
-workspace checks and then selects exactly one public package with its matching
-`v<semver>` tag:
+Each public package is released on its own version. Ask the agent to release a
+package, then approve and merge its version PR. The GitHub mirror automatically
+publishes packages whose manifest version changed and verifies npm visibility.
+The npm version and provenance record the release; no Git tag is needed.
+Ordinary code PRs do not publish.
+
+For one-time Trusted Publisher setup and failure recovery, see
+[`docs/npm-publishing.md`](docs/npm-publishing.md). There is no manual workflow
+dispatch or second release approval.
+
+To prepare and inspect a single package locally, select its exact manifest
+version using `v<semver>`:
 
 ```sh
 DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
@@ -92,20 +101,6 @@ runs that package's packed Host gate, and prints the artifact path and npm
 dist-tag. Invalid, private, or unknown package selections and malformed tags
 fail before an artifact is prepared. Imagegen is selected only through its
 public package identity.
-
-The GitHub mirror provides a manual, single-package OIDC publishing workflow.
-Configure its `npm` environment and each package's Trusted Publisher using
-[`docs/npm-publishing.md`](docs/npm-publishing.md). It uses ordinary
-`npm publish`, not staged publishing, and never changes package versions.
-
-Publication is a separate, maintainer-driven registry boundary. After the
-verified artifact has been reviewed, an operator may publish that tarball with
-their existing npm credentials, for example:
-
-```sh
-npm publish .release-artifacts/dsh-mail/lamplitisles-dsh-mail-0.1.0.tgz \
-  --access public --tag latest
-```
 
 No npm credentials, trust configuration, publication, deployment,
 or tag cutover is performed by this repository's local release preparation.

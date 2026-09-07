@@ -1,34 +1,49 @@
-name: Publish npm package
+name: Publish npm packages
 
 on:
-  workflow_dispatch:
-    inputs:
-      package:
-        description: Package to publish (version must already be committed)
-        required: true
-        type: choice
-        options:
-          - dsh-companion
-          - dsh-mail
-          - dsh-matrix
-          - dsh-speech
-          - dsh-hindsight
-          - dsh-imagegen
-      version:
-        description: Exact manifest version, without the v prefix
-        required: true
-        type: string
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
-concurrency:
-  group: npm-publish-${{ inputs.package }}
-  cancel-in-progress: false
-
 jobs:
+  changes:
+    if: github.repository == 'LamplitIsles/dsh-plugins'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.changes.outputs.matrix }}
+      has-releases: ${{ steps.changes.outputs.has-releases }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Detect package version changes across the mirrored push
+        id: changes
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm exec tsx scripts/release-changes.ts "$BEFORE_SHA" "$AFTER_SHA"
+
   publish:
-    if: github.repository == 'LamplitIsles/dsh-plugins' && github.ref == 'refs/heads/main'
+    needs: changes
+    if: needs.changes.outputs.has-releases == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    concurrency:
+      group: npm-publish-${{ matrix.package }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: npm
@@ -36,11 +51,12 @@ jobs:
       contents: read
       id-token: write
     env:
-      RELEASE_PACKAGE: ${{ inputs.package }}
-      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_PACKAGE: ${{ matrix.package }}
+      RELEASE_VERSION: ${{ matrix.version }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
