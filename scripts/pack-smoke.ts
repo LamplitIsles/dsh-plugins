@@ -225,10 +225,6 @@ try {
       manifest.optionalDependencies === undefined,
     "Imagegen artifact has runtime dependencies.",
   );
-  requireCondition(
-    !JSON.stringify(manifest).includes("@lamplitisles/imagegen-core"),
-    "Imagegen artifact exposes its private core.",
-  );
   for (const section of ["peerDependencies", "devDependencies"]) {
     for (const [name, version] of Object.entries(manifest[section] ?? {})) {
       if (name.startsWith("@deepseek-ai/dsh-")) {
@@ -239,21 +235,6 @@ try {
       }
     }
   }
-  for (const file of [
-    "dist/index.js",
-    "dist/client.js",
-    "dist/index.d.ts",
-    "dist/client.d.cts",
-  ]) {
-    const source = execFileSync("tar", ["-xOzf", artifact, `package/${file}`], {
-      encoding: "utf8",
-    });
-    requireCondition(
-      !source.includes("@lamplitisles/imagegen-core"),
-      `Imagegen artifact retains a private core import in ${file}.`,
-    );
-  }
-
   const dshHome = join(temporaryDirectory, "dsh-home");
   const runtimeCwd = join(temporaryDirectory, "runtime-cwd");
   const workspace = join(temporaryDirectory, "imagegen-workspace");

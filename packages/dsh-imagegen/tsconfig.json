@@ -1,11 +1,5 @@
 {
   "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@lamplitisles/imagegen-core": ["../imagegen-core/src/index.ts"]
-    }
-  },
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",

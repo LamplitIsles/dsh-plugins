@@ -5,7 +5,7 @@
 This package is published independently from the
 [`LamplitIsles/dsh-plugins`](http://forgejo.localhost:17480/LamplitIsles/dsh-plugins)
 workspace. Its optional voice integration is provided by the separately
-installed `@lamplitisles/kepos-speech` plugin.
+installed `@lamplitisles/dsh-speech` plugin.
 
 ## Install and build
 
@@ -31,7 +31,7 @@ The package is pinned to the published DSH `0.1.2-rc.1` contract family (Cordis 
 ## Two surfaces
 
 - `/` remains the stock DSH Web UI, including advanced navigation, ordinary Tool views, Kepos ImageGen's React view, and plugin settings.
-- `/companion/` selects the lower-priority Companion root. It shows one configured Workspace and one remembered/recent Session, human and assistant chat, allowlisted ImageGen images, and finalized Kepos Speech voice messages. A small **高级 DSH** link returns to `/` with a full-page navigation so the two compositions do not leak into one another.
+- `/companion/` selects the lower-priority Companion root. It shows one configured Workspace and one remembered/recent Session, human and assistant chat, allowlisted ImageGen images, and finalized DSH Speech voice messages. A small **高级 DSH** link returns to `/` with a full-page navigation so the two compositions do not leak into one another.
 
 Typing `/compact` as the complete Companion input invokes DSH's Session command channel and keeps the continuity checkpoint invisible; other slash-prefixed text remains an ordinary message.
 
@@ -67,9 +67,9 @@ The execution posture is fixed to `workspace-write` with escalation disabled. Op
 
 Images use the selected DSH Session attachment contract. Only assistant structured image blocks and successful/running/failed `kepos_image_generate` results are projected; unrelated Tool output is hidden. Object URLs are page-owned and revoked when replaced or unloaded. The stock `/` ImageGen renderer remains untouched.
 
-Voice rows recognize exactly one finalized `[[tts:text]]...[[/tts:text]]` passage (fenced code and malformed/multiple passages are ignored; normalized text is limited to 240 Unicode code points). Synthesis calls the already-installed Kepos Speech `synthesize` RPC on `/kepos-speech` with the live Session id. The returned audio URL must remain on the same-origin `/kepos-speech/audio/` route. A page-local cache shares preparation by Session and normalized text, requires user activation for playback, and always leaves a transcript fallback. Install Kepos Speech alongside Companion when voice output or input is needed.
+Voice rows recognize exactly one finalized `[[tts:text]]...[[/tts:text]]` passage (fenced code and malformed/multiple passages are ignored; normalized text is limited to 240 Unicode code points). Synthesis calls the already-installed DSH Speech `synthesize` RPC on `/dsh-speech` with the live Session id. The returned audio URL must remain on the same-origin `/dsh-speech/audio/` route. A page-local cache shares preparation by Session and normalized text, requires user activation for playback, and always leaves a transcript fallback. Install DSH Speech alongside Companion when voice output or input is needed.
 
-The composer microphone sits immediately left of the context-capacity circle. Click **开始录音** to request microphone access and click **结束录音** to stop; the browser stops automatically at five minutes or before the provider's complete `data:<mediaType>;base64,...` payload reaches its 10 MiB bound. The exact raw-byte ceiling depends on the normalized emitted media type (its prefix is part of that bound). Voice input requires a secure browser context, `MediaRecorder`, the installed Kepos Speech plugin's optional `keposSpeech.transcribe` Host capability, and its shared DashScope credential (`KEPOS_SPEECH_DASHSCOPE_API_KEY`). The recording is held only long enough to send its Base64 bytes through Companion's authenticated Host RPC, is transcribed, and is then discarded: Companion writes no `localStorage` entry, workspace file, audio cache, player, attachment, or provider credential. A successful transcript is submitted as one ordinary Session text turn prefixed with `🎙️ `; when Kepos Speech supplies a recognized expression label, only its raw bracketed form (for example `[sad]`) is appended. Missing or unknown labels are omitted. The marker and bracketed label are model-readable voice metadata, not transcript content or a claim about the speaker's inner state. Typed sending remains available while **正在转写语音…** is shown, and a failed or empty attempt creates no turn.
+The composer microphone sits immediately left of the context-capacity circle. Click **开始录音** to request microphone access and click **结束录音** to stop; the browser stops automatically at five minutes or before the provider's complete `data:<mediaType>;base64,...` payload reaches its 10 MiB bound. The exact raw-byte ceiling depends on the normalized emitted media type (its prefix is part of that bound). Voice input requires a secure browser context, `MediaRecorder`, the installed DSH Speech plugin's optional `dshSpeech.transcribe` Host capability, and its shared DashScope credential (`DSH_SPEECH_DASHSCOPE_API_KEY`). The recording is held only long enough to send its Base64 bytes through Companion's authenticated Host RPC, is transcribed, and is then discarded: Companion writes no `localStorage` entry, workspace file, audio cache, player, attachment, or provider credential. A successful transcript is submitted as one ordinary Session text turn prefixed with `🎙️ `; when DSH Speech supplies a recognized expression label, only its raw bracketed form (for example `[sad]`) is appended. Missing or unknown labels are omitted. The marker and bracketed label are model-readable voice metadata, not transcript content or a claim about the speaker's inner state. Typed sending remains available while **正在转写语音…** is shown, and a failed or empty attempt creates no turn.
 
 ## Themes and device target
 

@@ -71,9 +71,6 @@ function checkExpandedManifest(
     }
   }
   if (entry.name === "@lamplitisles/dsh-imagegen") {
-    if (serialized.includes("@lamplitisles/imagegen-core")) {
-      errors.push("Imagegen artifact exposes its private core in package metadata.");
-    }
     if (manifest.dependencies !== undefined || manifest.optionalDependencies !== undefined) {
       errors.push("Imagegen artifact must have no runtime dependencies.");
     }
@@ -106,11 +103,6 @@ try {
     const packagePath = packageDirectory(root, entry);
     const sourceManifest = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8")) as Record<string, any>;
     requireCondition(manifest.version === sourceManifest.version, `${entry.name} artifact version differs from its source manifest.`);
-    if (entry.name === "@lamplitisles/dsh-imagegen") {
-      for (const file of ["dist/index.js", "dist/client.js", "dist/index.d.ts", "dist/client.d.cts"]) {
-        requireCondition(!archiveText(artifact, file).includes("@lamplitisles/imagegen-core"), `Imagegen artifact retains a private core import in ${file}.`);
-      }
-    }
     results.push({ package: entry.name, artifact, files: paths.size });
   }
   if (failures.length) throw new Error(failures.join("\n"));

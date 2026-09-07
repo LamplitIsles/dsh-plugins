@@ -50,8 +50,8 @@ export interface MatrixFileSystemLike {
   readBytes: (target: unknown, signal: AbortSignal | undefined, maxBytes: number) => Promise<Uint8Array>;
 }
 
-/** Exact optional service contract recorded with the paired Kepos Speech plugin. */
-export interface KeposSpeechServiceLike {
+/** Exact optional service contract recorded with the paired DSH Speech plugin. */
+export interface DshSpeechServiceLike {
   synthesize: (
     request: { sessionId: string; text: string },
     signal?: AbortSignal
@@ -109,7 +109,7 @@ function sendFailureError(): Error {
 }
 
 function voiceUnavailableError(): Error {
-  return new MatrixMediaError("Matrix voice delivery is unavailable: the optional Kepos Speech service is not mounted.");
+  return new MatrixMediaError("Matrix voice delivery is unavailable: the optional DSH Speech service is not mounted.");
 }
 
 function voiceSynthesisError(): Error {
@@ -671,7 +671,7 @@ export function createMatrixToolDefinitions(deps: MatrixToolDependencies): reado
     description: `Send one bounded message to the configured allowed Matrix room (maximum ${MAX_MATRIX_TOOL_BODY_CHARS} characters). By default this is one m.text event; set voice=true to synthesize and send one audio-only m.audio event named 语音消息.mp3. Optional replyToEventId must identify a message in that room's server history; optional mentions must exactly match current room display labels.`,
     parameters: {
       body: { type: "string", required: true, description: "Plain-text body, or the text to synthesize when voice is true." },
-      voice: { type: "boolean", description: "When true, send one audio message through the optional Kepos Speech service." },
+      voice: { type: "boolean", description: "When true, send one audio message through the optional DSH Speech service." },
       replyToEventId: { type: "string", description: "Optional event ID from the configured room's history to reply to." },
       mentions: {
         type: "array",
@@ -729,7 +729,7 @@ export function createMatrixToolDefinitions(deps: MatrixToolDependencies): reado
 
         if (record?.voice === true) {
           const agent = liveAgent(deps, exec);
-          const service = agentService(agent, "keposSpeech");
+          const service = agentService(agent, "dshSpeech");
           if (!service || typeof service !== "object" || typeof (service as { synthesize?: unknown }).synthesize !== "function") {
             throw voiceUnavailableError();
           }
@@ -737,7 +737,7 @@ export function createMatrixToolDefinitions(deps: MatrixToolDependencies): reado
           if (!sessionId) throw voiceUnavailableError();
           let synthesized: unknown;
           try {
-            synthesized = await (service as KeposSpeechServiceLike).synthesize({ sessionId, text: body }, signal);
+            synthesized = await (service as DshSpeechServiceLike).synthesize({ sessionId, text: body }, signal);
           } catch (error) {
             if (signal.aborted) throw abortError();
             throw voiceSynthesisError();

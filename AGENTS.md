@@ -6,8 +6,8 @@
   the workspace source of truth. Use Node.js 24 and pnpm 11.22.0 through
   Corepack; keep dependency ownership in the package that imports it.
 - The six public packages under `packages/` keep independent names and
-  versions. `packages/imagegen-core` is private and must stay bundled into
-  Imagegen rather than becoming a dependency of a published artifact.
+  versions. Imagegen's core is an internal module in `packages/dsh-imagegen`;
+  there is no separate private workspace package.
 - Keep the DSH/Cordis/Schemastery/React contract versions aligned with the root
   catalog. Host-provided DSH modules remain peer dependencies and external
   build inputs.
@@ -36,6 +36,13 @@ DSH_CLI=/absolute/path/to/dsh corepack pnpm run artifact:smoke
 Smoke checks own their temporary homes, caches, profiles, and ports. Provider
 calls, credentials, live DSH profiles, user workspaces, mailboxes, Matrix
 rooms, and paid image generation remain outside tests.
+
+The one-off local identity migration is described in
+[`docs/identity-migration.md`](docs/identity-migration.md). Its plan/check and
+fixture tests never mutate `/home/neil/.local/state/dsh`; only the Owner runs
+the documented build, service-stop, restricted-backup, DSH `link:`
+reconciliation, restart, and cold-client verification sequence after review
+and merge.
 
 ## Artifacts and releases
 

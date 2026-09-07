@@ -51,8 +51,8 @@ export const PUBLIC_PACKAGES = [
     ],
   },
   {
-    directory: "kepos-speech",
-    name: "@lamplitisles/kepos-speech",
+    directory: "dsh-speech",
+    name: "@lamplitisles/dsh-speech",
     requiredFiles: [
       "dist/index.js",
       "dist/index.d.ts",
@@ -65,8 +65,8 @@ export const PUBLIC_PACKAGES = [
     ],
   },
   {
-    directory: "kepos-hindsight",
-    name: "@lamplitisles/kepos-hindsight",
+    directory: "dsh-hindsight",
+    name: "@lamplitisles/dsh-hindsight",
     requiredFiles: [
       "dist/dsh.js",
       "dist/dsh.d.ts",

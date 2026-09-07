@@ -41,7 +41,7 @@ describe("workspace release selection", () => {
   it("selects only public package identities", () => {
     expect(packageFor("@lamplitisles/dsh-mail")?.directory).toBe("dsh-mail");
     expect(packageFor("dsh-mail")?.name).toBe("@lamplitisles/dsh-mail");
-    expect(packageFor("@lamplitisles/imagegen-core")).toBeUndefined();
+    expect(PUBLIC_PACKAGES).toHaveLength(6);
   });
 
   it("rejects missing and malformed release input", () => {

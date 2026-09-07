@@ -2,7 +2,7 @@
 
 Media delivery remains an explicit, fixed-room capability scoped to the locked
 Companion. `matrix_send_message` may synthesize one MP3 through the optional
-Kepos Speech service and upload it as one `m.audio` event named `语音消息.mp3`; it never
+DSH Speech service and upload it as one `m.audio` event named `语音消息.mp3`; it never
 sends a transcript. `matrix_send_file` resolves exactly one path through the
 live Agent's DSH filesystem service, verifies containment in
 `session.header.cwd`, accepts only regular files, and reads at most 10 MiB.

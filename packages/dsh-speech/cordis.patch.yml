@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-speech
+      name: "@lamplitisles/dsh-speech"
+      inject: [connection, credentials, settings, systemPrompt, sessions, webServer]

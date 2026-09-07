@@ -16,9 +16,9 @@ export interface TtsPayload {
 }
 
 export const MAX_TTS_BYTES = 8 * 1024 * 1024;
-const SPEECH_AUDIO_ROUTE_PREFIX = "/kepos-speech/audio/";
+const SPEECH_AUDIO_ROUTE_PREFIX = "/dsh-speech/audio/";
 
-/** Validate the browser-facing Kepos Speech payload without trusting arbitrary URLs. */
+/** Validate the browser-facing DSH Speech payload without trusting arbitrary URLs. */
 export function validateTtsPayload(raw: unknown, origin?: string): { url: string; mediaType: "audio/mpeg"; bytes: number } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("audio-invalid");
   const payload = raw as TtsPayload;

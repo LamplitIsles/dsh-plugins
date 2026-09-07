@@ -1,5 +1,5 @@
 /**
- * The browser/Companion boundary for the optional Kepos Speech short-audio service.
+ * The browser/Companion boundary for the optional DSH Speech short-audio service.
  * Keep this module free of browser and Node-only APIs so both bundles can use
  * the same admission rules.
  */
@@ -11,7 +11,7 @@ export const MAX_VOICE_DURATION_MS = 5 * 60 * 1000;
 export const VOICE_TRANSCRIBE_ENDPOINT = "voice/transcribe" as const;
 export const VOICE_CAPABILITY_ENDPOINT = "voice/capability" as const;
 
-/** Media types advertised by the optional Kepos ASR contract. */
+/** Media types advertised by the optional DSH ASR contract. */
 export const VOICE_AUDIO_MEDIA_TYPES = [
   "audio/aac",
   "audio/amr",
@@ -29,7 +29,7 @@ export const VOICE_AUDIO_MEDIA_TYPES = [
 
 export type VoiceAudioMediaType = (typeof VOICE_AUDIO_MEDIA_TYPES)[number];
 
-/** Labels normalized by Kepos from Qwen's model-derived speech expression. */
+/** Labels normalized by DSH Speech from Qwen's model-derived speech expression. */
 export const VOICE_EXPRESSIONS = [
   "surprised",
   "neutral",

@@ -1,7 +1,7 @@
 import {
   DEFAULT_BRIDGE_URL,
   normalizeBridgeUrl,
-} from "@lamplitisles/imagegen-core";
+} from "./core.js";
 import type { Context as ClientContext } from "@deepseek-ai/cordis";
 import type {
   ISession,

@@ -34,8 +34,9 @@ The packed smoke installs the DSH-only artifact into a disposable real
 module Loader, and verifies the Host Settings namespace. A separate real
 Cordis Loader run activates the packed Host entry and calls
 `kepos_image_generate` through a test-owned HTTP fake bridge, checking the
-generated PNG write and attachment result. Imagegen's private core is bundled
-into the artifact; no private workspace dependency is installed at runtime,
+generated PNG write and attachment result. Imagegen's provider and
+workspace-boundary core is implemented as ordinary internal modules in the
+artifact; no second workspace package is installed at runtime,
 and the smoke never calls a paid image provider or touches a live workspace.
 
 ## Independent release
@@ -49,5 +50,6 @@ DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
 ```
 
 Review the verified tarball, then publish it separately with existing npm
-credentials at the registry boundary. The private `imagegen-core` package is
-never selected or published.
+credentials at the registry boundary. Imagegen's core is an internal module
+and is included directly in this package; there is no second package to select
+or publish.

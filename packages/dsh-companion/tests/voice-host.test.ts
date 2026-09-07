@@ -18,7 +18,7 @@ function hostWith(service: unknown) {
     llm: {},
     webServer: { port: 1, register: () => () => undefined },
     on: () => () => undefined,
-    get: (name: string) => name === "keposSpeech" ? service : undefined,
+    get: (name: string) => name === "dshSpeech" ? service : undefined,
   };
   const host = new CompanionHostController(ctx as never, scope);
   host.register();
@@ -28,7 +28,7 @@ function hostWith(service: unknown) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Companion voice Host RPC", () => {
-  it("authorizes the configured workspace/session and passes only decoded audio to optional Kepos Speech", async () => {
+  it("authorizes the configured workspace/session and passes only decoded audio to optional DSH Speech", async () => {
     const transcribe = vi.fn(async (request: { sessionId: string; mediaType: string; data: Uint8Array }) => ({
       text: "你好",
       sentences: [{ startMs: 1, endMs: 2, text: "你好", expression: "sad", confidence: 0.2 }],
@@ -42,7 +42,7 @@ describe("Companion voice Host RPC", () => {
     await host.dispose();
   });
 
-  it("rejects non-canonical/unsupported/foreign requests before calling Kepos Speech", async () => {
+  it("rejects non-canonical/unsupported/foreign requests before calling DSH Speech", async () => {
     const transcribe = vi.fn(async () => ({ text: "never" }));
     const { host, handler } = hostWith({ transcribe });
     for (const payload of [

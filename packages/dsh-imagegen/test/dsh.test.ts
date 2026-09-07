@@ -1,7 +1,7 @@
 import {
   DEFAULT_BRIDGE_URL,
   MAX_BRIDGE_JSON_BYTES,
-} from "@lamplitisles/imagegen-core";
+} from "../src/core.js";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { SettingsProvider } from "@deepseek-ai/dsh-settings";
 import { mkdtemp, readFile, rm } from "node:fs/promises";

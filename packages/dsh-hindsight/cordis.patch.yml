@@ -1,0 +1,6 @@
+# DSH profile bundle for companion-oriented Hindsight memory.
+#
+- insert:
+    - id: dsh-hindsight
+      name: "@lamplitisles/dsh-hindsight"
+      inject: [agents, settings, systemPrompt, tools]

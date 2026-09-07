@@ -10,7 +10,7 @@ selected after startup.
 - DSH `0.1.2-rc.1` with the native web settings surface
 - Node.js 24 and pnpm 11.22.0 for workspace development
 - A Matrix account that has already joined the allowed room
-- The Kepos Speech plugin is optional; voice sends require its Host `keposSpeech`
+- The DSH Speech plugin is optional; voice sends require its Host `dshSpeech`
   service, while text and workspace-file sends do not.
 - An access token for that account (password and SSO login are not implemented)
 
@@ -128,10 +128,10 @@ conversation:
   16,000 characters, optional `voice` boolean, optional `replyToEventId`, and
   optional `mentions` array. With `voice` omitted or false it emits one
   `m.text` event. With `voice: true`, `body` is passed to the optional
-  `ctx.get("keposSpeech")` service as `{ sessionId, text }`; the service must
+  `ctx.get("dshSpeech")` service as `{ sessionId, text }`; the service must
   return `{ mediaType: "audio/mpeg", data: Uint8Array }`. The bytes are
   uploaded first and exactly one `m.audio` event named `语音消息.mp3` is sent;
-  no transcript or text fallback is emitted. If Kepos Speech is not mounted, returns
+  no transcript or text fallback is emitted. If DSH Speech is not mounted, returns
   invalid audio, or the upload/send/readiness operation fails, the call fails
   with a bounded error and sends no fallback event.
   `replyToEventId` must exactly equal an event Matrix can retrieve from the
@@ -196,7 +196,7 @@ transactional outbox, or exactly-once delivery guarantees. The fixed-room
 tools do not provide room selection, profile lookup, presence, power levels,
 membership history, invitations, moderation, arbitrary Matrix media/HTML,
 threads, reactions, or any other Matrix account capability. Media delivery is
-limited to the optional Kepos Speech MP3 contract and one bounded workspace file per
+limited to the optional DSH Speech MP3 contract and one bounded workspace file per
 call; it does not provide recording, video, albums, retries, progress, or
 cleanup of an uploaded-but-unsent object.
 
@@ -224,7 +224,7 @@ cleanup of an uploaded-but-unsent object.
    verify the visible body is unchanged while Matrix receives
    `m.mentions.user_ids`. Invalid anchors or labels must send nothing.
    In a separate approved turn call `matrix_send_message` with `voice: true`.
-   With Kepos Speech mounted, verify one uploaded `语音消息.mp3` `m.audio` event and
+   With DSH Speech mounted, verify one uploaded `语音消息.mp3` `m.audio` event and
    no `m.text` transcript; with the service absent, verify a bounded error and
    no Matrix event. Call `matrix_send_file` with an image and a regular report
    from the active workspace; verify the `m.image`/`m.file` payload, MIME

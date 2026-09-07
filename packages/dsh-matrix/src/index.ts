@@ -125,7 +125,7 @@ export {
   MAX_RECENT_MESSAGES
 } from "./matrix-tools.js";
 export type {
-  KeposSpeechServiceLike,
+  DshSpeechServiceLike,
   MatrixListMembersResult,
   MatrixSendFileResult,
   MatrixReadRecentMessagesResult,

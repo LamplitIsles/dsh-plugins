@@ -52,7 +52,6 @@ export default defineConfig([
     dts: true,
     clean: true,
     external,
-    noExternal: ["@lamplitisles/imagegen-core"],
   },
   {
     entry: { client: "src/client.ts" },
@@ -62,7 +61,6 @@ export default defineConfig([
     dts: true,
     esbuildPlugins: [cssModulesPlugin()],
     external,
-    noExternal: ["@lamplitisles/imagegen-core"],
     outExtension: () => ({ js: ".js" }),
     banner: {
       js: 'window.__ModuleLoader__.load({ id: "@lamplitisles/dsh-imagegen", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',

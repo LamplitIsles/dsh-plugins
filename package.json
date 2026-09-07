@@ -17,12 +17,13 @@
     "typecheck": "pnpm run typecheck:root && pnpm --filter \"./packages/*\" run typecheck",
     "typecheck:root": "tsc --noEmit",
     "test": "pnpm --filter \"./packages/*\" run test && pnpm run test:release",
-    "test:release": "vitest run tests/release.test.ts",
+    "test:release": "vitest run tests/release.test.ts tests/migrate-identities.test.ts",
     "test:e2e": "pnpm --filter @lamplitisles/dsh-companion run test:e2e",
     "build": "pnpm --filter \"./packages/*\" run build",
     "pack:check": "pnpm run build && tsx scripts/pack-check.ts",
     "pack:all": "tsx scripts/pack.ts",
     "artifact:smoke": "tsx scripts/artifact-smoke.ts",
+    "identities:migrate": "tsx scripts/migrate-identities.ts",
     "release:check": "tsx scripts/release.ts check",
     "release:prepare": "tsx scripts/release.ts prepare"
   },
@@ -31,6 +32,7 @@
     "prettier": "^3.6.2",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.0"
   }
 }

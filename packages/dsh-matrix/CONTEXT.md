@@ -65,16 +65,16 @@ The bounded sorted `{ userId, displayName }` entries returned by `matrix_list_me
 _Avoid_: Member history
 
 **Fixed-room Matrix send**:
-The bounded operation performed by `matrix_send_message`, which is the only way a Companion emits an `m.text` event by default (or one `m.audio` event when `voice: true`) to the allowed room through DSH's existing approval and cancellation pipeline. Its optional reply anchor must be an event ID Matrix can retrieve from that room's history; without one it sends an ordinary room message. Its optional `mentions` values are exact, case-sensitive current display labels from the bounded joined-user roster; the bridge resolves them locally to stable Matrix IDs and emits `m.mentions.user_ids` without changing the caller's visible body. Voice text is sent only to the optional `ctx.get("keposSpeech")` service and is uploaded as `语音消息.mp3`; no transcript fallback is emitted. Omitted and empty mentions have the same no-mention behavior. Unknown, stale, duplicate-label, direct-ID, `@room`, and unavailable reply-target inputs fail before send with a bounded JSON correction list of valid display labels. It cannot impersonate, thread, or choose another room.
+The bounded operation performed by `matrix_send_message`, which is the only way a Companion emits an `m.text` event by default (or one `m.audio` event when `voice: true`) to the allowed room through DSH's existing approval and cancellation pipeline. Its optional reply anchor must be an event ID Matrix can retrieve from that room's history; without one it sends an ordinary room message. Its optional `mentions` values are exact, case-sensitive current display labels from the bounded joined-user roster; the bridge resolves them locally to stable Matrix IDs and emits `m.mentions.user_ids` without changing the caller's visible body. Voice text is sent only to the optional `ctx.get("dshSpeech")` service and is uploaded as `语音消息.mp3`; no transcript fallback is emitted. Omitted and empty mentions have the same no-mention behavior. Unknown, stale, duplicate-label, direct-ID, `@room`, and unavailable reply-target inputs fail before send with a bounded JSON correction list of valid display labels. It cannot impersonate, thread, or choose another room.
 _Avoid_: Automatic Matrix reply, arbitrary room send
 
 **Workspace file delivery**:
 The one-file operation performed by `matrix_send_file`. It resolves one path through the locked Agent's DSH `fs` service, derives the session's workspace root from `session.header.cwd`, verifies canonical containment, accepts only regular files, and reads at most 10 MiB. PNG, JPEG, WebP, and GIF names become `m.image`; all other names become `m.file` with `application/octet-stream`. `description` is the Matrix `body` when supplied, otherwise the basename; `filename` remains the basename. The tool has no room selector, URL or arbitrary host-path escape, MIME override, batch input, retries, or cleanup guarantee.
 _Avoid_: Host filesystem access, remote URL delivery, multi-file upload
 
-**Kepos Host Speech service**:
-The optional Cordis service named `keposSpeech`, resolved at voice-call time from the locked Agent context. Its only Matrix-facing contract is `synthesize({ sessionId, text }, signal)`, returning `{ mediaType: "audio/mpeg", data: Uint8Array }`; service absence or failure is explicit and never falls back to text.
-_Avoid_: Browser-only Kepos RPC, a second provider integration, transcript fallback
+**DSH Host Speech service**:
+The optional Cordis service named `dshSpeech`, resolved at voice-call time from the locked Agent context. Its only Matrix-facing contract is `synthesize({ sessionId, text }, signal)`, returning `{ mediaType: "audio/mpeg", data: Uint8Array }`; service absence or failure is explicit and never falls back to text.
+_Avoid_: Browser-only DSH RPC, a second provider integration, transcript fallback
 
 **DSH-only proactive turn**:
 A Web/CLI-initiated Companion turn that uses the fixed-room send tool. Its bot-authored event is ignored by the bridge, so the turn's final Assistant text remains in DSH and cannot start a Matrix-triggered follow-up.

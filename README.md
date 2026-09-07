@@ -18,12 +18,12 @@ identities and versions remain independent.
 | `@lamplitisles/dsh-companion` | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior. |
 | `@lamplitisles/dsh-mail` | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth. |
 | `@lamplitisles/dsh-matrix` | Matrix room reading, search, and explicit message delivery through DSH tools. |
-| `@lamplitisles/kepos-speech` | Tagged TTS playback and optional Qwen ASR through an isolated Host service. |
-| `@lamplitisles/kepos-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection. |
+| `@lamplitisles/dsh-speech` | Tagged TTS playback and optional Qwen ASR through an isolated Host service. |
+| `@lamplitisles/dsh-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection. |
 | `@lamplitisles/dsh-imagegen` | DSH image generation and editing under the active workspace. |
 
-`@lamplitisles/imagegen-core` is a private workspace implementation detail. It
-is bundled into Imagegen's Host artifact and is not a publication target.
+Imagegen keeps its provider and workspace-boundary core as ordinary internal
+modules in the public package; there is no separate private workspace package.
 
 ## Workspace commands
 
@@ -61,8 +61,8 @@ corepack pnpm run test:e2e
 `pack:check` builds every package, creates real `pnpm pack` tarballs in a
 test-owned temporary directory, and checks the expanded manifests, Host and
 Loader entry points, Cordis patches, declarations, required notices, peer
-versions, and dependency closure. It also confirms that Imagegen contains no
-private-core import or runtime dependency.
+versions, and dependency closure. It also confirms that Imagegen is
+self-contained and has no runtime dependency.
 
 For the full installed-Host gate, point the command at an existing official
 DSH `0.1.2-rc.1` executable. The check creates isolated homes, caches, profiles,
@@ -90,8 +90,8 @@ DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
 The command validates the package metadata, builds/inspects the actual tarball,
 runs that package's packed Host gate, and prints the artifact path and npm
 dist-tag. Invalid, private, or unknown package selections and malformed tags
-fail before an artifact is prepared. The private Imagegen core cannot be
-selected.
+fail before an artifact is prepared. Imagegen is selected only through its
+public package identity.
 
 Publication is a separate, maintainer-driven registry boundary. After the
 verified artifact has been reviewed, an operator may publish that tarball with
@@ -112,6 +112,11 @@ Package READMEs describe each plugin's runtime contract and configuration. The
 import boundary and pinned source snapshots are recorded in
 [`docs/IMPORTS.md`](docs/IMPORTS.md). Contributor and agent workflow guidance
 is in [`AGENTS.md`](AGENTS.md).
+
+The one-off local Speech/Hindsight settings and credential migration, including
+the reviewed build/link/restart procedure, is documented in
+[`docs/identity-migration.md`](docs/identity-migration.md). It is an explicit
+operator action; normal startup does not migrate old keys.
 
 ## License
 

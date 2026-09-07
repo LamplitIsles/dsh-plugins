@@ -4,7 +4,7 @@ import {
   MATRIX_SEND_FILE,
   MATRIX_SEND_MESSAGE,
   MAX_MATRIX_MEDIA_BYTES,
-  type KeposSpeechServiceLike,
+  type DshSpeechServiceLike,
   type MatrixFileSystemLike
 } from "../src/matrix-tools.js";
 import type { MatrixClientLike } from "../src/matrix-protocol.js";
@@ -91,7 +91,7 @@ class FakeClient implements MatrixClientLike {
 
 function mediaSetup(options: {
   fs?: FakeFs;
-  speech?: KeposSpeechServiceLike;
+  speech?: DshSpeechServiceLike;
   client?: FakeClient;
   ready?: () => boolean;
 } = {}) {
@@ -101,7 +101,7 @@ function mediaSetup(options: {
     id: "session-voice",
     session: { header: { cwd: WORKSPACE } },
     ctx: {
-      get: (name: string) => name === "fs" ? fs : name === "keposSpeech" ? options.speech : undefined
+      get: (name: string) => name === "fs" ? fs : name === "dshSpeech" ? options.speech : undefined
     }
   };
   const definitions = createMatrixToolDefinitions({
@@ -130,7 +130,7 @@ describe("Matrix media delivery", () => {
 
   it("synthesizes one fixed-room audio event with reply and mention metadata", async () => {
     const requests: Array<{ sessionId: string; text: string; signal?: AbortSignal | undefined }> = [];
-    const speech: KeposSpeechServiceLike = {
+    const speech: DshSpeechServiceLike = {
       synthesize: async (request, signal) => {
         requests.push({ ...request, signal });
         return { mediaType: "audio/mpeg", data: new Uint8Array([1, 2, 3]) };
@@ -156,7 +156,7 @@ describe("Matrix media delivery", () => {
     }]);
   });
 
-  it("fails voice calls explicitly when Kepos is absent or returns invalid audio", async () => {
+  it("fails voice calls explicitly when DSH Speech is absent or returns invalid audio", async () => {
     const absent = mediaSetup();
     await expect(absent.send.execute({ body: "voice", voice: true }, exec())).rejects.toThrow(/voice delivery is unavailable/);
     expect(absent.client.sent).toHaveLength(0);
