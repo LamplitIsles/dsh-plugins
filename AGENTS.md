@@ -37,12 +37,10 @@ Smoke checks own their temporary homes, caches, profiles, and ports. Provider
 calls, credentials, live DSH profiles, user workspaces, mailboxes, Matrix
 rooms, and paid image generation remain outside tests.
 
-The one-off local identity migration is described in
-[`docs/identity-migration.md`](docs/identity-migration.md). Its plan/check and
-fixture tests never mutate `/home/neil/.local/state/dsh`; only the Owner runs
-the documented build, service-stop, restricted-backup, DSH `link:`
-reconciliation, restart, and cold-client verification sequence after review
-and merge.
+For explicitly requested host-local deployment, follow
+[`docs/local-deployment.md`](docs/local-deployment.md). Completion requires
+all six links to resolve to this checkout and the restarted Host and cold
+client to load successfully.
 
 ## Artifacts and releases
 

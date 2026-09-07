@@ -113,10 +113,9 @@ import boundary and pinned source snapshots are recorded in
 [`docs/IMPORTS.md`](docs/IMPORTS.md). Contributor and agent workflow guidance
 is in [`AGENTS.md`](AGENTS.md).
 
-The one-off local Speech/Hindsight settings and credential migration, including
-the reviewed build/link/restart procedure, is documented in
-[`docs/identity-migration.md`](docs/identity-migration.md). It is an explicit
-operator action; normal startup does not migrate old keys.
+For an explicitly requested host-local update, follow the six-package
+build, link, restart, and verification procedure in
+[`docs/local-deployment.md`](docs/local-deployment.md).
 
 ## License
 
