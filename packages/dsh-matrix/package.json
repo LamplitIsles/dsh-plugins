@@ -1,6 +1,6 @@
 {
   "name": "@lamplitisles/dsh-matrix",
-  "version": "0.1.2-rc.1",
+  "version": "0.3.0",
   "description": "One-room Matrix companion bridge for DeepSeek Harness",
   "type": "module",
   "main": "./dist/index.js",

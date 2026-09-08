@@ -1,6 +1,6 @@
 {
   "name": "@lamplitisles/dsh-hindsight",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A small DSH companion-memory adapter for Hindsight",
   "license": "Apache-2.0",
   "repository": {
