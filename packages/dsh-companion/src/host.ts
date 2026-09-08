@@ -77,9 +77,9 @@ export const SettingsSchema = z
     workspaceId: z.string().default(""),
     companionName: z.string().default("Companion"),
     companionAvatar: z.any(),
-    userName: z.string().default("你"),
+    userName: z.string().default("You"),
     userAvatar: z.any(),
-    preferredAddress: z.string().default("你"),
+    preferredAddress: z.string().default("You"),
     defaultAffinity: z.number().step(1).min(0).max(100).default(50),
   })
   .loose();
@@ -242,12 +242,12 @@ function asSettings(value: CompanionSettings): CompanionSettings {
     userName:
       typeof candidate.userName === "string" && candidate.userName.trim()
         ? candidate.userName.trim()
-        : "你",
+        : "You",
     preferredAddress:
       typeof candidate.preferredAddress === "string" &&
       candidate.preferredAddress.trim()
         ? candidate.preferredAddress.trim()
-        : "你",
+        : "You",
     defaultAffinity:
       typeof candidate.defaultAffinity === "number"
         ? clampAffinity(candidate.defaultAffinity)
@@ -466,7 +466,8 @@ export const BOOTSTRAP_PATH = "/companion/bootstrap" as const;
 const COMPANION_ROOT_PATH = "/companion/" as const;
 const BOOTSTRAP_TOKEN_FIELD = "token" as const;
 const BOOTSTRAP_MAX_BODY_BYTES = 4096;
-const BOOTSTRAP_ERROR = "令牌无效或已过期，请检查后重试。";
+const BOOTSTRAP_ERROR =
+  "The token is invalid or expired. Check it and try again.";
 
 const BOOTSTRAP_PAGE_STYLE = `
 *{box-sizing:border-box}
@@ -500,12 +501,12 @@ h1{margin:0;font-size:clamp(1.45rem,5vw,1.8rem);letter-spacing:-.035em;line-heig
 function bootstrapPage(hasError: boolean): string {
   const error = hasError ? BOOTSTRAP_ERROR : "";
   return `<!doctype html>
-<html lang="zh-Hans">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="referrer" content="no-referrer">
-    <title>Companion · 继续</title>
+    <title>Companion · Sign in</title>
     <style>${BOOTSTRAP_PAGE_STYLE}</style>
   </head>
   <body>
@@ -513,15 +514,15 @@ function bootstrapPage(hasError: boolean): string {
       <section class="card companion-bootstrap-card" aria-labelledby="companion-bootstrap-title">
         <div class="companion-bootstrap-mark" aria-hidden="true">✦</div>
         <p class="companion-bootstrap-eyebrow">Companion</p>
-        <h1 id="companion-bootstrap-title">继续进入 Companion</h1>
-        <p class="companion-bootstrap-intro">输入本次 DSH 启动令牌，完成一次安全验证。</p>
+        <h1 id="companion-bootstrap-title">Sign in to Companion</h1>
+        <p class="companion-bootstrap-intro">Enter the launch token from the current DSH process to sign in.</p>
         <form class="companion-bootstrap-form" method="post" action="${BOOTSTRAP_PATH}" autocomplete="off">
-          <label class="companion-bootstrap-label" for="companion-bootstrap-token">启动令牌</label>
+          <label class="companion-bootstrap-label" for="companion-bootstrap-token">Launch token</label>
           <input class="input" id="companion-bootstrap-token" name="${BOOTSTRAP_TOKEN_FIELD}" type="password" required maxlength="2048" autocomplete="off" spellcheck="false" aria-describedby="companion-bootstrap-error">
-          <button class="btn btn-primary" type="submit">进入 Companion</button>
+          <button class="btn btn-primary" type="submit">Open Companion</button>
           <p class="companion-bootstrap-error" id="companion-bootstrap-error" role="alert" aria-live="polite">${error}</p>
         </form>
-        <p class="companion-bootstrap-note">令牌仅用于这一次验证，不会保存在 Companion。</p>
+        <p class="companion-bootstrap-note">The token is used only to sign in and is not saved in Companion.</p>
       </section>
     </main>
   </body>

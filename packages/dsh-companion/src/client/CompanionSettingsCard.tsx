@@ -1,4 +1,9 @@
 import {
+  english,
+  type CompanionLocaleKey,
+  type CompanionTranslate,
+} from "./locale.js";
+import {
   useEffect,
   useMemo,
   useRef,
@@ -12,6 +17,7 @@ import type {
   SettingsScopeSnapshot,
 } from "@deepseek-ai/dsh-client-ui-settings/client";
 import {
+  AvatarReadError,
   changedSettingsPayload,
   mergeCleanSettingsDraft,
   readAvatar,
@@ -22,6 +28,7 @@ import {
 import styles from "./CompanionSettingsCard.module.css";
 
 export interface CompanionSettingsCardProps {
+  t?: CompanionTranslate;
   scope: SettingsScope<ClientSettings>;
   workspaceSource: {
     getSnapshot(): WorkspaceSnapshot;
@@ -42,6 +49,7 @@ const EMPTY_WORKSPACES: WorkspaceSnapshot = {
 };
 
 export function CompanionSettingsCard({
+  t = english,
   scope,
   workspaceSource,
   currentAffinity,
@@ -73,8 +81,8 @@ export function CompanionSettingsCard({
   const empty: ClientSettings = {
     workspaceId: "",
     companionName: "Companion",
-    userName: "你",
-    preferredAddress: "你",
+    userName: t("you"),
+    preferredAddress: t("you"),
     defaultAffinity: 50,
   };
   const initial = snapshot.value ?? empty;
@@ -82,8 +90,8 @@ export function CompanionSettingsCard({
   const [baseline, setBaseline] = useState(initial);
   const [draft, setDraft] = useState<ClientSettings>(initial);
   const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<CompanionLocaleKey | "">("");
+  const [error, setError] = useState<CompanionLocaleKey | "">("");
   const [saving, setSaving] = useState(false);
   const [affinity, setCurrentAffinity] = useState<number | undefined>();
   const [affinityDraft, setAffinityDraft] = useState("50");
@@ -136,7 +144,7 @@ export function CompanionSettingsCard({
     if (readOnly || !dirty) return;
     setSaving(true);
     setError("");
-    setStatus("正在保存…");
+    setStatus("settings.saving");
     try {
       const payload = changedSettingsPayload(draft, baselineRef.current);
       let accepted = true;
@@ -147,21 +155,19 @@ export function CompanionSettingsCard({
           accepted;
       }
       if (!accepted) {
-        setError("保存未被 Host 接受；你的更改仍保留在此处，可以检查后重试。");
-        setStatus("未保存");
+        setError("settings.rejected");
+        setStatus("settings.unsaved");
         return;
       }
       const next = scope.getSnapshot().value ?? draft;
       baselineRef.current = next;
       setBaseline(next);
       setDraft(next);
-      setStatus("已保存");
+      setStatus("settings.saved");
       setOpen(false);
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "保存失败，请检查设置后重试。",
-      );
-      setStatus("未保存");
+    } catch {
+      setError("settings.failed");
+      setStatus("settings.unsaved");
     } finally {
       setSaving(false);
     }
@@ -169,21 +175,21 @@ export function CompanionSettingsCard({
   function discard(): void {
     setDraft(baselineRef.current);
     setError("");
-    setStatus("已撤销未保存的更改");
+    setStatus("settings.discarded");
   }
   async function correctAffinity(): Promise<void> {
     const value = Number(affinityDraft);
     if (!Number.isSafeInteger(value) || value < 0 || value > 100) {
-      setError("亲近度必须是 0 到 100 的整数。");
+      setError("settings.affinityInvalid");
       return;
     }
     try {
       await setAffinity?.(value);
       setCurrentAffinity(value);
-      setStatus("亲近度已更新");
+      setStatus("settings.affinityUpdated");
       setError("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "亲近度更新失败。");
+    } catch {
+      setError("settings.affinityFailed");
     }
   }
   async function avatar(
@@ -194,10 +200,10 @@ export function CompanionSettingsCard({
     if (!file) return;
     try {
       set(kind, await readAvatar(file));
-      setStatus("头像已准备，点击保存后生效");
+      setStatus("avatar.ready");
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "头像无效。");
+      setError(cause instanceof AvatarReadError ? cause.key : "avatar.invalid");
     }
   }
   return (
@@ -207,16 +213,16 @@ export function CompanionSettingsCard({
         className={styles.header}
         aria-expanded={open}
         aria-controls="dsh-companion-settings-body"
-        aria-label={`${open ? "收起" : "展开"}：Companion 日常聊天`}
+        aria-label={t(open ? "settings.collapse" : "settings.expand")}
         onClick={() => setOpen((value) => !value)}
       >
         <span className={styles.headText}>
-          <span className={styles.title}>Companion 日常聊天</span>
-          <span className={styles.intro}>
-            一个 Workspace、两个身份和一段持续的关系
-          </span>
+          <span className={styles.title}>{t("settings.title")}</span>
+          <span className={styles.intro}>{t("settings.description")}</span>
         </span>
-        {dirty && <span className={styles.pending}>未保存</span>}
+        {dirty && (
+          <span className={styles.pending}>{t("settings.unsaved")}</span>
+        )}
         <span
           className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
           aria-hidden="true"
@@ -226,7 +232,7 @@ export function CompanionSettingsCard({
         <div id="dsh-companion-settings-body" className={styles.body}>
           {readOnly && (
             <output className={styles.readOnly}>
-              当前设置为只读，暂时不能保存更改。
+              {t("settings.readOnlyHint")}
             </output>
           )}
           <div className={styles.grid}>
@@ -248,10 +254,10 @@ export function CompanionSettingsCard({
               >
                 <option value="" disabled>
                   {workspaceSnapshot.state === "loading"
-                    ? "正在加载 Workspace…"
+                    ? t("workspace.loading")
                     : workspaceChoices.length === 0
-                      ? "还没有可用的 Workspace"
-                      : "请选择 Workspace"}
+                      ? t("workspace.none")
+                      : t("workspace.select")}
                 </option>
                 {workspaceChoices.map((workspace) => (
                   <option key={workspace.id} value={workspace.id}>
@@ -268,12 +274,14 @@ export function CompanionSettingsCard({
                 }
               >
                 {draft.workspaceId && !selectedWorkspaceExists
-                  ? "之前选择的 Workspace 已不存在，请重新选择。"
-                  : "Companion 只会使用这里选择的 Workspace。"}
+                  ? t("workspace.missing")
+                  : t("workspace.hint")}
               </span>
             </label>
             <label className={styles.field}>
-              <span className={styles.label}>Companion 名称</span>
+              <span className={styles.label}>
+                {t("settings.companionName")}
+              </span>
               <input
                 aria-describedby="identity-hint"
                 className={styles.input}
@@ -285,7 +293,7 @@ export function CompanionSettingsCard({
               />
             </label>
             <label className={styles.field}>
-              <span className={styles.label}>你的显示名称</span>
+              <span className={styles.label}>{t("settings.userName")}</span>
               <input
                 aria-describedby="identity-hint"
                 className={styles.input}
@@ -295,7 +303,7 @@ export function CompanionSettingsCard({
               />
             </label>
             <label className={styles.field}>
-              <span className={styles.label}>Companion 对你的称呼</span>
+              <span className={styles.label}>{t("settings.address")}</span>
               <input
                 aria-describedby="preferred-address-hint"
                 className={styles.input}
@@ -306,14 +314,16 @@ export function CompanionSettingsCard({
                 disabled={readOnly || saving}
               />
               <span id="preferred-address-hint" className={styles.hint}>
-                例如“小岛”；用于 Companion 对你的问候和称呼。
+                {t("settings.addressHint")}
               </span>
             </label>
             <span id="identity-hint" className={styles.srOnly}>
-              最多 80 个字符。
+              {t("settings.nameLimit")}
             </span>
             <label className={styles.field}>
-              <span className={styles.label}>新关系的默认亲近度（0–100）</span>
+              <span className={styles.label}>
+                {t("settings.defaultAffinity")}
+              </span>
               <input
                 aria-describedby="affinity-hint"
                 className={styles.input}
@@ -334,17 +344,17 @@ export function CompanionSettingsCard({
                 disabled={readOnly || saving}
               />
               <span id="affinity-hint" className={styles.hint}>
-                只在首次创建或显式重置时使用。
+                {t("settings.defaultAffinityHint")}
               </span>
             </label>
             <label className={styles.field}>
-              <span className={styles.label}>Companion 头像</span>
+              <span className={styles.label}>{t("avatar.companion")}</span>
               <span className={styles.avatarRow}>
                 {draft.companionAvatar ? (
                   <img
                     className={styles.avatar}
                     src={draft.companionAvatar.data}
-                    alt="Companion 头像预览"
+                    alt={t("avatar.companionPreview")}
                   />
                 ) : (
                   <span className={styles.avatar} aria-hidden="true" />
@@ -358,24 +368,28 @@ export function CompanionSettingsCard({
                     onChange={(event) => void avatar("companionAvatar", event)}
                     disabled={readOnly || saving}
                   />
-                  <span className={styles.fileButton}>选择图片</span>
+                  <span className={styles.fileButton}>
+                    {t("avatar.choose")}
+                  </span>
                   <span className={styles.fileState}>
-                    {draft.companionAvatar ? "已选择图片" : "未选择图片"}
+                    {draft.companionAvatar
+                      ? t("avatar.selected")
+                      : t("avatar.none")}
                   </span>
                 </span>
               </span>
               <span id="companion-avatar-hint" className={styles.hint}>
-                本地图片，PNG/JPEG/WebP/GIF，5 MB 以内。
+                {t("avatar.hint")}
               </span>
             </label>
             <label className={styles.field}>
-              <span className={styles.label}>你的头像</span>
+              <span className={styles.label}>{t("avatar.user")}</span>
               <span className={styles.avatarRow}>
                 {draft.userAvatar ? (
                   <img
                     className={styles.avatar}
                     src={draft.userAvatar.data}
-                    alt="用户头像预览"
+                    alt={t("avatar.userPreview")}
                   />
                 ) : (
                   <span className={styles.avatar} aria-hidden="true" />
@@ -389,27 +403,30 @@ export function CompanionSettingsCard({
                     onChange={(event) => void avatar("userAvatar", event)}
                     disabled={readOnly || saving}
                   />
-                  <span className={styles.fileButton}>选择图片</span>
+                  <span className={styles.fileButton}>
+                    {t("avatar.choose")}
+                  </span>
                   <span className={styles.fileState}>
-                    {draft.userAvatar ? "已选择图片" : "未选择图片"}
+                    {draft.userAvatar ? t("avatar.selected") : t("avatar.none")}
                   </span>
                 </span>
               </span>
               <span id="user-avatar-hint" className={styles.hint}>
-                本地图片，PNG/JPEG/WebP/GIF，5 MB 以内。
+                {t("avatar.hint")}
               </span>
             </label>
           </div>
           {error && (
             <p className={styles.error} role="alert">
-              {error}
+              {t(error)}
             </p>
           )}
           <div className={styles.relationship}>
             <div className={styles.relationshipHead}>
-              <span className={styles.label}>当前关系</span>
+              <span className={styles.label}>{t("relationship.current")}</span>
               <span className={styles.affinity}>
-                亲近度 {affinity === undefined ? "加载中…" : affinity}
+                {t("affinity.label")}{" "}
+                {affinity === undefined ? t("loading") : affinity}
               </span>
             </div>
             {setAffinity && (
@@ -418,7 +435,7 @@ export function CompanionSettingsCard({
                   className={styles.correctionLabel}
                   htmlFor="companion-affinity-correction"
                 >
-                  校正亲近度
+                  {t("affinity.adjust")}
                 </label>
                 <input
                   id="companion-affinity-correction"
@@ -438,7 +455,7 @@ export function CompanionSettingsCard({
                   id="companion-affinity-correction-hint"
                   className={styles.srOnly}
                 >
-                  输入 0 到 100 的整数。
+                  {t("affinity.hint")}
                 </span>
                 <button
                   className={styles.button}
@@ -446,7 +463,7 @@ export function CompanionSettingsCard({
                   onClick={() => void correctAffinity()}
                   disabled={!controlsWritable}
                 >
-                  应用
+                  {t("apply")}
                 </button>
               </div>
             )}
@@ -458,15 +475,11 @@ export function CompanionSettingsCard({
                   onClick={() =>
                     void resetAffinity()
                       .then(() => currentAffinity?.().then(setCurrentAffinity))
-                      .catch((cause) =>
-                        setError(
-                          cause instanceof Error ? cause.message : "重置失败。",
-                        ),
-                      )
+                      .catch(() => setError("reset.failed"))
                   }
                   disabled={!controlsWritable}
                 >
-                  重置亲近度
+                  {t("affinity.reset")}
                 </button>
               )}
               {clearSignature && (
@@ -475,25 +488,19 @@ export function CompanionSettingsCard({
                   type="button"
                   onClick={() =>
                     void clearSignature()
-                      .then(() => setStatus("签名已清除"))
-                      .catch((cause) =>
-                        setError(
-                          cause instanceof Error
-                            ? cause.message
-                            : "签名清除失败。",
-                        ),
-                      )
+                      .then(() => setStatus("signature.cleared"))
+                      .catch(() => setError("signature.failed"))
                   }
                   disabled={!controlsWritable}
                 >
-                  清除签名
+                  {t("signature.clear")}
                 </button>
               )}
             </div>
           </div>
           <div className={styles.actions}>
             <output className={styles.status} aria-live="polite">
-              {readOnly ? "当前设置为只读" : status}
+              {readOnly ? t("settings.readOnly") : status ? t(status) : ""}
             </output>
             <button
               type="button"
@@ -501,7 +508,7 @@ export function CompanionSettingsCard({
               onClick={discard}
               disabled={!dirty || saving}
             >
-              撤销
+              {t("discard")}
             </button>
             <button
               type="button"
@@ -509,7 +516,7 @@ export function CompanionSettingsCard({
               onClick={() => void save()}
               disabled={readOnly || !dirty || saving}
             >
-              保存
+              {t("save")}
             </button>
           </div>
         </div>

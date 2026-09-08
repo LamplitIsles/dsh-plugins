@@ -1,3 +1,5 @@
+import type {} from "@deepseek-ai/dsh-client-locale/client";
+import { companionLocale } from "./client/locale.js";
 import type { Context as ClientContext } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-client-connection/client";
 import type {} from "@deepseek-ai/dsh-api-remotes/client";
@@ -61,6 +63,11 @@ export function installSettingsStyles(ctx: ClientContext): void {
 }
 
 export function apply(ctx: ClientContext): void {
+  ctx.effect(
+    () => ctx.locale.register(SETTINGS_NAMESPACE, companionLocale),
+    "dsh-companion: dictionaries",
+  );
+  const t = ctx.locale.bind(SETTINGS_NAMESPACE);
   installSettingsStyles(ctx);
   const disposeContinuity = registerCompanionContinuity(ctx);
   ctx.effect(
@@ -91,7 +98,7 @@ export function apply(ctx: ClientContext): void {
   ).connection;
   const configuredWorkspace = (): string => {
     const workspaceId = settings.getSnapshot().value?.workspaceId;
-    if (!workspaceId) throw new Error("请先配置 Companion Workspace。");
+    if (!workspaceId) throw new Error(t("workspace.required"));
     return workspaceId;
   };
   const relationshipCall = async (
@@ -102,7 +109,8 @@ export function apply(ctx: ClientContext): void {
       workspaceId: configuredWorkspace(),
       ...extra,
     });
-    if (!result.ok) throw new Error(result.error?.message ?? "关系更新失败。");
+    if (!result.ok)
+      throw new Error(result.error?.message ?? t("relationship.updateFailed"));
     return result.value;
   };
   ctx.slots.inject("settings.plugin.item" as never, () =>
@@ -110,6 +118,7 @@ export function apply(ctx: ClientContext): void {
       {
         name: "settings.plugin.item",
         key: SETTINGS_NAMESPACE,
+        locale: SETTINGS_NAMESPACE,
         inject: () => ({
           scope: settings,
           workspaceSource: ctx.workspaces.list,
@@ -152,6 +161,7 @@ export function apply(ctx: ClientContext): void {
       {
         name: "root",
         priority: -20,
+        locale: SETTINGS_NAMESPACE,
         inject: () => ({ ctx, settings }),
       } as never,
       CompanionRoot as never,

@@ -330,7 +330,7 @@ function assistantContentItems(
         side: "incoming",
         state: "ready",
         attachment,
-        alt: attachment.name ?? "Companion 图片",
+        alt: attachment.name ?? "",
         time,
       });
       continue;
@@ -397,8 +397,7 @@ function nodeMedia(
         ...(origin ? { origin } : {}),
         state: "ready",
         attachment,
-        alt:
-          attachment.name ?? (side === "incoming" ? "Companion 图片" : "图片"),
+        alt: attachment.name ?? "",
         time,
       });
     }
@@ -420,7 +419,7 @@ function nodeMedia(
       ...(origin ? { origin } : {}),
       state: "ready",
       attachment,
-      alt: attachment.name ?? "图片",
+      alt: attachment.name ?? "",
       time,
     });
   }
@@ -664,7 +663,7 @@ export function projectConversation(
         origin: "user",
         state: "ready",
         previewUrl: image.previewUrl,
-        alt: typeof image.name === "string" && image.name ? image.name : "图片",
+        alt: typeof image.name === "string" && image.name ? image.name : "",
         time,
       });
     }

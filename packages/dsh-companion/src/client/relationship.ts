@@ -1,16 +1,18 @@
+import { english, type CompanionTranslate } from "./locale.js";
 export function affinityStage(
   value: number,
-): "疏离" | "生疏" | "熟悉" | "亲近" | "深厚" {
+  t: CompanionTranslate = english,
+): string {
   const n = Math.max(0, Math.min(100, Math.trunc(value)));
   return n < 20
-    ? "疏离"
+    ? t("affinity.distant")
     : n < 40
-      ? "生疏"
+      ? t("affinity.unfamiliar")
       : n < 60
-        ? "熟悉"
+        ? t("affinity.familiar")
         : n < 80
-          ? "亲近"
-          : "深厚";
+          ? t("affinity.close")
+          : t("affinity.deep");
 }
 
 export interface CompanionSessionCandidate {
@@ -40,6 +42,7 @@ export function companionSessionList(
     sessionIds: readonly string[];
     archivedSessionIds: readonly string[];
   },
+  t: CompanionTranslate = english,
 ): CompanionSessionListItem[] {
   const memberIds = new Set(ownership.sessionIds);
   const archivedIds = new Set(ownership.archivedSessionIds);
@@ -61,7 +64,7 @@ export function companionSessionList(
       id: session.id,
       title:
         session.displayTitle?.trim() ||
-        (session.blank ? "新对话" : "未命名对话"),
+        (session.blank ? t("session.new") : t("session.untitled")),
       updatedAt: session.updatedAt ?? 0,
       running: Boolean(session.running),
       selected: session.id === selectedId,

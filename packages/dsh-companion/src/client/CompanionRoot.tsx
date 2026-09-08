@@ -1,3 +1,4 @@
+import { english, type CompanionTranslate } from "./locale.js";
 import {
   createElement,
   useCallback,
@@ -53,7 +54,7 @@ import {
   resolveWorkspaceReadiness,
   type CompanionReadiness,
 } from "./readiness.js";
-import { MOOD_LABELS } from "../domain.js";
+import type { Mood } from "../domain.js";
 import { SubmissionHandoff } from "./submission-handoff.js";
 import {
   normalizeVoiceTranscription,
@@ -67,6 +68,7 @@ import {
 } from "../voice-contract.js";
 
 export interface CompanionRootInjected {
+  t?: CompanionTranslate;
   ctx: ClientContext;
   settings: SettingsScope<ClientSettings>;
 }
@@ -162,6 +164,7 @@ function imageUrl(session: ISession, attachment: unknown): Promise<string> {
 export function CompanionRoot({
   ctx,
   settings,
+  t = english,
 }: CompanionRootInjected): JSX.Element {
   const list = useSnapshot<SessionListState>(ctx.sessions.list, {
     ids: [],
@@ -219,12 +222,17 @@ export function CompanionRoot({
   const availableSessions = useMemo(
     () =>
       workspace
-        ? companionSessionList(workspaceRows, undefined, {
-            sessionIds: workspace.sessionIds,
-            archivedSessionIds: workspaceList.archivedSessionIds,
-          })
+        ? companionSessionList(
+            workspaceRows,
+            undefined,
+            {
+              sessionIds: workspace.sessionIds,
+              archivedSessionIds: workspaceList.archivedSessionIds,
+            },
+            t,
+          )
         : [],
-    [workspace, workspaceList.archivedSessionIds, workspaceRows],
+    [workspace, workspaceList.archivedSessionIds, workspaceRows, t],
   );
   const [selected, setSelected] = useState<{
     workspaceId: string;
@@ -519,19 +527,17 @@ export function CompanionRoot({
     return {
       companionName: source?.companionName ?? "Companion",
       companionAvatar: source?.companionAvatar?.data,
-      userName: source?.userName ?? "你",
+      userName: source?.userName ?? t("you"),
       userAvatar: source?.userAvatar?.data,
-      preferredAddress: source?.preferredAddress ?? "你",
+      preferredAddress: source?.preferredAddress ?? t("you"),
       signature: state?.signature ?? "",
       mood: state?.mood ?? "neutral",
-      moodLabel: state
-        ? ((MOOD_LABELS as Record<string, string>)[state.mood] ?? state.mood)
-        : "如常",
+      moodLabel: state ? t(`mood.${state.mood as Mood}`) : t("mood.neutral"),
       moodNote: state?.note,
       affinity: state?.affinity,
-      affinityStage: state ? affinityStage(state.affinity) : undefined,
+      affinityStage: state ? affinityStage(state.affinity, t) : undefined,
     };
-  }, [relationship, configured]);
+  }, [relationship, configured, t]);
   const actions = useMemo(() => {
     const rpc: ClientConnectionRpc = connection.rpc;
     return {
@@ -602,7 +608,7 @@ export function CompanionRoot({
         );
         if (!result.ok)
           throw new Error(
-            result.error?.message ?? "语音转写暂时不可用，请再试一次。",
+            result.error?.message ?? t("voice.transcriptionFailed"),
           );
         return normalizeVoiceTranscription(result.value);
       },
@@ -628,6 +634,7 @@ export function CompanionRoot({
       },
     };
   }, [
+    t,
     connection.rpc,
     selectedSessionId,
     session,
@@ -644,6 +651,8 @@ export function CompanionRoot({
   }, [availableSessions, selectedSessionId]);
 
   const svelteProps: CompanionBridgeProps = {
+    t,
+    locale: ctx.locale.getSnapshot().active,
     projection,
     identity,
     scheme,

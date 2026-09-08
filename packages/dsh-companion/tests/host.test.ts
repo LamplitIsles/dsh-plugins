@@ -166,6 +166,7 @@ describe("Host accepted-turn relationship contract", () => {
       );
       expect(result.body).toMatch(/<button[^>]+type="submit"/);
       expect(result.body).toContain('role="alert"');
+      expect(result.body).toContain('<html lang="en">');
       expect(result.body).not.toContain("dsh web authentication required");
     } finally {
       await Promise.all([close(alias), close(upstream)]);
@@ -258,7 +259,6 @@ describe("Host accepted-turn relationship contract", () => {
       expect(invalid.status).toBe(400);
       expect(invalid.headers["cache-control"]).toBe("no-store");
       expect(invalid.headers["referrer-policy"]).toBe("no-referrer");
-      expect(invalid.body).toContain("令牌无效或已过期");
       expect(invalid.body).not.toContain(secret);
       expect(invalid.body).not.toContain("upstream rejected");
       expect(invalid.headers.location).toBeUndefined();

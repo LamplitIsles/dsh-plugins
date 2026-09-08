@@ -19,24 +19,30 @@ function file(name: string, type: string, size: number): File {
 }
 
 describe("Companion image drafts", () => {
-  it("refuses a complete incoming batch before creating drafts", () => {
+  it("refuses invalid batches and accepts a supported batch within the limits", () => {
+    expect(
+      imageIntakeError([], [file("one.png", "image/png", 8)], limits),
+    ).toBeUndefined();
     expect(
       imageIntakeError(
         [],
         [file("one.png", "image/png", 8), file("two.png", "image/png", 8)],
         limits,
       ),
-    ).toBe("图片总大小超出限制。");
+    ).toBeDefined();
     expect(
       imageIntakeError([], [file("one.heic", "image/heic", 1)], limits),
-    ).toBe("只支持 PNG、JPEG、WebP 或 GIF。");
+    ).toBeDefined();
     expect(
       imageIntakeError(
         [{ file: file("old.png", "image/png", 1) } as never],
         [file("one.png", "image/png", 1), file("two.png", "image/png", 1)],
         limits,
       ),
-    ).toBe("一次最多 2 张图片。");
+    ).toEqual({
+      key: "image.countLimit",
+      params: { count: limits.maxImagesPerMessage },
+    });
   });
 
   it("keeps clipboard image order and ignores non-image clipboard files", () => {

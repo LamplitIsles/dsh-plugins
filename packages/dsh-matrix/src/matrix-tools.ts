@@ -923,7 +923,7 @@ export function createMatrixToolDefinitions(
 
   const sendTool = defineTool({
     name: MATRIX_SEND_MESSAGE,
-    description: `Send one bounded message to the configured allowed Matrix room (maximum ${MAX_MATRIX_TOOL_BODY_CHARS} characters). By default this is one m.text event; set voice=true to synthesize and send one audio-only m.audio event named 语音消息.mp3. Optional replyToEventId must identify a message in that room's server history; optional mentions must exactly match current room display labels.`,
+    description: `Send one bounded message to the configured allowed Matrix room (maximum ${MAX_MATRIX_TOOL_BODY_CHARS} characters). By default this is one m.text event; set voice=true to synthesize and send one audio-only m.audio event named voice-message.mp3. Optional replyToEventId must identify a message in that room's server history; optional mentions must exactly match current room display labels.`,
     parameters: {
       body: {
         type: "string",
@@ -1057,7 +1057,7 @@ export function createMatrixToolDefinitions(
           const url = await uploadMatrixMedia(
             client,
             audio.data,
-            "语音消息.mp3",
+            "voice-message.mp3",
             audio.mediaType,
             signal,
           );
@@ -1065,7 +1065,7 @@ export function createMatrixToolDefinitions(
           ensureReady(deps);
           const content = matrixMediaMessage(
             "m.audio",
-            "语音消息.mp3",
+            "voice-message.mp3",
             url,
             audio.mediaType,
             audio.data.byteLength,

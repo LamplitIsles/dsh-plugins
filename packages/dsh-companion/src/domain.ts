@@ -405,8 +405,8 @@ export function validateIdentitySettings(
   const settings: CompanionIdentitySettings = {
     workspaceId: record.workspaceId.trim(),
     companionName: text("companionName", "Companion"),
-    userName: text("userName", "你"),
-    preferredAddress: text("preferredAddress", "你"),
+    userName: text("userName", "You"),
+    preferredAddress: text("preferredAddress", "You"),
     defaultAffinity: normalizeDefaultAffinity(record.defaultAffinity ?? 50),
   };
   if (record.companionAvatar !== undefined)

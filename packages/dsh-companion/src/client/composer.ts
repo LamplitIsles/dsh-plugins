@@ -1,3 +1,4 @@
+import { english, type CompanionTranslate } from "./locale.js";
 export interface ComposerState {
   draft: string;
   composing: boolean;
@@ -40,13 +41,15 @@ export interface ComposerCommand {
   description: string;
 }
 
-export const COMPOSER_COMMANDS: readonly ComposerCommand[] = [
-  {
-    command: "/compact",
-    label: "整理当前对话",
-    description: "整理记忆，让下一段对话自然接续",
-  },
-];
+function composerCommands(t: CompanionTranslate): readonly ComposerCommand[] {
+  return [
+    {
+      command: "/compact",
+      label: t("compact.command"),
+      description: t("compact.description"),
+    },
+  ];
+}
 
 export type ComposerEvent =
   | { type: "input"; value: string }
@@ -88,7 +91,10 @@ export function shouldSubmitEnter(
 /** Return the one Companion command that can complete the slash prefix being typed. */
 export function findComposerCommand(
   draft: string,
+  t: CompanionTranslate = english,
 ): ComposerCommand | undefined {
   if (!draft.startsWith("/") || /\s/u.test(draft)) return undefined;
-  return COMPOSER_COMMANDS.find((command) => command.command.startsWith(draft));
+  return composerCommands(t).find((command) =>
+    command.command.startsWith(draft),
+  );
 }

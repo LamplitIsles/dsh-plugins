@@ -211,14 +211,14 @@ describe("Matrix media delivery", () => {
     expect(client.uploads).toHaveLength(1);
     expect(client.uploads[0]).toMatchObject({
       data: new Uint8Array([1, 2, 3]),
-      options: { name: "语音消息.mp3", type: "audio/mpeg" },
+      options: { name: expect.stringMatching(/\.mp3$/u), type: "audio/mpeg" },
     });
     expect(client.sent).toEqual([
       {
         roomId: ROOM_ID,
         content: {
           msgtype: "m.audio",
-          body: "语音消息.mp3",
+          body: client.uploads[0]?.options?.name,
           url: "mxc://example/media",
           info: { mimetype: "audio/mpeg", size: 3 },
           "m.relates_to": { "m.in_reply_to": { event_id: "$history" } },

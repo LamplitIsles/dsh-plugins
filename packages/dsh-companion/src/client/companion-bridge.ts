@@ -1,3 +1,4 @@
+import type { CompanionTranslate } from "./locale.js";
 import type { CompanionProjection } from "../projection.js";
 import type {
   CompanionContinuitySnapshot,
@@ -58,6 +59,8 @@ export interface CompanionContinuityView {
 }
 
 export interface CompanionBridgeProps {
+  t?: CompanionTranslate;
+  locale?: string;
   projection: CompanionProjection;
   identity: CompanionIdentityView;
   scheme: "light" | "dark";

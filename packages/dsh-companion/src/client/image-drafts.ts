@@ -1,3 +1,4 @@
+import type { CompanionMessage } from "./locale.js";
 import type {
   ImageAttachmentLimits,
   ImageMediaType,
@@ -35,9 +36,9 @@ export function imageIntakeError(
   current: readonly CompanionImageDraft[],
   incoming: readonly File[],
   limits: ImageAttachmentLimits | undefined,
-): string | undefined {
+): CompanionMessage | undefined {
   if (incoming.length === 0) return undefined;
-  if (!limits) return "当前无法发送图片。";
+  if (!limits) return { key: "image.unavailable" };
   if (
     incoming.some(
       (file) =>
@@ -45,16 +46,20 @@ export function imageIntakeError(
         !limits.mediaTypes.includes(file.type as ImageMediaType),
     )
   ) {
-    return "只支持 PNG、JPEG、WebP 或 GIF。";
+    return { key: "image.types" };
   }
   if (current.length + incoming.length > limits.maxImagesPerMessage)
-    return `一次最多 ${limits.maxImagesPerMessage} 张图片。`;
+    return {
+      key: "image.countLimit",
+      params: { count: limits.maxImagesPerMessage },
+    };
   if (incoming.some((file) => file.size > limits.maxImageBytes))
-    return "图片太大了。";
+    return { key: "image.tooLarge" };
   const total =
     current.reduce((sum, image) => sum + image.file.size, 0) +
     incoming.reduce((sum, file) => sum + file.size, 0);
-  if (total > limits.maxMessageImageBytes) return "图片总大小超出限制。";
+  if (total > limits.maxMessageImageBytes)
+    return { key: "image.totalTooLarge" };
   return undefined;
 }
 

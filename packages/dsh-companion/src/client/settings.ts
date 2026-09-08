@@ -1,3 +1,10 @@
+import type { CompanionLocaleKey } from "./locale.js";
+
+export class AvatarReadError extends Error {
+  constructor(readonly key: Extract<CompanionLocaleKey, `avatar.${string}`>) {
+    super(key);
+  }
+}
 export interface ClientAvatar {
   data: string;
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
@@ -44,8 +51,8 @@ export function decodeClientSettings(
   const result: ClientSettings = {
     workspaceId: text("workspaceId", ""),
     companionName: text("companionName", "Companion"),
-    userName: text("userName", "你"),
-    preferredAddress: text("preferredAddress", "你"),
+    userName: text("userName", "You"),
+    preferredAddress: text("preferredAddress", "You"),
     defaultAffinity:
       typeof record.defaultAffinity === "number" &&
       Number.isInteger(record.defaultAffinity)
@@ -93,12 +100,12 @@ function decodeAvatar(value: unknown): ClientAvatar | undefined {
 
 export async function readAvatar(file: File): Promise<ClientAvatar> {
   if (!MEDIA_TYPES.has(file.type) || file.size > MAX_AVATAR_BYTES)
-    throw new Error("头像必须是 5 MB 以内的 PNG、JPEG、WebP 或 GIF。");
+    throw new AvatarReadError("avatar.format");
   const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () =>
       resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("头像读取失败。"));
+    reader.onerror = () => reject(new AvatarReadError("avatar.readFailed"));
     reader.readAsDataURL(file);
   });
   const dimensions = await new Promise<{ width: number; height: number }>(
@@ -110,8 +117,8 @@ export async function readAvatar(file: File): Promise<ClientAvatar> {
         image.width <= 4096 &&
         image.height <= 4096
           ? resolve({ width: image.width, height: image.height })
-          : reject(new Error("头像尺寸需要在 1 到 4096 像素之间。"));
-      image.onerror = () => reject(new Error("头像解码失败。"));
+          : reject(new AvatarReadError("avatar.dimensions"));
+      image.onerror = () => reject(new AvatarReadError("avatar.decodeFailed"));
       image.src = data;
     },
   );

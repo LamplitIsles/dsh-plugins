@@ -1,4 +1,12 @@
 <script lang="ts">
+  import {
+    english,
+    type CompanionLocaleKey,
+    type CompanionMessage,
+    type CompanionTranslate,
+  } from "./locale.js";
+  export let t: CompanionTranslate = english;
+  export let locale = "en";
   import { createEventDispatcher, onDestroy, onMount, tick } from "svelte";
   import { Camera, CameraErrorCode } from "@capacitor/camera";
   import ImagePlus from "lucide-svelte/icons/image-plus";
@@ -110,13 +118,13 @@
   };
   export let identity: CompanionIdentityView = {
     companionName: "Companion",
-    userName: "你",
-    preferredAddress: "你",
+    userName: t("you"),
+    preferredAddress: t("you"),
     signature: "",
-    moodLabel: "如常",
+    moodLabel: t("mood.neutral"),
     mood: "neutral",
     affinity: 50,
-    affinityStage: "熟悉",
+    affinityStage: t("affinity.familiar"),
   };
   export let scheme: "light" | "dark" = "light";
   export let actions: CompanionActions = { send: async () => undefined };
@@ -143,11 +151,11 @@
   const IMAGE_TILE_SIZE = 64;
   const IMAGE_MAX_LONG_EDGE = 240;
   const LONG_WAIT_MESSAGES = [
-    "我还在认真想，陪我再等一小会儿呀",
-    "正在把想说的话轻轻理好……",
-    "再给我一点点时间，很快就回来",
-    "这次想认真一点，不让你久等",
-    "我在这里，只是还在想怎么说更好",
+    "wait.thinking",
+    "wait.words",
+    "wait.soon",
+    "wait.care",
+    "wait.here",
   ] as const;
   let composer = createComposerState();
   let composerInput: HTMLTextAreaElement;
@@ -177,19 +185,19 @@
   let lightbox: ImagePreviewTarget | undefined;
   let lightboxUrl = "";
   let voiceUrls: Record<string, string> = {};
-  let voiceErrors: Record<string, string> = {};
+  let voiceErrors: Record<string, boolean> = {};
   let voicePreparing: Record<string, boolean> = {};
   let voicePlayback: Record<
     string,
     { current: number; duration: number; playing: boolean }
   > = {};
   let imageUrls: Record<string, string> = {};
-  let imageErrors: Record<string, string> = {};
+  let imageErrors: Record<string, boolean> = {};
   let imageSources: Record<string, string> = {};
   let imageLoads: Record<string, string> = {};
   let imageDimensions: Record<string, { width: number; height: number }> = {};
   let wasNearBottom = true;
-  let liveAnnouncement = "";
+  let liveAnnouncement: string | CompanionMessage = "";
   let detailReturnFocus: HTMLElement | undefined;
   let lightboxReturnFocus: HTMLElement | undefined;
   let detailPopover: HTMLElement;
@@ -199,7 +207,7 @@
   let statusText = "";
   let imageGenerationRunning = false;
   let typingVisible = false;
-  let waitingCopy = "";
+  let waitingCopy: CompanionLocaleKey | "" = "";
   let waitingCycle = "";
   let waitingDelayTimer: ReturnType<typeof setTimeout> | undefined;
   let waitingRotationTimer: ReturnType<typeof setInterval> | undefined;
@@ -223,7 +231,7 @@
   const voiceCaptureAvailable = canCaptureVoice();
   let voiceElapsedMs = 0;
   let voiceClock: ReturnType<typeof setInterval> | undefined;
-  let voiceFailure = "";
+  let voiceFailure: CompanionLocaleKey | "" = "";
   let voiceController = new VoiceRecordingController({
     onStatus: (status) => {
       voiceStatus = status;
@@ -232,8 +240,8 @@
       clearVoiceClock();
       voiceElapsedMs = 0;
       if (error.code !== "cancelled") {
-        voiceFailure = voiceErrorText(error);
-        liveAnnouncement = voiceFailure;
+        voiceFailure = voiceErrorKey(error);
+        liveAnnouncement = { key: voiceFailure };
       }
     },
   });
@@ -245,10 +253,10 @@
   $: effectiveRelationshipReadiness = relationshipReadiness;
   $: statusText =
     projection.status === "working"
-      ? "正在输入…"
+      ? t("status.typing")
       : projection.status === "reconnecting"
-        ? "连接中…"
-        : "在线";
+        ? t("status.connecting")
+        : t("status.online");
   $: imageGenerationRunning = projection.items.some(
     (item) =>
       item.kind === "image" &&
@@ -257,7 +265,7 @@
   $: typingVisible = projection.running && !imageGenerationRunning;
   $: commandSuggestion = imageDrafts.length
     ? undefined
-    : findComposerCommand(composer.draft);
+    : findComposerCommand(composer.draft, t);
   $: contextCapacity = resolveContextCapacity(continuity?.contextPressure);
   $: latestContinuityLifecycle = latestLifecycle(continuity?.lifecycle);
   $: syncContinuityStatus(latestContinuityLifecycle);
@@ -370,17 +378,21 @@
     return voice ? `voice-${voice.id}` : `message-${unit.id}`;
   }
 
-  function messengerRecoveryText(value: string, operation?: string): string {
-    if (operation === "stop") return "暂时停不下来，请再试一次。";
-    if (operation === "send") return "这条消息没发出去，可以再试一次。";
+  function messengerRecoveryMessage(
+    value: string,
+    operation?: string,
+  ): string | CompanionMessage {
+    if (operation === "stop") return { key: "error.stop" };
+    if (operation === "send") return { key: "error.send" };
     return value;
   }
 
-  function noticeText(item: TimelineNotice): string {
-    return messengerRecoveryText(
-      item.text,
-      item.id === "prompt-error" ? projection.promptErrorOp : undefined,
-    );
+  function noticeText(item: TimelineNotice, t: CompanionTranslate): string {
+    if (item.id === "prompt-error")
+      return t(
+        projection.promptErrorOp === "stop" ? "error.stop" : "error.send",
+      );
+    return item.text;
   }
 
   function releaseDeferredPreviewReleases(): void {
@@ -454,7 +466,7 @@
       };
       imageDrafts = [...imageDrafts, ...images];
       void scheduleComposerResize();
-      liveAnnouncement = "没有发出去，内容已放回输入框。";
+      liveAnnouncement = { key: "error.restored" };
       return;
     }
     // A rejection from a Session that is no longer selected cannot be
@@ -636,7 +648,7 @@
     }
     wasNearBottom = nearBottom;
     liveAnnouncement = value.promptError
-      ? messengerRecoveryText(value.promptError, value.promptErrorOp)
+      ? messengerRecoveryMessage(value.promptError, value.promptErrorOp)
       : (value.lastAgentError ?? "");
     const wantedImages = new Map<string, TimelineImage>();
     for (const item of value.items)
@@ -719,7 +731,7 @@
         (candidate) => candidate.kind === "image" && candidate.id === item.id,
       ) as TimelineImage | undefined;
       if (live && imageSource(live) === source)
-        imageErrors = { ...imageErrors, [item.id]: "图片暂时无法显示。" };
+        imageErrors = { ...imageErrors, [item.id]: true };
     } finally {
       const loads = { ...imageLoads };
       delete loads[item.id];
@@ -751,7 +763,7 @@
     } catch {
       voiceErrors = {
         ...voiceErrors,
-        [item.id]: "语音暂时无法播放，文字内容仍可查看。",
+        [item.id]: true,
       };
     } finally {
       const next = { ...voicePreparing };
@@ -864,7 +876,7 @@
     voiceUrls = nextUrls;
     voiceErrors = {
       ...voiceErrors,
-      [id]: "语音暂时无法播放，文字内容仍可查看。",
+      [id]: true,
     };
   }
 
@@ -994,8 +1006,8 @@
         }
         liveAnnouncement =
           error instanceof Error && error.message === "compact-with-images"
-            ? "整理时请先移除图片。"
-            : "没有发出去，内容已放回输入框。";
+            ? { key: "error.compactImages" }
+            : { key: "error.restored" };
       });
   }
 
@@ -1007,29 +1019,22 @@
     return `${minutes}:${(seconds % 60).toString().padStart(2, "0")}`;
   }
 
-  function voiceErrorText(error: unknown): string {
+  function voiceErrorKey(error: unknown): CompanionLocaleKey {
     if (error instanceof VoiceRecordingError) {
-      if (error.code === "insecure-context")
-        return "请在安全连接中使用麦克风。";
+      if (error.code === "insecure-context") return "voice.secure";
       if (error.code === "unsupported" || error.code === "media-type")
-        return "当前浏览器不支持录音。";
-      if (error.code === "permission-denied")
-        return "麦克风权限被拒绝，请允许后重试。";
-      if (error.code === "duration-limit")
-        return "录音最长 5 分钟，已停止；请说短一点再试。";
-      if (error.code === "size-limit")
-        return "录音超过语音大小限制，请说短一点再试。";
-      if (error.code === "empty") return "没有录到声音，请再试一次。";
-      if (error.code === "transcript-empty")
-        return "没有听清内容，请再试一次。";
+        return "voice.unsupported";
+      if (error.code === "permission-denied") return "voice.permission";
+      if (error.code === "duration-limit") return "voice.duration";
+      if (error.code === "size-limit") return "voice.size";
+      if (error.code === "empty") return "voice.empty";
+      if (error.code === "transcript-empty") return "voice.unclear";
     }
-    return "语音暂时无法使用，请再试一次。";
+    return "voice.failed";
   }
 
-  function voiceUnavailableText(): string {
-    return voiceCaptureAvailable
-      ? "语音功能不可用，请安装并配置 DSH Speech。"
-      : "当前环境不支持麦克风录音。";
+  function voiceUnavailableText(t: CompanionTranslate): string {
+    return voiceCaptureAvailable ? t("voice.install") : t("voice.unavailable");
   }
 
   function clearVoiceClock(): void {
@@ -1056,8 +1061,8 @@
     try {
       recording = await voiceController.stopAndGet();
     } catch (error) {
-      voiceFailure = voiceErrorText(error);
-      liveAnnouncement = voiceFailure;
+      voiceFailure = voiceErrorKey(error);
+      liveAnnouncement = { key: voiceFailure };
       voiceElapsedMs = 0;
       return;
     }
@@ -1081,10 +1086,10 @@
       const text = formatVoiceTurn(transcription);
       await actions.send(text, []);
       if (abort.signal.aborted || sessionId !== originSessionId) return;
-      liveAnnouncement = "语音已发送。";
+      liveAnnouncement = { key: "voice.sent" };
     } catch (error) {
-      voiceFailure = voiceErrorText(error);
-      liveAnnouncement = voiceFailure;
+      voiceFailure = voiceErrorKey(error);
+      liveAnnouncement = { key: voiceFailure };
     } finally {
       if (voiceTranscriptionAbort === abort)
         voiceTranscriptionAbort = undefined;
@@ -1099,7 +1104,7 @@
     }
     if (voiceStatus === "transcribing") return;
     if (voiceCapability === "loading") {
-      liveAnnouncement = "语音功能正在准备，请稍候。";
+      liveAnnouncement = { key: "voice.wait" };
       return;
     }
     if (
@@ -1107,7 +1112,9 @@
       !actions.transcribeVoice ||
       !voiceCaptureAvailable
     ) {
-      liveAnnouncement = voiceUnavailableText();
+      liveAnnouncement = {
+        key: voiceCaptureAvailable ? "voice.install" : "voice.unavailable",
+      };
       return;
     }
     voiceElapsedMs = 0;
@@ -1120,8 +1127,8 @@
       }, 250);
     } catch (error) {
       clearVoiceClock();
-      voiceFailure = voiceErrorText(error);
-      liveAnnouncement = voiceFailure;
+      voiceFailure = voiceErrorKey(error);
+      liveAnnouncement = { key: voiceFailure };
     }
   }
 
@@ -1131,7 +1138,7 @@
     try {
       await actions.stop();
     } catch {
-      liveAnnouncement = "暂时停不下来，请再试一次。";
+      liveAnnouncement = { key: "error.stop" };
     } finally {
       stopping = false;
     }
@@ -1220,7 +1227,8 @@
       });
       addImages([await imageFileFromCapturedMedia(result)]);
     } catch (error) {
-      if (!isCameraCancellation(error)) liveAnnouncement = "拍照失败，请重试。";
+      if (!isCameraCancellation(error))
+        liveAnnouncement = { key: "camera.failed" };
     }
   }
 
@@ -1253,16 +1261,16 @@
     }
     photoLibraryInput?.click();
   }
-  function formatSessionDate(value: number): string {
+  function formatSessionDate(value: number, locale: string): string {
     if (!Number.isFinite(value)) return "";
     const date = new Date(value);
     const today = new Date();
     if (date.toDateString() === today.toDateString())
-      return date.toLocaleTimeString("zh-CN", {
+      return date.toLocaleTimeString(locale, {
         hour: "2-digit",
         minute: "2-digit",
       });
-    return date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+    return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
   }
   async function selectSession(sessionId: string): Promise<void> {
     if (!actions.selectSession) return;
@@ -1426,7 +1434,7 @@
     pushOverlayHistory();
     openLightbox({
       id: item.id,
-      alt: item.alt,
+      alt: item.alt || t("image.preview"),
       previewUrl: item.previewUrl ?? imageUrls[item.id],
     });
   }
@@ -1434,7 +1442,7 @@
     pushOverlayHistory();
     openLightbox({
       id: `draft:${draft.id}`,
-      alt: draft.file.name || "待发送图片",
+      alt: draft.file.name || t("image.pending"),
       previewUrl: draft.previewUrl,
     });
   }
@@ -1495,14 +1503,16 @@
       type="checkbox"
       bind:checked={sidebarOpen}
       on:change={onSidebarChange}
-      aria-label="显示对话列表"
+      aria-label={t("sidebar.show")}
     />
     <div class="cmp-drawer-content companion-content">
-      <main class="companion-main" aria-label="Companion 私聊">
+      <main class="companion-main" aria-label={t("chat.label")}>
         <header class="companion-header">
           <button
             class="cmp-btn cmp-btn-ghost cmp-btn-circle companion-session-toggle"
-            aria-label={sidebarOpen ? "收起对话列表" : "展开对话列表"}
+            aria-label={sidebarOpen
+              ? t("sidebar.collapse")
+              : t("sidebar.expand")}
             aria-controls="companion-session-list"
             aria-expanded={sidebarOpen}
             on:click={toggleSidebar}><span aria-hidden="true">☰</span></button
@@ -1510,7 +1520,7 @@
           <div bind:this={detailAnchor} class="companion-avatar-anchor">
             <button
               class="cmp-avatar cmp-avatar-placeholder companion-avatar"
-              aria-label="查看 Companion 关系资料"
+              aria-label={t("relationship.view")}
               aria-expanded={detailOpen}
               on:click={toggleDetail}
             >
@@ -1528,7 +1538,9 @@
                 popover="auto"
                 class="cmp-card companion-detail-card"
                 role="dialog"
-                aria-label={`${identity.companionName}的关系资料`}
+                aria-label={t("relationship.named", {
+                  name: identity.companionName,
+                })}
                 style={`--relationship-art: url("${relationshipBackground}")`}
                 on:toggle={onDetailToggle}
               >
@@ -1558,22 +1570,22 @@
                     </div>
                     <button
                       class="cmp-btn cmp-btn-ghost cmp-btn-circle cmp-btn-sm companion-detail-close"
-                      aria-label="关闭关系资料"
+                      aria-label={t("relationship.close")}
                       on:click={() => closeDetail()}>×</button
                     >
                   </div>
                   <p class="companion-signature">
-                    {identity.signature || "还没有签名"}
+                    {identity.signature || t("signature.empty")}
                   </p>
                   <dl class="companion-relationship-list">
-                    <dt>此刻状态</dt>
+                    <dt>{t("mood.label")}</dt>
                     <dd>{identity.moodLabel}</dd>
-                    {#if identity.moodNote}<dt>状态短句</dt>
+                    {#if identity.moodNote}<dt>{t("mood.note")}</dt>
                       <dd>{identity.moodNote}</dd>{/if}
-                    <dt>亲近度</dt>
+                    <dt>{t("affinity.label")}</dt>
                     <dd>
                       {identity.affinity === undefined
-                        ? "加载中…"
+                        ? t("loading")
                         : `${identity.affinity} · ${identity.affinityStage}`}
                     </dd>
                   </dl>
@@ -1596,14 +1608,14 @@
           <a
             class="cmp-btn cmp-btn-ghost companion-full-dsh"
             href="/"
-            aria-label="打开完整 DSH"
-            title="打开完整 DSH"
+            aria-label={t("dsh.open")}
+            title={t("dsh.open")}
             on:click={() => dispatch("advanced")}
             ><PanelsTopLeft
               size={18}
               strokeWidth={1.8}
               aria-hidden="true"
-            /><span class="companion-full-dsh-label">更多功能</span></a
+            /><span class="companion-full-dsh-label">{t("dsh.more")}</span></a
           >
         </header>
 
@@ -1611,12 +1623,12 @@
           <section
             class="companion-loading-shell"
             role="status"
-            aria-label="正在加载"
+            aria-label={t("loading.label")}
           >
             <span
               class="cmp-loading cmp-loading-spinner cmp-loading-sm"
               aria-hidden="true"
-            ></span><span>正在加载…</span>
+            ></span><span>{t("loading.progress")}</span>
           </section>
         {:else if effectiveWorkspaceReadiness === "missing"}
           <section class="companion-recovery" role="alert">
@@ -1624,13 +1636,13 @@
               class="companion-mood-orb cmp-mask cmp-mask-circle"
               aria-hidden="true"
             ></div>
-            <h1>还没有设置聊天空间</h1>
-            <p>请在 DSH 设置中选择一个 Workspace。我们不会替你自动切换。</p>
+            <h1>{t("workspace.empty")}</h1>
+            <p>{t("workspace.chooseHint")}</p>
             <a
               class="cmp-btn cmp-btn-primary"
               href="/"
-              aria-label="去 DSH 设置选择聊天空间"
-              on:click={() => dispatch("recovery")}>去设置</a
+              aria-label={t("workspace.settingsLabel")}
+              on:click={() => dispatch("recovery")}>{t("settings.open")}</a
             >
           </section>
         {:else if effectiveWorkspaceReadiness === "error"}
@@ -1639,23 +1651,23 @@
               class="companion-mood-orb cmp-mask cmp-mask-circle"
               aria-hidden="true"
             ></div>
-            <h1>聊天空间暂时打不开</h1>
-            <p>请回到 DSH 设置检查连接，然后再试一次。</p>
+            <h1>{t("workspace.failed")}</h1>
+            <p>{t("workspace.reconnectHint")}</p>
             <button
               class="cmp-btn cmp-btn-primary"
-              on:click={() => dispatch("recovery")}>重新连接</button
+              on:click={() => dispatch("recovery")}>{t("reconnect")}</button
             >
           </section>
         {:else if effectiveRelationshipReadiness === "loading"}
           <section
             class="companion-loading-shell"
             role="status"
-            aria-label="正在加载"
+            aria-label={t("loading.label")}
           >
             <span
               class="cmp-loading cmp-loading-spinner cmp-loading-sm"
               aria-hidden="true"
-            ></span><span>正在加载…</span>
+            ></span><span>{t("loading.progress")}</span>
           </section>
         {:else if effectiveRelationshipReadiness === "missing"}
           <section class="companion-recovery" role="alert">
@@ -1663,13 +1675,13 @@
               class="companion-mood-orb cmp-mask cmp-mask-circle"
               aria-hidden="true"
             ></div>
-            <h1>还没有设置聊天空间</h1>
-            <p>请在 DSH 设置中选择一个 Workspace。我们不会替你自动切换。</p>
+            <h1>{t("workspace.empty")}</h1>
+            <p>{t("workspace.chooseHint")}</p>
             <a
               class="cmp-btn cmp-btn-primary"
               href="/"
-              aria-label="去 DSH 设置选择聊天空间"
-              on:click={() => dispatch("recovery")}>去设置</a
+              aria-label={t("workspace.settingsLabel")}
+              on:click={() => dispatch("recovery")}>{t("settings.open")}</a
             >
           </section>
         {:else if effectiveRelationshipReadiness === "error"}
@@ -1678,23 +1690,23 @@
               class="companion-mood-orb cmp-mask cmp-mask-circle"
               aria-hidden="true"
             ></div>
-            <h1>关系资料暂时打不开</h1>
-            <p>聊天空间还在，连接恢复后可以继续。</p>
+            <h1>{t("relationship.failed")}</h1>
+            <p>{t("relationship.reconnectHint")}</p>
             <button
               class="cmp-btn cmp-btn-primary"
-              on:click={() => dispatch("recovery")}>重新连接</button
+              on:click={() => dispatch("recovery")}>{t("reconnect")}</button
             >
           </section>
         {:else if effectiveSessionReadiness === "loading"}
           <section
             class="companion-loading-shell"
             role="status"
-            aria-label="正在加载"
+            aria-label={t("loading.label")}
           >
             <span
               class="cmp-loading cmp-loading-spinner cmp-loading-sm"
               aria-hidden="true"
-            ></span><span>正在加载…</span>
+            ></span><span>{t("loading.progress")}</span>
           </section>
         {:else if effectiveSessionReadiness === "error" || projection.openState === "error"}
           <section class="companion-recovery" role="alert">
@@ -1702,13 +1714,13 @@
               class="companion-mood-orb cmp-mask cmp-mask-circle"
               aria-hidden="true"
             ></div>
-            <h1>这段对话暂时打不开</h1>
+            <h1>{t("session.failed")}</h1>
             <p>
-              你的消息不会被悄悄丢掉。连接恢复后可以继续，或回到 DSH 检查状态。
+              {t("session.reconnectHint")}
             </p>
             <button
               class="cmp-btn cmp-btn-primary"
-              on:click={() => dispatch("recovery")}>重新连接</button
+              on:click={() => dispatch("recovery")}>{t("reconnect")}</button
             >
           </section>
         {:else}
@@ -1729,8 +1741,8 @@
                   on:click={loadOlder}
                   disabled={displayedProjection.loadingOlder}
                   >{displayedProjection.loadingOlder
-                    ? "正在加载…"
-                    : "查看更早的消息"}</button
+                    ? t("loading.progress")
+                    : t("history.older")}</button
                 >
               {/if}
               {#if displayedProjection.items.length === 0}
@@ -1739,8 +1751,10 @@
                     class="companion-mood-orb cmp-mask cmp-mask-circle"
                     aria-hidden="true"
                   ></div>
-                  <h1>嗨，{identity.preferredAddress}</h1>
-                  <p>今天想聊点什么？</p>
+                  <h1>
+                    {t("welcome.greeting", { name: identity.preferredAddress })}
+                  </h1>
+                  <p>{t("welcome.prompt")}</p>
                 </div>
               {/if}
               {#each displayedProjection.messageUnits as unit (unit.id)}
@@ -1751,14 +1765,14 @@
                     data-testid={`continuity-record-${first.compactionId}`}
                     aria-live="off"
                   >
-                    {first.text}
+                    {t("compact.record")}
                   </div>
                 {:else if first?.kind === "notice"}
                   <div
                     class="companion-recovery"
                     role={first.tone === "error" ? "alert" : "status"}
                   >
-                    <p>{noticeText(first)}</p>
+                    <p>{noticeText(first, t)}</p>
                   </div>
                 {:else}
                   {@const parts = messageContentParts(unit)}
@@ -1783,7 +1797,7 @@
                             src={identity.userAvatar}
                             alt=""
                           />{:else}<span aria-hidden="true"
-                            >{unit.side === "incoming" ? "✦" : "你"}</span
+                            >{unit.side === "incoming" ? "✦" : t("you")}</span
                           >{/if}
                       </div>
                     </div>
@@ -1819,17 +1833,19 @@
                                       class="companion-media-status"
                                       role="status"
                                     >
-                                      正在画一张图…
+                                      {t("image.generating")}
                                     </div>
                                   {:else if image.previewUrl || imageUrls[image.id]}
                                     <button
                                       class="companion-media-button"
-                                      aria-label={"查看大图：" + image.alt}
+                                      aria-label={t("image.view", {
+                                        name: image.alt || t("image.preview"),
+                                      })}
                                       on:click={() => showLightbox(image)}
                                       ><img
                                         src={image.previewUrl ??
                                           imageUrls[image.id]}
-                                        alt={image.alt}
+                                        alt={image.alt || t("image.preview")}
                                         style={imageStyle(
                                           image,
                                           part.items.length > 1,
@@ -1847,12 +1863,11 @@
                                         part.items.length > 1,
                                       )}
                                     >
-                                      <span>{imageErrors[image.id]}</span
-                                      ><button
+                                      <span>{t("error.image")}</span><button
                                         class="cmp-btn cmp-btn-ghost cmp-btn-sm"
                                         type="button"
                                         on:click={() => retryImage(image)}
-                                        >重试</button
+                                        >{t("retry")}</button
                                       >
                                     </div>
                                   {:else if image.state === "failed"}
@@ -1864,16 +1879,13 @@
                                         part.items.length > 1,
                                       )}
                                     >
-                                      <span
-                                        >{image.error ||
-                                          "图片生成没有完成。"}</span
-                                      >
+                                      <span>{t("image.failed")}</span>
                                     </div>
                                   {:else}
                                     <div
                                       class="cmp-loading cmp-loading-spinner companion-media-spinner"
                                       role="status"
-                                      aria-label="正在加载…"
+                                      aria-label={t("loading.progress")}
                                     ></div>
                                   {/if}
                                 </div>
@@ -1891,7 +1903,7 @@
                           {#if part.item.pending && part.item.waitsForCurrentReply}<div
                               class="companion-meta"
                             >
-                              等当前回复结束后发送
+                              {t("queue.wait")}
                             </div>{/if}
                         {:else}
                           {@const item = part.item}
@@ -1900,7 +1912,7 @@
                           <div
                             class="cmp-chat-bubble companion-bubble companion-voice"
                             role="region"
-                            aria-label="语音播放器"
+                            aria-label={t("voice.player")}
                           >
                             {#if voiceUrls[item.id]}
                               <audio
@@ -1914,8 +1926,8 @@
                               <button
                                 class="cmp-btn cmp-btn-ghost cmp-btn-circle companion-voice-control"
                                 aria-label={playback.playing
-                                  ? "暂停语音"
-                                  : "播放语音"}
+                                  ? t("voice.pause")
+                                  : t("voice.play")}
                                 on:click={(event) =>
                                   void toggleVoice(item, event.currentTarget)}
                               >
@@ -1946,10 +1958,10 @@
                                     step="0.1"
                                     value={playback.current}
                                     disabled={!hasVoiceDuration(playback)}
-                                    aria-label="语音进度"
+                                    aria-label={t("voice.progress")}
                                     aria-valuetext={hasVoiceDuration(playback)
                                       ? `${formatVoiceSeconds(playback.current)} / ${formatVoiceSeconds(playback.duration, "ceil")}`
-                                      : "正在加载…"}
+                                      : t("loading.progress")}
                                     on:input={(event) =>
                                       seekVoice(event, item.id)}
                                   />
@@ -1959,9 +1971,10 @@
                                       role="timer"
                                       aria-live="off"
                                       >{voiceTimestamp(playback)}</span
-                                    >{:else}<span role="status">正在加载…</span
+                                    >{:else}<span role="status"
+                                      >{t("loading.progress")}</span
                                     >{/if}{#if voiceErrors[item.id]}<span
-                                      role="alert">播放失败</span
+                                      role="alert">{t("voice.playFailed")}</span
                                     >{/if}
                                 </div>
                               </div>
@@ -1969,10 +1982,10 @@
                               <button
                                 class="cmp-btn cmp-btn-ghost cmp-btn-circle companion-voice-control"
                                 aria-label={voicePreparing[item.id]
-                                  ? "正在准备语音"
+                                  ? t("voice.preparing")
                                   : voiceErrors[item.id]
-                                    ? "重试语音"
-                                    : "播放语音"}
+                                    ? t("voice.retry")
+                                    : t("voice.play")}
                                 on:click={(event) =>
                                   void toggleVoice(item, event.currentTarget)}
                                 disabled={!actions.prepareVoice ||
@@ -2000,10 +2013,12 @@
                                 </div>
                                 <div class="companion-voice-meta">
                                   {#if voicePreparing[item.id]}<span
-                                      role="status">正在加载…</span
+                                      role="status"
+                                      >{t("loading.progress")}</span
                                     >{:else if voiceErrors[item.id]}<span
-                                      role="alert">播放失败</span
-                                    >{:else}<span role="status">正在加载…</span
+                                      role="alert">{t("voice.playFailed")}</span
+                                    >{:else}<span role="status"
+                                      >{t("loading.progress")}</span
                                     >{/if}
                                 </div>
                               </div>
@@ -2016,7 +2031,7 @@
                                 ><MessageSquareText
                                   size={14}
                                   aria-hidden="true"
-                                /><span>转文字</span></summary
+                                /><span>{t("voice.transcript")}</span></summary
                               >
                               <p>{item.text}</p>
                             </details>
@@ -2032,7 +2047,9 @@
                   class="cmp-chat cmp-chat-start companion-row incoming"
                   data-testid="companion-typing-indicator"
                   role="status"
-                  aria-label={`${identity.companionName}正在输入`}
+                  aria-label={t("status.namedTyping", {
+                    name: identity.companionName,
+                  })}
                 >
                   <div
                     class="cmp-chat-image cmp-avatar cmp-avatar-placeholder message-avatar"
@@ -2051,7 +2068,8 @@
                       class="cmp-loading cmp-loading-dots cmp-loading-sm"
                       aria-hidden="true"
                     ></span>{#if waitingCopy}<span
-                        class="companion-waiting-copy">{waitingCopy}</span
+                        class="companion-waiting-copy"
+                        >{waitingCopy ? t(waitingCopy) : ""}</span
                       >{/if}
                   </div>
                 </article>
@@ -2060,7 +2078,7 @@
                   class="cmp-btn cmp-btn-primary cmp-btn-sm companion-new-message"
                   style="position:sticky;bottom:10px;left:50%;transform:translateX(-50%)"
                   on:click={() => (timeline.scrollTop = timeline.scrollHeight)}
-                  >有新消息 ↓</button
+                  >{t("messages.new")}</button
                 >{/if}
             </div>
           </div>
@@ -2070,7 +2088,7 @@
                 id="companion-command-suggestions"
                 class="companion-command-suggestions"
                 role="listbox"
-                aria-label="命令补全"
+                aria-label={t("command.label")}
               >
                 <button
                   id="companion-command-compact"
@@ -2100,32 +2118,37 @@
                 role={continuityStatus.status === "failed" ? "alert" : "status"}
                 aria-live="polite"
               >
-                {#if continuityStatus.status === "running"}正在整理记忆…{:else if continuityStatus.status === "failed"}本次整理未完成，仍可继续对话{:else}整理记忆已完成{/if}
+                {#if continuityStatus.status === "running"}{t(
+                    "compact.running",
+                  )}{:else if continuityStatus.status === "failed"}{t(
+                    "compact.failed",
+                  )}{:else}{t("compact.done")}{/if}
               </div>
             {/if}
             {#if imageDrafts.length > 0}
               <div
                 class="companion-image-drafts"
                 role="group"
-                aria-label="待发送图片"
+                aria-label={t("image.pending")}
               >
                 {#each imageDrafts as draft (draft.id)}
                   <div class="companion-image-draft">
                     <button
                       class="companion-image-draft-preview"
                       type="button"
-                      aria-label={"查看大图：" +
-                        (draft.file.name || "待发送图片")}
+                      aria-label={t("image.view", {
+                        name: draft.file.name || t("image.pending"),
+                      })}
                       on:click={() => showDraftLightbox(draft)}
                       ><img
                         src={draft.previewUrl}
-                        alt={draft.file.name || "待发送图片"}
+                        alt={draft.file.name || t("image.pending")}
                       /></button
                     >
                     <button
                       class="cmp-btn cmp-btn-neutral cmp-btn-circle cmp-btn-xs companion-image-draft-remove"
                       type="button"
-                      aria-label="移除图片"
+                      aria-label={t("image.remove")}
                       on:click={() => removeImage(draft)}
                       ><X
                         size={13}
@@ -2152,8 +2175,8 @@
               <button
                 class="cmp-btn cmp-btn-ghost cmp-btn-circle companion-attach"
                 type="button"
-                aria-label="选择照片；长按拍照"
-                title="选择照片；长按拍照"
+                aria-label={t("image.choose")}
+                title={t("image.choose")}
                 disabled={!imageLimits}
                 on:pointerdown={onImagePickerPointerDown}
                 on:pointerup={onImagePickerPointerUp}
@@ -2169,12 +2192,14 @@
               <textarea
                 bind:this={composerInput}
                 class="companion-textarea"
-                aria-label="写消息"
+                aria-label={t("composer.label")}
                 aria-autocomplete={commandSuggestion ? "list" : undefined}
                 aria-controls={commandSuggestion
                   ? "companion-command-suggestions"
                   : undefined}
-                placeholder={"写给 " + identity.companionName + "…"}
+                placeholder={t("composer.placeholder", {
+                  name: identity.companionName,
+                })}
                 rows="1"
                 value={composer.draft}
                 on:input={onInput}
@@ -2190,19 +2215,19 @@
                 type="button"
                 data-state={voiceStatus}
                 aria-label={voiceStatus === "recording"
-                  ? "结束录音"
+                  ? t("voice.stop")
                   : voiceStatus === "transcribing"
-                    ? "正在转写语音"
+                    ? t("voice.transcribing")
                     : voiceCapability === "loading"
-                      ? "正在准备语音"
+                      ? t("voice.preparing")
                       : voiceCapability === "available" && voiceCaptureAvailable
-                        ? "开始录音"
-                        : "麦克风录音不可用"}
+                        ? t("voice.start")
+                        : t("voice.micUnavailable")}
                 title={voiceStatus === "recording"
-                  ? "结束录音"
+                  ? t("voice.stop")
                   : voiceCapability === "available" && voiceCaptureAvailable
-                    ? "开始录音"
-                    : voiceUnavailableText()}
+                    ? t("voice.start")
+                    : voiceUnavailableText(t)}
                 disabled={voiceStatus === "stopping" ||
                   voiceStatus === "transcribing" ||
                   voiceCapability !== "available" ||
@@ -2235,7 +2260,9 @@
                             ? "warning"
                             : "idle"}
                     type="button"
-                    aria-label={`对话容量：${contextCapacity.percentage}%`}
+                    aria-label={t("context.percentage", {
+                      percentage: contextCapacity.percentage,
+                    })}
                     aria-expanded={contextMeterOpen}
                     aria-controls="companion-context-popover"
                     on:click={toggleContextMeter}
@@ -2265,7 +2292,9 @@
                       aria-labelledby="companion-context-popover-title"
                       tabindex="-1"
                     >
-                      <h2 id="companion-context-popover-title">对话容量</h2>
+                      <h2 id="companion-context-popover-title">
+                        {t("context.label")}
+                      </h2>
                       <p class="companion-context-percent">
                         {contextCapacity.percentage}%
                       </p>
@@ -2281,7 +2310,7 @@
               {#if projection.running && !composer.draft.trim() && imageDrafts.length === 0}
                 <button
                   class="cmp-btn cmp-btn-primary cmp-btn-circle companion-send"
-                  aria-label="停止当前回复"
+                  aria-label={t("reply.stop")}
                   on:click={() => void stop()}
                   disabled={!actions.stop || stopping}
                   ><Square
@@ -2293,7 +2322,7 @@
               {:else}
                 <button
                   class="cmp-btn cmp-btn-primary cmp-btn-circle companion-send"
-                  aria-label="发送消息"
+                  aria-label={t("message.send")}
                   on:click={submit}
                   disabled={!composer.draft.trim() && imageDrafts.length === 0}
                   ><span aria-hidden="true">↑</span></button
@@ -2308,8 +2337,10 @@
                 aria-live="polite"
               >
                 {voiceStatus === "stopping"
-                  ? "正在结束录音…"
-                  : `正在录音 · ${formatVoiceElapsed(voiceElapsedMs)} / 05:00`}
+                  ? t("voice.stopping")
+                  : t("voice.recording", {
+                      elapsed: formatVoiceElapsed(voiceElapsedMs),
+                    })}
               </div>
             {:else if voiceStatus === "transcribing"}
               <div
@@ -2318,7 +2349,7 @@
                 role="status"
                 aria-live="polite"
               >
-                正在转写语音…
+                {t("voice.transcribingProgress")}
               </div>
             {:else if voiceCapability === "unavailable" || !voiceCaptureAvailable}
               <div
@@ -2326,7 +2357,7 @@
                 data-testid="companion-voice-unavailable-status"
                 role="status"
               >
-                {voiceUnavailableText()}
+                {voiceUnavailableText(t)}
               </div>
             {:else if voiceFailure || voiceStatus === "unavailable"}
               <div
@@ -2334,12 +2365,12 @@
                 data-testid="companion-voice-error-status"
                 role="status"
               >
-                {voiceFailure || "语音暂时无法使用，请再试一次。"}
+                {t(voiceFailure || "voice.failed")}
               </div>
             {/if}
             <div class="companion-compose-hint">
-              Enter 发送 · Shift+Enter 换行{displayedProjection.pendingCount
-                ? ` · ${displayedProjection.pendingCount} 条待发送`
+              {t("composer.shortcut")}{displayedProjection.pendingCount
+                ? t("queue.count", { count: displayedProjection.pendingCount })
                 : ""}
             </div>
           </div>
@@ -2350,23 +2381,23 @@
       <label
         for="companion-session-drawer"
         class="cmp-drawer-overlay companion-sidebar-overlay"
-        aria-label="关闭对话列表"
+        aria-label={t("sidebar.close")}
       ></label>
       <aside
         id="companion-session-list"
         class="companion-sidebar"
-        aria-label="对话列表"
+        aria-label={t("sidebar.label")}
       >
         <div class="companion-sidebar-head">
           <div>
             <span class="companion-sidebar-eyebrow"
               >{identity.companionName}</span
             >
-            <h2>我们的对话</h2>
+            <h2>{t("sidebar.title")}</h2>
           </div>
           <button
             class="cmp-btn cmp-btn-ghost cmp-btn-circle cmp-btn-sm"
-            aria-label="关闭侧栏"
+            aria-label={t("sidebar.closePanel")}
             on:click={() => setSidebarOpen(false)}>‹</button
           >
         </div>
@@ -2375,30 +2406,30 @@
             <button
               class="companion-session-item"
               class:selected={session.selected}
-              aria-label={`切换到对话：${session.title}`}
+              aria-label={t("session.switch", { title: session.title })}
               aria-current={session.selected ? "true" : undefined}
               on:click={() => void selectSession(session.id)}
             >
               <span class="companion-session-copy"
                 ><strong>{session.title}</strong><small
-                  >{formatSessionDate(session.updatedAt)}</small
+                  >{formatSessionDate(session.updatedAt, locale)}</small
                 ></span
               >
               {#if session.running}<span
                   class="cmp-status cmp-status-secondary"
-                  aria-label="正在回复"
+                  aria-label={t("reply.running")}
                 ></span>{/if}
             </button>
           {/each}
           {#if sessions.length === 0}<p class="companion-session-empty">
-              还没有可以继续的对话
+              {t("session.none")}
             </p>{/if}
         </nav>
         <a
           class="companion-sidebar-advanced"
           href="/"
-          aria-label="打开完整 DSH"
-          on:click={() => dispatch("advanced")}>更多功能</a
+          aria-label={t("dsh.open")}
+          on:click={() => dispatch("advanced")}>{t("dsh.more")}</a
         >
       </aside>
     </div>
@@ -2408,17 +2439,18 @@
       bind:this={lightboxDialog}
       id="companion-image-lightbox"
       class="cmp-modal companion-lightbox"
-      aria-label="图片预览"
+      aria-label={t("image.preview")}
       on:close={onLightboxClose}
     >
       <div class="cmp-modal-box companion-lightbox-dialog">
-        {#if lightboxUrl}<img src={lightboxUrl} alt="预览图片" />{:else}<div
-            class="cmp-loading cmp-loading-spinner"
-          ></div>{/if}
+        {#if lightboxUrl}<img
+            src={lightboxUrl}
+            alt={t("image.previewAlt")}
+          />{:else}<div class="cmp-loading cmp-loading-spinner"></div>{/if}
       </div>
       <button
         class="cmp-btn cmp-btn-circle companion-lightbox-close"
-        aria-label="关闭大图"
+        aria-label={t("image.close")}
         on:click={() => closeLightbox()}
         ><X size={16} strokeWidth={2} aria-hidden="true" /></button
       >
@@ -2426,9 +2458,15 @@
         method="dialog"
         class="cmp-modal-backdrop companion-lightbox-backdrop"
       >
-        <button type="submit" aria-label="关闭图片预览背景">关闭</button>
+        <button type="submit" aria-label={t("image.closeBackdrop")}
+          >{t("close")}</button
+        >
       </form>
     </dialog>
   {/if}
 </div>
-<div class="companion-sr-only" aria-live="assertive">{liveAnnouncement}</div>
+<div class="companion-sr-only" aria-live="assertive">
+  {typeof liveAnnouncement === "string"
+    ? liveAnnouncement
+    : t(liveAnnouncement.key, liveAnnouncement.params)}
+</div>
