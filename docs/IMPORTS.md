@@ -36,3 +36,8 @@ metadata points to its public GitHub mirror for npm provenance:
 
 `packages/dsh-tabletop` (`@lamplitisles/dsh-tabletop`) was authored directly in
 this workspace; it has no imported source snapshot.
+
+`packages/dsh-codex-code-mode` (`@lamplitisles/dsh-codex-code-mode`) was also
+authored directly in this workspace. Its provider seam is a minimal wrapper
+around the published `@earendil-works/pi-ai@0.84.4` Codex Responses API and
+the DSH `0.1.2-rc.1` Host contracts; no external source snapshot was copied.

@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-codex-code-mode
+      name: "@lamplitisles/dsh-codex-code-mode"
+      inject: [llm, credentials, settings, sessions]

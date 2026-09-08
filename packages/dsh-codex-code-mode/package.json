@@ -1,0 +1,74 @@
+{
+  "name": "@lamplitisles/dsh-codex-code-mode",
+  "version": "0.1.0",
+  "description": "Opt-in Codex freeform code-mode routing to DeepSeek Harness PTC",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LamplitIsles/dsh-plugins.git",
+    "directory": "packages/dsh-codex-code-mode"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-credentials": "catalog:",
+    "@deepseek-ai/dsh-llm": "catalog:",
+    "@deepseek-ai/dsh-llm-pi-ai": "catalog:",
+    "@deepseek-ai/dsh-session": "catalog:",
+    "@deepseek-ai/dsh-settings": "catalog:",
+    "@deepseek-ai/schemastery": "catalog:"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsdown",
+    "pack-smoke": "tsx scripts/pack-smoke.ts"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-credentials": "catalog:",
+    "@deepseek-ai/dsh-llm": "catalog:",
+    "@deepseek-ai/dsh-llm-pi-ai": "catalog:",
+    "@deepseek-ai/dsh-session": "catalog:",
+    "@deepseek-ai/dsh-settings": "catalog:",
+    "@earendil-works/pi-ai": "0.84.4",
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "tsdown": "catalog:",
+    "tsx": "^4.23.13",
+    "typescript": "catalog:",
+    "vitest": "^4.1.11",
+    "ws": "^8.18.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.84.4"
+  }
+}

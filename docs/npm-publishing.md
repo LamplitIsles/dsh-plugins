@@ -104,7 +104,7 @@ push fails closed. Batched version bumps of the same package publish only the
 final version in that push.
 
 Each release checks metadata and npm availability, runs workspace
-typechecks/tests and seven-package packing, installs an isolated DSH rc.1
+typechecks/tests and eight-package packing, installs an isolated DSH rc.1
 runtime, and runs the selected packed Host gate before publishing its tarball
 using OIDC. Stable versions use `latest`; prereleases use `beta`. Existing
 versions and stable versions at or below npm `latest` are rejected.

@@ -205,7 +205,7 @@ describe("workspace release selection", () => {
     expect(packageFor("@lamplitisles/dsh-tabletop")?.directory).toBe(
       "dsh-tabletop",
     );
-    expect(PUBLIC_PACKAGES).toHaveLength(7);
+    expect(PUBLIC_PACKAGES).toHaveLength(8);
   });
 
   it("rejects missing and malformed release input", () => {

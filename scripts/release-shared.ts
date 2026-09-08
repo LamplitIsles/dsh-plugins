@@ -101,6 +101,17 @@ export const PUBLIC_PACKAGES = [
       "LICENSE",
     ],
   },
+  {
+    directory: "dsh-codex-code-mode",
+    name: "@lamplitisles/dsh-codex-code-mode",
+    requiredFiles: [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "cordis.patch.yml",
+      "README.md",
+      "LICENSE",
+    ],
+  },
 ] as const;
 
 export type PublicPackage = (typeof PUBLIC_PACKAGES)[number];

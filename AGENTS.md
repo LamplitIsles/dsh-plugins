@@ -5,7 +5,7 @@
 - Treat the root `package.json`, `pnpm-workspace.yaml`, and `pnpm-lock.yaml` as
   the workspace source of truth. Use Node.js `>=24.11.0` and pnpm 12.3.4 through
   Corepack; keep dependency ownership in the package that imports it.
-- The seven public packages under `packages/` keep independent names and
+- The eight public packages under `packages/` keep independent names and
   versions. Imagegen's core is an internal module in `packages/dsh-imagegen`;
   there is no separate private workspace package.
 - Keep the DSH/Cordis/Schemastery/React contract versions aligned with the root

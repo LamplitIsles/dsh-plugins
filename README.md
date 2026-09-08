@@ -1,6 +1,6 @@
 # dsh-plugins
 
-**Seven independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, image generation, and dice rolling—in one pnpm workspace.**
+**Eight independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, image generation, dice rolling, and Codex code mode—in one pnpm workspace.**
 
 ```sh
 corepack pnpm install --frozen-lockfile
@@ -18,15 +18,16 @@ public package identities and versions remain independent.
 
 ## Packages
 
-| Package                       | Purpose                                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| `@lamplitisles/dsh-companion` | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior. |
-| `@lamplitisles/dsh-mail`      | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.     |
-| `@lamplitisles/dsh-matrix`    | Matrix room reading, search, and explicit message delivery through DSH tools.                   |
-| `@lamplitisles/dsh-speech`    | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                     |
-| `@lamplitisles/dsh-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection.                      |
-| `@lamplitisles/dsh-imagegen`  | DSH image generation and editing under the active workspace.                                    |
-| `@lamplitisles/dsh-tabletop`  | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                           |
+| Package                             | Purpose                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `@lamplitisles/dsh-companion`       | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior.      |
+| `@lamplitisles/dsh-mail`            | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.          |
+| `@lamplitisles/dsh-matrix`          | Matrix room reading, search, and explicit message delivery through DSH tools.                        |
+| `@lamplitisles/dsh-speech`          | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                          |
+| `@lamplitisles/dsh-hindsight`       | Companion-oriented Hindsight recall, retention, and deliberate reflection.                           |
+| `@lamplitisles/dsh-imagegen`        | DSH image generation and editing under the active workspace.                                         |
+| `@lamplitisles/dsh-tabletop`        | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                                |
+| `@lamplitisles/dsh-codex-code-mode` | An opt-in Codex Responses route that presents DSH's existing PTC `run_code` entry as raw TypeScript. |
 
 Imagegen keeps its provider and workspace-boundary core as ordinary internal
 modules in the public package; there is no separate private workspace package.
@@ -86,7 +87,7 @@ and loopback ports and removes them when it finishes:
 DSH_CLI=/absolute/path/to/dsh corepack pnpm run artifact:smoke
 ```
 
-This gate activates all seven packed artifacts through the real DSH Host/Loader
+This gate activates all eight packed artifacts through the real DSH Host/Loader
 and uses fakes for provider behavior. It does not send mail or Matrix traffic,
 call a paid image provider, use credentials, or mutate a live profile.
 
@@ -139,9 +140,11 @@ import boundary and pinned source snapshots are recorded in
 [`docs/IMPORTS.md`](docs/IMPORTS.md). Contributor and agent workflow guidance
 is in [`AGENTS.md`](AGENTS.md).
 
-For an explicitly requested host-local update, follow the seven-package
-build, link, restart, and verification procedure in
+For an explicitly requested host-local update, follow the seven-package live
+profile build, link, restart, and verification procedure in
 [`docs/local-deployment.md`](docs/local-deployment.md).
+The Codex code-mode package is intentionally opt-in and is not added to that
+existing live profile by the workspace checks.
 
 ## License
 
