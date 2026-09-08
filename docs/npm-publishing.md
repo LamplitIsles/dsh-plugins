@@ -72,8 +72,11 @@ web profile, and needs no repository write permission or Forgejo credentials.
 
 ## Failed releases
 
-Ask the agent to inspect the failed job. If nothing reached npm, retry the
-failed job after correcting the cause. Do not rerun successful package jobs.
+Ask the agent to inspect the failed job. If nothing reached npm and the cause
+was transient infrastructure or account configuration, correct it and retry the
+failed job. A rerun uses the original source commit: a source-code fix needs a
+new version change in its PR to trigger publication of the fixed commit.
+An unpublished failed version may be skipped. Do not rerun successful package jobs.
 If npm accepted the version but registry verification timed out, check the
 exact published version and provenance before considering recovery. Do not
 republish it: the preflight deliberately rejects already published versions.

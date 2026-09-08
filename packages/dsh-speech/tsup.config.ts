@@ -1,4 +1,5 @@
-import { defineConfig } from "tsup";
+import { rm } from "node:fs/promises";
+import { defineConfig, type Options } from "tsup";
 import type { Plugin as EsbuildPlugin } from "esbuild";
 import { compileCssModule } from "./scripts/css-modules.js";
 
@@ -26,7 +27,7 @@ const dshExternals = [
   "@deepseek-ai/dsh-settings",
   "@deepseek-ai/schemastery",
   "react",
-  "react/jsx-runtime"
+  "react/jsx-runtime",
 ];
 
 function cssModulesPlugin(): EsbuildPlugin {
@@ -50,40 +51,44 @@ function cssModulesPlugin(): EsbuildPlugin {
             "  tag.textContent = css;",
             "  document.head.appendChild(tag);",
             "}",
-            `export default ${JSON.stringify(classes)};`
-          ].join("\n")
+            `export default ${JSON.stringify(classes)};`,
+          ].join("\n"),
         };
       });
-    }
+    },
   };
 }
 
-export default defineConfig([
-  {
-    entry: {
-      index: "src/index.ts",
-      core: "src/core.ts"
+export default defineConfig(async (options): Promise<Options[]> => {
+  // Clean once before tsup starts concurrent Host/Client and declaration tasks.
+  await rm(options.outDir ?? "dist", { recursive: true, force: true });
+  return [
+    {
+      entry: {
+        index: "src/index.ts",
+        core: "src/core.ts",
+      },
+      format: ["esm"],
+      platform: "node",
+      target: "node20",
+      dts: true,
+      clean: false,
+      external: dshExternals,
     },
-    format: ["esm"],
-    platform: "node",
-    target: "node20",
-    dts: true,
-    clean: true,
-    external: dshExternals
-  },
-  {
-    entry: { client: "src/client.ts" },
-    format: ["cjs"],
-    platform: "browser",
-    target: "es2022",
-    dts: true,
-    clean: false,
-    esbuildPlugins: [cssModulesPlugin()],
-    external: dshExternals,
-    outExtension: () => ({ js: ".js" }),
-    banner: {
-      js: 'window.__ModuleLoader__.load({ id: "@lamplitisles/dsh-speech", factory: (require) => { var module = { exports: {} }; var exports = module.exports;'
+    {
+      entry: { client: "src/client.ts" },
+      format: ["cjs"],
+      platform: "browser",
+      target: "es2022",
+      dts: true,
+      clean: false,
+      esbuildPlugins: [cssModulesPlugin()],
+      external: dshExternals,
+      outExtension: () => ({ js: ".js" }),
+      banner: {
+        js: 'window.__ModuleLoader__.load({ id: "@lamplitisles/dsh-speech", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+      },
+      footer: { js: "return module.exports; } });" },
     },
-    footer: { js: "return module.exports; } });" }
-  }
-]);
+  ];
+});

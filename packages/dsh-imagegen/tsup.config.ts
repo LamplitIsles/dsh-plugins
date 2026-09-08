@@ -1,4 +1,5 @@
-import { defineConfig } from "tsup";
+import { rm } from "node:fs/promises";
+import { defineConfig, type Options } from "tsup";
 import type { Plugin as EsbuildPlugin } from "esbuild";
 import { compileCssModule } from "./scripts/css-modules.js";
 
@@ -44,27 +45,32 @@ function cssModulesPlugin(): EsbuildPlugin {
   };
 }
 
-export default defineConfig([
-  {
-    entry: { index: "src/index.ts" },
-    format: ["esm"],
-    platform: "node",
-    dts: true,
-    clean: true,
-    external,
-  },
-  {
-    entry: { client: "src/client.ts" },
-    format: ["cjs"],
-    platform: "browser",
-    loader: { ".css": "text" },
-    dts: true,
-    esbuildPlugins: [cssModulesPlugin()],
-    external,
-    outExtension: () => ({ js: ".js" }),
-    banner: {
-      js: 'window.__ModuleLoader__.load({ id: "@lamplitisles/dsh-imagegen", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+export default defineConfig(async (options): Promise<Options[]> => {
+  // Clean once before tsup starts concurrent Host/Client and declaration tasks.
+  await rm(options.outDir ?? "dist", { recursive: true, force: true });
+  return [
+    {
+      entry: { index: "src/index.ts" },
+      format: ["esm"],
+      platform: "node",
+      dts: true,
+      clean: false,
+      external,
     },
-    footer: { js: "return module.exports; } });" },
-  },
-]);
+    {
+      entry: { client: "src/client.ts" },
+      format: ["cjs"],
+      platform: "browser",
+      loader: { ".css": "text" },
+      dts: true,
+      clean: false,
+      esbuildPlugins: [cssModulesPlugin()],
+      external,
+      outExtension: () => ({ js: ".js" }),
+      banner: {
+        js: 'window.__ModuleLoader__.load({ id: "@lamplitisles/dsh-imagegen", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+      },
+      footer: { js: "return module.exports; } });" },
+    },
+  ];
+});
