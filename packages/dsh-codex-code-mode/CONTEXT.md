@@ -4,6 +4,11 @@ This context describes how an Agent uses raw programs and patches through the Co
 
 ## Language
 
+**Image input**:
+A durable DSH image attachment converted to a Codex request image. The route
+advertises text and image input; it resolves the current attachment service
+per request and maps normalized-image paths through the filesystem provider.
+
 **Direct tool surface**:
 The two top-level tools offered on the selected route: `run_code` followed by
 raw `apply_patch`. A tool's presence in the SDK does not make it part of the

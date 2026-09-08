@@ -103,6 +103,18 @@ async function collect(
 }
 
 describe("Codex provider mapping", () => {
+  it("advertises text and image input for Sol", () => {
+    const profile = createCodexProfile({
+      ...settings,
+      models: settings.models.map((model) => ({
+        ...model,
+        id: "gpt-5.6-sol",
+        name: "Sol",
+      })),
+    });
+    expect(profile.piProvider.getModels()[0]?.input).toEqual(["text", "image"]);
+  });
+
   it("maps canonical history to one raw-input custom tool without mutating it", () => {
     const code = "return await tools.read({ path: 'README.md' });";
     const canonicalToolCall = {

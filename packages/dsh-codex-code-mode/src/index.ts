@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import type { FileSystem } from "@deepseek-ai/dsh-fs";
-import { LlmAdapter } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter, resolveImageAttachmentAccess } from "@deepseek-ai/dsh-llm";
 import {
   PiAiAdapter,
   type ResolvedPiAiProviderProfile,
@@ -309,6 +309,13 @@ export function apply(ctx: HostContext): void {
   let profiles = new Map<string, ResolvedPiAiProviderProfile>();
   const adapter = new PiAiAdapter({
     profiles: () => profiles,
+    resolveAttachments: () => ctx.get("attachments"),
+    resolveImageAccess: (attachments, ref) =>
+      resolveImageAttachmentAccess(
+        attachments,
+        (hostPath) => ctx.fs.processPathFromHostPath(hostPath),
+        ref,
+      ),
     resolveApiKey: async (_provider, profile) => {
       const reference = profile.apiKeyEnv;
       if (reference === undefined)

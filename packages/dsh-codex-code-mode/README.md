@@ -90,6 +90,18 @@ model: gpt-5-codex
 Other provider routes remain unchanged. A disabled section removes this route
 while leaving the settings registration available for a later opt-in.
 
+## Image input
+
+Codex models, including Sol, advertise text and image input. Image requests
+resolve the current DSH `attachments` service and send its prepared request
+image through Codex Responses. Compose an attachment backend, such as
+`@deepseek-ai/dsh-attachment-local`, to accept image messages. Without one,
+image requests fail explicitly; text requests remain available.
+
+The model receives the image preview and, when the filesystem backend can
+map it, a read-only path to the normalized attachment. Attachment storage,
+request-image sizing, and filesystem access remain owned by DSH.
+
 ## Direct tools and SDK
 
 The selected route advertises exactly these two direct tools, in this order:
@@ -208,7 +220,8 @@ DSH_CLI=/absolute/path/to/dsh corepack pnpm --filter @lamplitisles/dsh-codex-cod
 
 The packed smoke installs the real package into a test-owned DSH profile,
 activates it through Cordis Loader, sends patch, code, and continuation
-requests through a local fake Codex WebSocket, applies an Add and Update via
+requests with a durable image through a local fake Codex WebSocket, checks
+its image payload and read-only attachment handle, applies an Add and Update via
 the real DSH filesystem service, runs two test tools through the real DSH PTC
 runtime, checks cached continuation history and an unrelated provider stream,
 and unloads the plugin. It uses no live credentials, provider, profile, paid

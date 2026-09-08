@@ -235,6 +235,7 @@ function runnerSource({
   cordisUrl,
   fsLocalUrl,
   fsObservationUrl,
+  attachmentLocalUrl,
   patchText,
   workspacePath,
   loaderUrl,
@@ -255,6 +256,7 @@ function runnerSource({
   cordisUrl: string;
   fsLocalUrl: string;
   fsObservationUrl: string;
+  attachmentLocalUrl: string;
   patchText: string;
   workspacePath: string;
   loaderUrl: string;
@@ -275,6 +277,7 @@ import assert from "node:assert/strict";
 import { Context } from ${JSON.stringify(cordisUrl)};
 import Loader from ${JSON.stringify(loaderUrl)};
 import LocalFileSystem from ${JSON.stringify(fsLocalUrl)};
+import LocalAttachmentStore from ${JSON.stringify(attachmentLocalUrl)};
 import { apply as applyFsObservationPolicy, name as fsObservationPolicyName } from ${JSON.stringify(fsObservationUrl)};
 import {
   BlockAssembler,
@@ -304,7 +307,7 @@ let currentSettings = {
   enabled: true,
   baseURL,
   credentialRef: "CODEX_API_KEY",
-  models: [{ id: "gpt-5-codex", name: "GPT-5 Codex", contextWindow: 262144, maxTokens: 32768 }],
+  models: [{ id: "gpt-5.6-sol", name: "Sol", contextWindow: 262144, maxTokens: 32768 }],
   transport: "websocket-cached",
   maxPatchChars: 4000000,
   maxPatchFiles: 64,
@@ -466,6 +469,7 @@ let entryId;
 let unloadDone = Promise.resolve();
 let unrelatedDone = Promise.resolve();
 let agentHandle;
+let attachmentRuntime;
 try {
   entryId = await root.loader.create({
     id: "dsh-codex-code-mode",
@@ -476,13 +480,25 @@ try {
   assert.equal(root.llm.listProviders().some((provider) => provider.id === "codex-code-mode"), true);
   const tools = root.tools.schemas();
   assert.deepEqual(tools.map((tool) => tool.name), ["alpha", "beta", "read", "apply_patch", "run_code"]);
+  assert.deepEqual((await root.llm.listModels("codex-code-mode"))[0].inputModalities, ["text", "image"]);
+  // Mount after the provider so each request must resolve the current store.
+  attachmentRuntime = root.plugin(LocalAttachmentStore, { dshHome: workspacePath + "/attachment-home" });
+  await attachmentRuntime;
+  const attachment = await root.attachments.saveImage({
+    data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC", "base64"),
+    mediaType: "image/png",
+    name: "pixel.png",
+  });
   const user = createUserMessage({
-    content: [{ type: "text", text: "Apply the patch, run both test tools, and continue." }],
+    content: [
+      { type: "text", text: "Inspect the image, apply the patch, run both test tools, and continue." },
+      { type: "image", attachment },
+    ],
     source: { kind: "user" },
   });
   const sessionId = "pack-codex-session";
   const selection = {
-    current: { provider: "codex-code-mode", model: "gpt-5-codex" },
+    current: { provider: "codex-code-mode", model: "gpt-5.6-sol" },
     assembled: undefined,
   };
   let switchedDuringStep = false;
@@ -499,7 +515,7 @@ try {
   agentHandle = await root.agents.create({
     sessionId: SessionId(sessionId),
     meta: { cwd: workspacePath },
-    agentOptions: { provider: "codex-code-mode", model: "gpt-5-codex" },
+    agentOptions: { provider: "codex-code-mode", model: "gpt-5.6-sol" },
     setup: (agentCtx) => {
       installModelSelection(agentCtx, selection);
     },
@@ -587,7 +603,7 @@ try {
   const secondAssembler = new BlockAssembler();
   for await (const chunk of root.llm.stream({
     provider: "codex-code-mode",
-    model: "gpt-5-codex",
+    model: "gpt-5.6-sol",
     messages: [user],
     system: "Use the direct patch tool, then the DSH TypeScript SDK.",
     tools,
@@ -619,7 +635,7 @@ try {
   const codeAssistant = secondAssembler.message({
     kind: "model",
     provider: "codex-code-mode",
-    model: "gpt-5-codex",
+    model: "gpt-5.6-sol",
     ...(secondAssembler.replayState === undefined ? {} : { replayState: secondAssembler.replayState }),
   });
   const codeResult = createToolResultMessage({
@@ -630,7 +646,7 @@ try {
   const thirdAssembler = new BlockAssembler();
   for await (const chunk of root.llm.stream({
     provider: "codex-code-mode",
-    model: "gpt-5-codex",
+    model: "gpt-5.6-sol",
     messages: [user, codeAssistant, codeResult],
     system: "Use the direct patch tool, then the DSH TypeScript SDK.",
     tools,
@@ -642,7 +658,7 @@ try {
   let unloadSettled = false;
   const unloadStream = root.llm.stream({
     provider: "codex-code-mode",
-    model: "gpt-5-codex",
+    model: "gpt-5.6-sol",
     messages: [user],
     system: "Use the DSH TypeScript SDK.",
     tools,
@@ -666,8 +682,8 @@ try {
   const stockApi = openAICodexResponsesApi();
   const unrelatedStream = stockApi.stream(
     {
-      id: "gpt-5-codex",
-      name: "GPT-5 Codex",
+      id: "gpt-5.6-sol",
+      name: "Sol",
       api: "openai-codex-responses",
       provider: "openai-codex",
       baseUrl: baseURL,
@@ -682,7 +698,7 @@ try {
         supportsStrictMode: true,
       },
     },
-    { messages: [user] },
+    { messages: [{ role: "user", content: "Hold this unrelated stream open.", timestamp: 0 }] },
     {
       apiKey: token,
       transport: "websocket-cached",
@@ -732,6 +748,7 @@ try {
     await root.loader.remove(entryId);
   }
   await agentHandle?.dispose();
+  await attachmentRuntime?.dispose();
   disposeStock();
   disposeAlpha();
   disposeBeta();
@@ -911,6 +928,7 @@ try {
       cordisUrl: moduleUrl("@deepseek-ai/cordis"),
       fsLocalUrl: moduleUrl("@deepseek-ai/dsh-fs-local"),
       fsObservationUrl: moduleUrl("@deepseek-ai/dsh-fs-observation-policy"),
+      attachmentLocalUrl: moduleUrl("@deepseek-ai/dsh-attachment-local"),
       patchText: patch,
       workspacePath: cwd,
       loaderUrl: moduleUrl("@deepseek-ai/cordis-plugin-loader"),
@@ -979,6 +997,23 @@ try {
   if (serverFailure !== undefined) throw serverFailure;
   await waitForSocketCount(0);
   assert.equal(requests.length, 5);
+  const imageContent = requests[0]?.input
+    ?.filter((item: ResponseBody) => item.role === "user")
+    .flatMap((item: ResponseBody) => item.content);
+  const wireImage = imageContent?.find(
+    (item: ResponseBody) => item.type === "input_image",
+  );
+  assert.match(
+    wireImage?.image_url ?? "",
+    /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/u,
+  );
+  assert.ok(
+    imageContent?.some(
+      (item: ResponseBody) =>
+        item.type === "input_text" &&
+        item.text.includes("Normalized copy (read-only;"),
+    ),
+  );
   assert.deepEqual(
     requests[0]?.tools?.map((tool: ResponseBody) => tool.name),
     ["run_code", "apply_patch"],
