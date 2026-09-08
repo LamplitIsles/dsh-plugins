@@ -20,7 +20,10 @@ import {
 } from "../../../scripts/release-shared.js";
 
 const root = resolve(import.meta.dirname, "..");
-execFileSync("pnpm", ["run", "build"], { cwd: root, stdio: "inherit" });
+execFileSync("corepack", ["pnpm", "run", "build"], {
+  cwd: root,
+  stdio: "inherit",
+});
 
 const configuredDsh = process.env.DSH_CLI;
 if (!configuredDsh || !existsSync(configuredDsh)) {

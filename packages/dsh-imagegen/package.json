@@ -105,13 +105,13 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-test-renderer": "18.3.1",
-    "tsup": "^8.5.1",
+    "tsdown": "catalog:",
     "tsx": "^4.23.12",
-    "typescript": "5.7.3",
+    "typescript": "catalog:",
     "vitest": "^4.1.11"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../.. packages/dsh-imagegen/test",
     "pack-smoke": "tsx ../../scripts/pack-smoke.ts"

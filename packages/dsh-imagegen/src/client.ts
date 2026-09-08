@@ -1,7 +1,4 @@
-import {
-  DEFAULT_BRIDGE_URL,
-  normalizeBridgeUrl,
-} from "./core.js";
+import { DEFAULT_BRIDGE_URL, normalizeBridgeUrl } from "./core.js";
 import type { Context as ClientContext } from "@deepseek-ai/cordis";
 import type {
   ISession,
@@ -20,7 +17,7 @@ import type { ToolCallViewProps } from "@deepseek-ai/dsh-client-ui-tool/client";
 import { createElement, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import cssText from "./client.css";
-import styles from "./settings.module.dshcss";
+import styles from "./settings.module.css";
 
 export const SETTINGS_NAMESPACE = "lamplitisles-kepos-imagegen";
 export const inject = ["sessions", "settingsScope", "slots"] as const;
@@ -115,6 +112,8 @@ function ImageToolCard({ block, sessionId, sessions }: ImageToolCardProps) {
     if (!session) return;
     let live = true;
     let objectUrl: string | undefined;
+    // Reset the preview as the external attachment identity changes.
+    // oxlint-disable-next-line react/set-state-in-effect -- synchronize async attachment state.
     setSrc(undefined);
     setLoadFailed(false);
     session.readAttachment(attachment.attachmentId).then(
@@ -298,10 +297,11 @@ function SettingsCard({ scope }: { scope: SettingsScope }) {
   );
   const saved = bridgeUrlFromSnapshot(snapshot);
   const dirty = draft.value !== draft.saved;
-  useEffect(
-    () => setDraft((current) => syncBridgeUrlDraft(current, saved)),
-    [saved],
-  );
+  useEffect(() => {
+    // Reconcile an external Host snapshot without overwriting local edits.
+    // oxlint-disable-next-line react/set-state-in-effect -- this is external-store reconciliation.
+    setDraft((current) => syncBridgeUrlDraft(current, saved));
+  }, [saved]);
 
   const save = async () => {
     setFeedback(undefined);

@@ -1,18 +1,62 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
-import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+  mkdir,
+} from "node:fs/promises";
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingHttpHeaders,
+  type Server,
+} from "node:http";
 import { join } from "node:path";
-import { createUserMessage, type GenerateOptions, type StreamChunk } from "@deepseek-ai/dsh-llm";
+import {
+  createUserMessage,
+  type GenerateOptions,
+  type StreamChunk,
+} from "@deepseek-ai/dsh-llm";
 import type { PromptAssembly } from "@deepseek-ai/dsh-system-prompt";
 import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
-import { CompanionStateStore, encodeCompanionStateRecord } from "../src/domain.js";
-import { BOOTSTRAP_PATH, CompanionHostController, RPC_CHANNEL, acceptedTurnKey, updateRelationshipForAcceptedTurn, apply, companionAliasHandler } from "../src/host.js";
+import {
+  CompanionStateStore,
+  encodeCompanionStateRecord,
+} from "../src/domain.js";
+import {
+  BOOTSTRAP_PATH,
+  CompanionHostController,
+  acceptedTurnKey,
+  updateRelationshipForAcceptedTurn,
+  apply,
+  companionAliasHandler,
+} from "../src/host.js";
 
 const temporary: string[] = [];
-afterEach(async () => { await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(
+    temporary
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
 
-function execution(events: readonly { type: string; data: { turn: number } }[], cwd?: string): ToolRunContext {
-  return { agent: { id: "agent-a", session: { snapshotEvents: () => events, ...(cwd === undefined ? {} : { header: { cwd } }) } }, signal: new AbortController().signal } as unknown as ToolRunContext;
+function execution(
+  events: readonly { type: string; data: { turn: number } }[],
+  cwd?: string,
+): ToolRunContext {
+  return {
+    agent: {
+      id: "agent-a",
+      session: {
+        snapshotEvents: () => events,
+        ...(cwd === undefined ? {} : { header: { cwd } }),
+      },
+    },
+    signal: new AbortController().signal,
+  } as unknown as ToolRunContext;
 }
 
 async function listen(server: Server): Promise<number> {
@@ -24,51 +68,102 @@ async function listen(server: Server): Promise<number> {
     });
   });
   const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("test server did not expose a TCP port");
+  if (address === null || typeof address === "string")
+    throw new Error("test server did not expose a TCP port");
   return address.port;
 }
 
 async function close(server: Server): Promise<void> {
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
 }
 
-function requestAlias(port: number, options: { method?: string; path?: string; headers?: Record<string, string>; body?: string }): Promise<{ status: number; body: string; headers: IncomingHttpHeaders }> {
+function requestAlias(
+  port: number,
+  options: {
+    method?: string;
+    path?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  },
+): Promise<{ status: number; body: string; headers: IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
-    const request = httpRequest({ host: "127.0.0.1", port, method: options.method ?? "GET", path: options.path ?? "/companion/", headers: options.headers }, (response) => {
-      let body = "";
-      response.setEncoding("utf8");
-      response.on("data", (chunk: string) => { body += chunk; });
-      response.on("end", () => resolve({ status: response.statusCode ?? 0, body, headers: response.headers }));
-    });
+    const request = httpRequest(
+      {
+        host: "127.0.0.1",
+        port,
+        method: options.method ?? "GET",
+        path: options.path ?? "/companion/",
+        headers: options.headers,
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.on("end", () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            body,
+            headers: response.headers,
+          }),
+        );
+      },
+    );
     request.on("error", reject);
     if (options.body !== undefined) request.write(options.body);
     request.end();
   });
 }
 
-function get(port: number, headers: Record<string, string>): Promise<{ status: number; body: string }> {
-  return requestAlias(port, { headers }).then(({ status, body }) => ({ status, body }));
+function get(
+  port: number,
+  headers: Record<string, string>,
+): Promise<{ status: number; body: string }> {
+  return requestAlias(port, { headers }).then(({ status, body }) => ({
+    status,
+    body,
+  }));
 }
 
 describe("Host accepted-turn relationship contract", () => {
   it("renders a standalone bootstrap form when the aliased root is unauthorized", async () => {
     const upstream = createServer((_request, response) => {
-      response.writeHead(401, { "cache-control": "no-store", "content-type": "text/plain; charset=utf-8" });
+      response.writeHead(401, {
+        "cache-control": "no-store",
+        "content-type": "text/plain; charset=utf-8",
+      });
       response.end("dsh web authentication required");
     });
     const upstreamPort = await listen(upstream);
     const alias = createServer((request, response) => {
-      void companionAliasHandler({ port: upstreamPort } as never, request, response);
+      void companionAliasHandler(
+        { port: upstreamPort } as never,
+        request,
+        response,
+      );
     });
     const aliasPort = await listen(alias);
     try {
-      const result = await requestAlias(aliasPort, { headers: { host: "127.0.0.1:13080" } });
+      const result = await requestAlias(aliasPort, {
+        headers: { host: "127.0.0.1:13080" },
+      });
       expect(result.status).toBe(200);
       expect(result.headers["cache-control"]).toBe("no-store");
       expect(result.headers["referrer-policy"]).toBe("no-referrer");
-      expect(result.headers["content-type"]).toMatch(/^text\/html; charset=utf-8$/);
-      expect(result.body).toMatch(new RegExp(`<form[^>]+method="post"[^>]+action="${BOOTSTRAP_PATH.replaceAll("/", "\\/")}"`));
-      expect(result.body).toMatch(/<input[^>]+name="token"[^>]+type="password"/);
+      expect(result.headers["content-type"]).toMatch(
+        /^text\/html; charset=utf-8$/,
+      );
+      expect(result.body).toMatch(
+        new RegExp(
+          `<form[^>]+method="post"[^>]+action="${BOOTSTRAP_PATH.replaceAll("/", "\\/")}"`,
+        ),
+      );
+      expect(result.body).toMatch(
+        /<input[^>]+name="token"[^>]+type="password"/,
+      );
       expect(result.body).toMatch(/<button[^>]+type="submit"/);
       expect(result.body).toContain('role="alert"');
       expect(result.body).not.toContain("dsh web authentication required");
@@ -95,7 +190,11 @@ describe("Host accepted-turn relationship contract", () => {
     });
     const upstreamPort = await listen(upstream);
     const alias = createServer((request, response) => {
-      void companionAliasHandler({ port: upstreamPort } as never, request, response);
+      void companionAliasHandler(
+        { port: upstreamPort } as never,
+        request,
+        response,
+      );
     });
     const aliasPort = await listen(alias);
     try {
@@ -103,12 +202,18 @@ describe("Host accepted-turn relationship contract", () => {
       const result = await requestAlias(aliasPort, {
         method: "POST",
         path: BOOTSTRAP_PATH,
-        headers: { host: authority, cookie: "stale-form-cookie=must-not-forward", "content-type": "application/x-www-form-urlencoded" },
+        headers: {
+          host: authority,
+          cookie: "stale-form-cookie=must-not-forward",
+          "content-type": "application/x-www-form-urlencoded",
+        },
         body: "token=launch-token",
       });
       expect(result.status).toBe(303);
       expect(result.headers.location).toBe("/companion/");
-      expect(result.headers["set-cookie"]).toEqual(["dsh-auth-test=issued; Path=/; HttpOnly; SameSite=Strict"]);
+      expect(result.headers["set-cookie"]).toEqual([
+        "dsh-auth-test=issued; Path=/; HttpOnly; SameSite=Strict",
+      ]);
       expect(result.headers["cache-control"]).toBe("no-store");
       expect(result.headers["referrer-policy"]).toBe("no-referrer");
       expect(upstreamMethod).toBe("GET");
@@ -132,14 +237,22 @@ describe("Host accepted-turn relationship contract", () => {
     });
     const upstreamPort = await listen(upstream);
     const alias = createServer((request, response) => {
-      void companionAliasHandler({ port: upstreamPort } as never, request, response);
+      void companionAliasHandler(
+        { port: upstreamPort } as never,
+        request,
+        response,
+      );
     });
     const aliasPort = await listen(alias);
     try {
       const invalid = await requestAlias(aliasPort, {
         method: "POST",
         path: BOOTSTRAP_PATH,
-        headers: { host: "127.0.0.1:13080", cookie: "stale=1", "content-type": "application/x-www-form-urlencoded" },
+        headers: {
+          host: "127.0.0.1:13080",
+          cookie: "stale=1",
+          "content-type": "application/x-www-form-urlencoded",
+        },
         body: `token=${encodeURIComponent(secret)}`,
       });
       expect(invalid.status).toBe(400);
@@ -152,23 +265,52 @@ describe("Host accepted-turn relationship contract", () => {
       expect(invalid.headers["set-cookie"]).toBeUndefined();
       expect(exchangeCalls).toBe(1);
 
-      await expect(requestAlias(aliasPort, {
-        method: "POST",
-        path: BOOTSTRAP_PATH,
-        headers: { host: "127.0.0.1:13080", "content-type": "application/x-www-form-urlencoded" },
-        body: "token=one&extra=two",
-      })).resolves.toMatchObject({ status: 400 });
-      await expect(requestAlias(aliasPort, {
-        method: "POST",
-        path: BOOTSTRAP_PATH,
-        headers: { host: "127.0.0.1:13080", "content-type": "application/x-www-form-urlencoded" },
-        body: `token=${"x".repeat(5000)}`,
-      })).resolves.toMatchObject({ status: 413 });
+      await expect(
+        requestAlias(aliasPort, {
+          method: "POST",
+          path: BOOTSTRAP_PATH,
+          headers: {
+            host: "127.0.0.1:13080",
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: "token=one&extra=two",
+        }),
+      ).resolves.toMatchObject({ status: 400 });
+      await expect(
+        requestAlias(aliasPort, {
+          method: "POST",
+          path: BOOTSTRAP_PATH,
+          headers: {
+            host: "127.0.0.1:13080",
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: `token=${"x".repeat(5000)}`,
+        }),
+      ).resolves.toMatchObject({ status: 413 });
       expect(exchangeCalls).toBe(1);
 
-      await expect(requestAlias(aliasPort, { method: "GET", path: BOOTSTRAP_PATH, headers: { host: "127.0.0.1:13080" } })).resolves.toMatchObject({ status: 405, body: "" });
-      await expect(requestAlias(aliasPort, { method: "POST", path: "/companion/", headers: { host: "127.0.0.1:13080" }, body: "token=ignored" })).resolves.toMatchObject({ status: 405, body: "" });
-      await expect(requestAlias(aliasPort, { method: "GET", path: "/companion/not-a-route", headers: { host: "127.0.0.1:13080" } })).resolves.toMatchObject({ status: 404, body: "" });
+      await expect(
+        requestAlias(aliasPort, {
+          method: "GET",
+          path: BOOTSTRAP_PATH,
+          headers: { host: "127.0.0.1:13080" },
+        }),
+      ).resolves.toMatchObject({ status: 405, body: "" });
+      await expect(
+        requestAlias(aliasPort, {
+          method: "POST",
+          path: "/companion/",
+          headers: { host: "127.0.0.1:13080" },
+          body: "token=ignored",
+        }),
+      ).resolves.toMatchObject({ status: 405, body: "" });
+      await expect(
+        requestAlias(aliasPort, {
+          method: "GET",
+          path: "/companion/not-a-route",
+          headers: { host: "127.0.0.1:13080" },
+        }),
+      ).resolves.toMatchObject({ status: 404, body: "" });
     } finally {
       await Promise.all([close(alias), close(upstream)]);
     }
@@ -181,11 +323,19 @@ describe("Host accepted-turn relationship contract", () => {
     });
     const upstreamPort = await listen(upstream);
     const alias = createServer((request, response) => {
-      void companionAliasHandler({ port: upstreamPort } as never, request, response);
+      void companionAliasHandler(
+        { port: upstreamPort } as never,
+        request,
+        response,
+      );
     });
     const aliasPort = await listen(alias);
     try {
-      const result = await requestAlias(aliasPort, { method: "HEAD", path: "/companion/", headers: { host: "127.0.0.1:13080" } });
+      const result = await requestAlias(aliasPort, {
+        method: "HEAD",
+        path: "/companion/",
+        headers: { host: "127.0.0.1:13080" },
+      });
       expect(result.status).toBe(200);
       expect(result.body).toBe("");
       expect(result.headers["content-type"]).toBe("text/html; charset=utf-8");
@@ -207,12 +357,19 @@ describe("Host accepted-turn relationship contract", () => {
     });
     const upstreamPort = await listen(upstream);
     const alias = createServer((request, response) => {
-      void companionAliasHandler({ port: upstreamPort } as never, request, response);
+      void companionAliasHandler(
+        { port: upstreamPort } as never,
+        request,
+        response,
+      );
     });
     const aliasPort = await listen(alias);
     try {
       const authority = "127.0.0.1:13080";
-      const response = await get(aliasPort, { host: authority, cookie: "dsh-auth-test=authenticated" });
+      const response = await get(aliasPort, {
+        host: authority,
+        cookie: "dsh-auth-test=authenticated",
+      });
       expect(response.status).toBe(200);
       expect(response.body).toBe("root document");
       expect(upstreamHost).toBe(authority);
@@ -223,121 +380,416 @@ describe("Host accepted-turn relationship contract", () => {
   });
 
   it("caps cumulative movement within the published Session turn and starts fresh next turn", async () => {
-    const directory = await mkdtemp("/tmp/dsh-companion-host-"); temporary.push(directory);
-    const store = new CompanionStateStore({ workspacePath: directory, defaultAffinity: 50, filePath: join(directory, "state.jsonl") });
+    const directory = await mkdtemp("/tmp/dsh-companion-host-");
+    temporary.push(directory);
+    const store = new CompanionStateStore({
+      workspacePath: directory,
+      defaultAffinity: 50,
+      filePath: join(directory, "state.jsonl"),
+    });
     const first = execution([{ type: "turn/start", data: { turn: 7 } }]);
     expect(acceptedTurnKey(first)).toBe("agent-a:turn:7");
-    expect((await updateRelationshipForAcceptedTurn(store, { affinity: { delta: 8, reason: "第一次" } }, first)).delta).toBe(8);
-    expect((await updateRelationshipForAcceptedTurn(store, { affinity: { delta: 8, reason: "第二次" } }, first)).delta).toBe(2);
-    const next = execution([{ type: "turn/start", data: { turn: 7 } }, { type: "turn/end", data: { turn: 7 } }, { type: "turn/start", data: { turn: 8 } }]);
-    expect((await updateRelationshipForAcceptedTurn(store, { affinity: { delta: -10, reason: "新回合" } }, next)).delta).toBe(-10);
+    expect(
+      (
+        await updateRelationshipForAcceptedTurn(
+          store,
+          { affinity: { delta: 8, reason: "第一次" } },
+          first,
+        )
+      ).delta,
+    ).toBe(8);
+    expect(
+      (
+        await updateRelationshipForAcceptedTurn(
+          store,
+          { affinity: { delta: 8, reason: "第二次" } },
+          first,
+        )
+      ).delta,
+    ).toBe(2);
+    const next = execution([
+      { type: "turn/start", data: { turn: 7 } },
+      { type: "turn/end", data: { turn: 7 } },
+      { type: "turn/start", data: { turn: 8 } },
+    ]);
+    expect(
+      (
+        await updateRelationshipForAcceptedTurn(
+          store,
+          { affinity: { delta: -10, reason: "新回合" } },
+          next,
+        )
+      ).delta,
+    ).toBe(-10);
     expect(store.getSnapshot().affinity).toBe(50);
   });
 
   it("waits for persisted state, validates narrow recovery RPCs, and publishes live updates", async () => {
-    const directory = await mkdtemp("/tmp/dsh-companion-host-"); temporary.push(directory);
+    const directory = await mkdtemp("/tmp/dsh-companion-host-");
+    temporary.push(directory);
     const statePath = join(directory, ".dsh/dsh-companion/state.jsonl");
     await mkdir(join(directory, ".dsh/dsh-companion"), { recursive: true });
-    await writeFile(statePath, encodeCompanionStateRecord({ at: "2026-09-01T00:00:00.000Z", changes: { seed: true }, state: { mood: "tender", affinity: 67, signature: "旧签名" } }));
-    let rpcHandler: ((endpoint: string, payload: unknown, signal: AbortSignal) => Promise<unknown>) | undefined;
+    await writeFile(
+      statePath,
+      encodeCompanionStateRecord({
+        at: "2026-09-01T00:00:00.000Z",
+        changes: { seed: true },
+        state: { mood: "tender", affinity: 67, signature: "旧签名" },
+      }),
+    );
+    let rpcHandler:
+      | ((
+          endpoint: string,
+          payload: unknown,
+          signal: AbortSignal,
+        ) => Promise<unknown>)
+      | undefined;
     const registeredTools: unknown[] = [];
     const scope = {
-      get: () => ({ workspaceId: "workspace-a", companionName: "Companion", userName: "你", preferredAddress: "你", defaultAffinity: 50 }),
+      get: () => ({
+        workspaceId: "workspace-a",
+        companionName: "Companion",
+        userName: "你",
+        preferredAddress: "你",
+        defaultAffinity: 50,
+      }),
       update: async () => undefined,
       watch: () => () => undefined,
     };
     const ctx = {
       fs: {
-        resolve: async (path: string, options?: { cwd?: string }) => join(options?.cwd ?? directory, path),
-        stat: async (path: string) => { try { const value = await stat(path); return { type: value.isFile() ? "file" : "directory", size: value.size }; } catch { return undefined; } },
+        resolve: async (path: string, options?: { cwd?: string }) =>
+          join(options?.cwd ?? directory, path),
+        stat: async (path: string) => {
+          try {
+            const value = await stat(path);
+            return {
+              type: value.isFile() ? "file" : "directory",
+              size: value.size,
+            };
+          } catch {
+            return undefined;
+          }
+        },
         readText: async (path: string) => readFile(path, "utf8"),
-        writeText: async (path: string, content: string) => { await mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true }); await writeFile(path, content); },
-        mkdir: async (path: string, options?: { cwd?: string }) => { await mkdir(join(options?.cwd ?? directory, path), { recursive: true }); },
+        writeText: async (path: string, content: string) => {
+          await mkdir(path.slice(0, path.lastIndexOf("/")), {
+            recursive: true,
+          });
+          await writeFile(path, content);
+        },
+        mkdir: async (path: string, options?: { cwd?: string }) => {
+          await mkdir(join(options?.cwd ?? directory, path), {
+            recursive: true,
+          });
+        },
       },
       settings: { register: () => scope },
       systemPrompt: { context: () => () => undefined },
-      tools: { register: (tool: unknown) => { registeredTools.push(tool); } },
-      connection: { rpc: { handle: (_channel: string, handler: typeof rpcHandler) => { rpcHandler = handler; return () => undefined; } } },
-      workspaceRegistry: { get: (id: string) => id === "workspace-a" ? { id, path: directory, sessionIds: [] } : undefined, list: () => [] },
+      tools: {
+        register: (tool: unknown) => {
+          registeredTools.push(tool);
+        },
+      },
+      connection: {
+        rpc: {
+          handle: (_channel: string, handler: typeof rpcHandler) => {
+            rpcHandler = handler;
+            return () => undefined;
+          },
+        },
+      },
+      workspaceRegistry: {
+        get: (id: string) =>
+          id === "workspace-a"
+            ? { id, path: directory, sessionIds: [] }
+            : undefined,
+        list: () => [],
+      },
       llm: {},
       on: () => () => undefined,
       webServer: { port: 1, register: () => () => undefined },
     };
     const host = new CompanionHostController(ctx as never, scope);
     host.register();
-    expect(registeredTools.map((tool) => (tool as { name: string }).name)).toEqual(["companion_read_history", "companion_update_relationship", "companion_set_signature"]);
-    const historyTool = registeredTools.find((tool): tool is { name: string; parameters: Record<string, unknown>; execute(args: unknown, exec: ToolRunContext): Promise<Record<string, unknown>> } => typeof tool === "object" && tool !== null && (tool as { name?: unknown }).name === "companion_read_history");
-    await expect(historyTool?.execute({ limit: 0 }, execution([]))).rejects.toThrow("1 到 20");
-    await expect(historyTool?.execute({ limit: 1 }, execution([], "/foreign"))).rejects.toThrow("已配置的 Workspace");
-    await expect(historyTool?.execute({ limit: 1 }, execution([], directory))).resolves.toMatchObject({ records: [{ changes: { seed: true }, state: { affinity: 67 } }] });
-    const relationshipTool = registeredTools.find((tool): tool is { name: string; parameters: Record<string, unknown>; output: { schema: { properties?: Record<string, unknown> } }; execute(args: unknown, exec: ToolRunContext): Promise<Record<string, unknown>> } => typeof tool === "object" && tool !== null && (tool as { name?: unknown }).name === "companion_update_relationship");
-    expect(relationshipTool?.parameters).toMatchObject({ properties: { mood: expect.any(Object), affinity: expect.any(Object) } });
+    expect(
+      registeredTools.map((tool) => (tool as { name: string }).name),
+    ).toEqual([
+      "companion_read_history",
+      "companion_update_relationship",
+      "companion_set_signature",
+    ]);
+    const historyTool = registeredTools.find(
+      (
+        tool,
+      ): tool is {
+        name: string;
+        parameters: Record<string, unknown>;
+        execute(
+          args: unknown,
+          exec: ToolRunContext,
+        ): Promise<Record<string, unknown>>;
+      } =>
+        typeof tool === "object" &&
+        tool !== null &&
+        (tool as { name?: unknown }).name === "companion_read_history",
+    );
+    await expect(
+      historyTool?.execute({ limit: 0 }, execution([])),
+    ).rejects.toThrow("1 到 20");
+    await expect(
+      historyTool?.execute({ limit: 1 }, execution([], "/foreign")),
+    ).rejects.toThrow("已配置的 Workspace");
+    await expect(
+      historyTool?.execute({ limit: 1 }, execution([], directory)),
+    ).resolves.toMatchObject({
+      records: [{ changes: { seed: true }, state: { affinity: 67 } }],
+    });
+    const relationshipTool = registeredTools.find(
+      (
+        tool,
+      ): tool is {
+        name: string;
+        parameters: Record<string, unknown>;
+        output: { schema: { properties?: Record<string, unknown> } };
+        execute(
+          args: unknown,
+          exec: ToolRunContext,
+        ): Promise<Record<string, unknown>>;
+      } =>
+        typeof tool === "object" &&
+        tool !== null &&
+        (tool as { name?: unknown }).name === "companion_update_relationship",
+    );
+    expect(relationshipTool?.parameters).toMatchObject({
+      properties: { mood: expect.any(Object), affinity: expect.any(Object) },
+    });
     expect(relationshipTool?.parameters).not.toHaveProperty("required");
-    await expect(relationshipTool?.execute({}, execution([]))).rejects.toThrow("至少更新");
-    await expect(relationshipTool?.execute({ mood: { value: "tender", note: "今天想慢一点", reason: "想安静地陪伴" } }, execution([]))).resolves.toMatchObject({ mood: "tender", note: "今天想慢一点", message: "Companion 此刻状态已更新为 柔和。" });
-    await expect(relationshipTool?.execute({ mood: { value: "bright", reason: "一起笑了" }, affinity: { delta: 2, reason: "用户分享了快乐" } }, execution([{ type: "turn/start", data: { turn: 1 } }]))).resolves.toMatchObject({ mood: "bright", delta: 2, affinity: 69 });
+    await expect(relationshipTool?.execute({}, execution([]))).rejects.toThrow(
+      "至少更新",
+    );
+    await expect(
+      relationshipTool?.execute(
+        {
+          mood: {
+            value: "tender",
+            note: "今天想慢一点",
+            reason: "想安静地陪伴",
+          },
+        },
+        execution([]),
+      ),
+    ).resolves.toMatchObject({
+      mood: "tender",
+      note: "今天想慢一点",
+      message: "Companion 此刻状态已更新为 柔和。",
+    });
+    await expect(
+      relationshipTool?.execute(
+        {
+          mood: { value: "bright", reason: "一起笑了" },
+          affinity: { delta: 2, reason: "用户分享了快乐" },
+        },
+        execution([{ type: "turn/start", data: { turn: 1 } }]),
+      ),
+    ).resolves.toMatchObject({ mood: "bright", delta: 2, affinity: 69 });
     const handler = rpcHandler!;
-    const initial = await handler("relationship/get", { workspaceId: "workspace-a" }, new AbortController().signal) as { ok: boolean; value: { state: { affinity: number; signature: string }; revision: number } };
-    expect(initial.value.state).toMatchObject({ mood: "bright", affinity: 69, signature: "旧签名" });
-    const watch = handler("relationship/watch", { workspaceId: "workspace-a", revision: initial.value.revision }, new AbortController().signal) as Promise<{ ok: boolean; value: { state: { affinity: number } } }>;
-    await (host.storeFor({ id: "workspace-a", path: directory })).setAffinity(72);
-    await expect(watch).resolves.toMatchObject({ ok: true, value: { state: { affinity: 72 } } });
-    await expect(handler("relationship/clear-signature", { workspaceId: "workspace-a" }, new AbortController().signal)).resolves.toMatchObject({ ok: true, value: { state: { signature: "" } } });
-    await expect(handler("relationship/set-affinity", { workspaceId: "workspace-a", affinity: 101 }, new AbortController().signal)).rejects.toThrow("亲近度");
+    const initial = (await handler(
+      "relationship/get",
+      { workspaceId: "workspace-a" },
+      new AbortController().signal,
+    )) as {
+      ok: boolean;
+      value: {
+        state: { affinity: number; signature: string };
+        revision: number;
+      };
+    };
+    expect(initial.value.state).toMatchObject({
+      mood: "bright",
+      affinity: 69,
+      signature: "旧签名",
+    });
+    const watch = handler(
+      "relationship/watch",
+      { workspaceId: "workspace-a", revision: initial.value.revision },
+      new AbortController().signal,
+    ) as Promise<{ ok: boolean; value: { state: { affinity: number } } }>;
+    await host.storeFor({ id: "workspace-a", path: directory }).setAffinity(72);
+    await expect(watch).resolves.toMatchObject({
+      ok: true,
+      value: { state: { affinity: 72 } },
+    });
+    await expect(
+      handler(
+        "relationship/clear-signature",
+        { workspaceId: "workspace-a" },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ ok: true, value: { state: { signature: "" } } });
+    await expect(
+      handler(
+        "relationship/set-affinity",
+        { workspaceId: "workspace-a", affinity: 101 },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("亲近度");
     await host.dispose();
   });
 
   it("preloads persisted relationship state before the first prompt callback is registered", async () => {
-    const directory = await mkdtemp("/tmp/dsh-companion-host-"); temporary.push(directory);
+    const directory = await mkdtemp("/tmp/dsh-companion-host-");
+    temporary.push(directory);
     await mkdir(join(directory, ".dsh/dsh-companion"), { recursive: true });
-    await writeFile(join(directory, ".dsh/dsh-companion/state.jsonl"), encodeCompanionStateRecord({ at: "2026-09-01T00:00:00.000Z", changes: { seed: true }, state: { mood: "tender", affinity: 67, signature: "旧签名" } }));
-    let prompt: ((context: { agent?: { session?: { header?: { cwd?: string } } } }) => string) | undefined;
+    await writeFile(
+      join(directory, ".dsh/dsh-companion/state.jsonl"),
+      encodeCompanionStateRecord({
+        at: "2026-09-01T00:00:00.000Z",
+        changes: { seed: true },
+        state: { mood: "tender", affinity: 67, signature: "旧签名" },
+      }),
+    );
+    let prompt:
+      | ((context: {
+          agent?: { session?: { header?: { cwd?: string } } };
+        }) => string)
+      | undefined;
     const scope = {
-      get: () => ({ workspaceId: "workspace-a", companionName: "Companion", userName: "你", preferredAddress: "你", defaultAffinity: 50 }),
+      get: () => ({
+        workspaceId: "workspace-a",
+        companionName: "Companion",
+        userName: "你",
+        preferredAddress: "你",
+        defaultAffinity: 50,
+      }),
       update: async () => undefined,
       watch: () => () => undefined,
     };
     const ctx = {
       fs: {
-        resolve: async (path: string, options?: { cwd?: string }) => join(options?.cwd ?? directory, path),
-        stat: async (path: string) => { try { const value = await stat(path); return { type: value.isFile() ? "file" : "directory", size: value.size }; } catch { return undefined; } },
+        resolve: async (path: string, options?: { cwd?: string }) =>
+          join(options?.cwd ?? directory, path),
+        stat: async (path: string) => {
+          try {
+            const value = await stat(path);
+            return {
+              type: value.isFile() ? "file" : "directory",
+              size: value.size,
+            };
+          } catch {
+            return undefined;
+          }
+        },
         readText: async (path: string) => readFile(path, "utf8"),
-        writeText: async (path: string, content: string) => { await mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true }); await writeFile(path, content); },
-        mkdir: async (path: string, options?: { cwd?: string }) => { await mkdir(join(options?.cwd ?? directory, path), { recursive: true }); },
+        writeText: async (path: string, content: string) => {
+          await mkdir(path.slice(0, path.lastIndexOf("/")), {
+            recursive: true,
+          });
+          await writeFile(path, content);
+        },
+        mkdir: async (path: string, options?: { cwd?: string }) => {
+          await mkdir(join(options?.cwd ?? directory, path), {
+            recursive: true,
+          });
+        },
       },
       settings: { register: () => scope },
-      systemPrompt: { context: ({ text }: { text: typeof prompt }) => { prompt = text; return () => undefined; } },
+      systemPrompt: {
+        context: ({ text }: { text: typeof prompt }) => {
+          prompt = text;
+          return () => undefined;
+        },
+      },
       tools: { register: () => undefined },
       connection: { rpc: { handle: () => () => undefined } },
-      workspaceRegistry: { get: (id: string) => id === "workspace-a" ? { id, path: directory, sessionIds: [] } : undefined, list: () => [] },
+      workspaceRegistry: {
+        get: (id: string) =>
+          id === "workspace-a"
+            ? { id, path: directory, sessionIds: [] }
+            : undefined,
+        list: () => [],
+      },
       llm: {},
       on: () => () => undefined,
       webServer: { port: 1, register: () => () => undefined },
     };
     const lifecycle = apply(ctx as never);
     const loaded = await lifecycle.next();
-    expect(prompt?.({ agent: { session: { header: { cwd: directory } } } })).toContain("affinity=67");
-    expect(prompt?.({ agent: { session: { header: { cwd: directory } } } })).toContain('signature="旧签名"');
+    expect(
+      prompt?.({ agent: { session: { header: { cwd: directory } } } }),
+    ).toContain("affinity=67");
+    expect(
+      prompt?.({ agent: { session: { header: { cwd: directory } } } }),
+    ).toContain('signature="旧签名"');
     await loaded.value?.();
     await lifecycle.next();
   });
 
   it("loads a newly selected Workspace before assembling its first Agent context", async () => {
-    const firstDirectory = await mkdtemp("/tmp/dsh-companion-host-"); temporary.push(firstDirectory);
-    const secondDirectory = await mkdtemp("/tmp/dsh-companion-host-"); temporary.push(secondDirectory);
-    for (const directory of [firstDirectory, secondDirectory]) await mkdir(join(directory, ".dsh/dsh-companion"), { recursive: true });
-    await writeFile(join(firstDirectory, ".dsh/dsh-companion/state.jsonl"), encodeCompanionStateRecord({ at: "2026-09-01T00:00:00.000Z", changes: { seed: true }, state: { mood: "tender", affinity: 67, signature: "第一个" } }));
-    await writeFile(join(secondDirectory, ".dsh/dsh-companion/state.jsonl"), encodeCompanionStateRecord({ at: "2026-09-01T00:01:00.000Z", changes: { seed: true }, state: { mood: "bright", affinity: 81, signature: "第二个" } }));
-    let configured = { workspaceId: "workspace-a", companionName: "Companion", userName: "你", preferredAddress: "你", defaultAffinity: 50 };
+    const firstDirectory = await mkdtemp("/tmp/dsh-companion-host-");
+    temporary.push(firstDirectory);
+    const secondDirectory = await mkdtemp("/tmp/dsh-companion-host-");
+    temporary.push(secondDirectory);
+    for (const directory of [firstDirectory, secondDirectory])
+      await mkdir(join(directory, ".dsh/dsh-companion"), { recursive: true });
+    await writeFile(
+      join(firstDirectory, ".dsh/dsh-companion/state.jsonl"),
+      encodeCompanionStateRecord({
+        at: "2026-09-01T00:00:00.000Z",
+        changes: { seed: true },
+        state: { mood: "tender", affinity: 67, signature: "第一个" },
+      }),
+    );
+    await writeFile(
+      join(secondDirectory, ".dsh/dsh-companion/state.jsonl"),
+      encodeCompanionStateRecord({
+        at: "2026-09-01T00:01:00.000Z",
+        changes: { seed: true },
+        state: { mood: "bright", affinity: 81, signature: "第二个" },
+      }),
+    );
+    let configured = {
+      workspaceId: "workspace-a",
+      companionName: "Companion",
+      userName: "你",
+      preferredAddress: "你",
+      defaultAffinity: 50,
+    };
     let secondWorkspaceReadAttempts = 0;
-    let prompt: ((context: { agent?: { session?: { header?: { cwd?: string } } } }) => string) | undefined;
-    type Assemble = (assembly: PromptAssembly, context: { signal?: AbortSignal; agent?: { session?: { header?: { cwd?: string } } } }, next: () => Promise<PromptAssembly>) => Promise<PromptAssembly>;
+    let prompt:
+      | ((context: {
+          agent?: { session?: { header?: { cwd?: string } } };
+        }) => string)
+      | undefined;
+    type Assemble = (
+      assembly: PromptAssembly,
+      context: {
+        signal?: AbortSignal;
+        agent?: { session?: { header?: { cwd?: string } } };
+      },
+      next: () => Promise<PromptAssembly>,
+    ) => Promise<PromptAssembly>;
     let assemble: Assemble | undefined;
-    const scope = { get: () => configured, update: async () => undefined, watch: () => () => undefined };
+    const scope = {
+      get: () => configured,
+      update: async () => undefined,
+      watch: () => () => undefined,
+    };
     const ctx = {
       fs: {
-        resolve: async (path: string, options?: { cwd?: string }) => join(options?.cwd ?? firstDirectory, path),
-        stat: async (path: string) => { try { const value = await stat(path); return { type: value.isFile() ? "file" : "directory", size: value.size }; } catch { return undefined; } },
+        resolve: async (path: string, options?: { cwd?: string }) =>
+          join(options?.cwd ?? firstDirectory, path),
+        stat: async (path: string) => {
+          try {
+            const value = await stat(path);
+            return {
+              type: value.isFile() ? "file" : "directory",
+              size: value.size,
+            };
+          } catch {
+            return undefined;
+          }
+        },
         readText: async (path: string, signal?: AbortSignal) => {
           if (path.startsWith(secondDirectory)) {
             secondWorkspaceReadAttempts += 1;
@@ -345,15 +797,34 @@ describe("Host accepted-turn relationship contract", () => {
           }
           return readFile(path, "utf8");
         },
-        writeText: async (path: string, content: string) => { await mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true }); await writeFile(path, content); },
-        mkdir: async (path: string, options?: { cwd?: string }) => { await mkdir(join(options?.cwd ?? firstDirectory, path), { recursive: true }); },
+        writeText: async (path: string, content: string) => {
+          await mkdir(path.slice(0, path.lastIndexOf("/")), {
+            recursive: true,
+          });
+          await writeFile(path, content);
+        },
+        mkdir: async (path: string, options?: { cwd?: string }) => {
+          await mkdir(join(options?.cwd ?? firstDirectory, path), {
+            recursive: true,
+          });
+        },
       },
       settings: { register: () => scope },
-      systemPrompt: { context: ({ text }: { text: typeof prompt }) => { prompt = text; return () => undefined; } },
+      systemPrompt: {
+        context: ({ text }: { text: typeof prompt }) => {
+          prompt = text;
+          return () => undefined;
+        },
+      },
       tools: { register: () => undefined },
       connection: { rpc: { handle: () => () => undefined } },
       workspaceRegistry: {
-        get: (id: string) => id === "workspace-a" ? { id, path: firstDirectory, sessionIds: [] } : id === "workspace-b" ? { id, path: secondDirectory, sessionIds: [] } : undefined,
+        get: (id: string) =>
+          id === "workspace-a"
+            ? { id, path: firstDirectory, sessionIds: [] }
+            : id === "workspace-b"
+              ? { id, path: secondDirectory, sessionIds: [] }
+              : undefined,
         list: () => [],
       },
       llm: {},
@@ -368,14 +839,48 @@ describe("Host accepted-turn relationship contract", () => {
     configured = { ...configured, workspaceId: "workspace-b" };
     const cancelled = new AbortController();
     cancelled.abort(new Error("first assembly cancelled"));
-    const cancelledContext = { signal: cancelled.signal, agent: { session: { header: { cwd: secondDirectory } } } };
-    const cancelledAssembly: PromptAssembly = { sections: [], contexts: [{ name: "dsh-companion:relationship", text: prompt?.(cancelledContext) ?? "" }], tools: [], variables: {} };
-    await expect(assemble!(cancelledAssembly, cancelledContext, async () => cancelledAssembly)).rejects.toThrow("first assembly cancelled");
-    const context = { signal: new AbortController().signal, agent: { session: { header: { cwd: secondDirectory } } } };
-    const assembly: PromptAssembly = { sections: [], contexts: [{ name: "dsh-companion:relationship", text: prompt?.(context) ?? "" }], tools: [], variables: {} };
+    const cancelledContext = {
+      signal: cancelled.signal,
+      agent: { session: { header: { cwd: secondDirectory } } },
+    };
+    const cancelledAssembly: PromptAssembly = {
+      sections: [],
+      contexts: [
+        {
+          name: "dsh-companion:relationship",
+          text: prompt?.(cancelledContext) ?? "",
+        },
+      ],
+      tools: [],
+      variables: {},
+    };
+    await expect(
+      assemble!(
+        cancelledAssembly,
+        cancelledContext,
+        async () => cancelledAssembly,
+      ),
+    ).rejects.toThrow("first assembly cancelled");
+    const context = {
+      signal: new AbortController().signal,
+      agent: { session: { header: { cwd: secondDirectory } } },
+    };
+    const assembly: PromptAssembly = {
+      sections: [],
+      contexts: [
+        { name: "dsh-companion:relationship", text: prompt?.(context) ?? "" },
+      ],
+      tools: [],
+      variables: {},
+    };
     const result = await assemble!(assembly, context, async () => assembly);
     expect(secondWorkspaceReadAttempts).toBe(2);
-    expect(result.contexts).toContainEqual(expect.objectContaining({ name: "dsh-companion:relationship", text: expect.stringContaining("affinity=81") }));
+    expect(result.contexts).toContainEqual(
+      expect.objectContaining({
+        name: "dsh-companion:relationship",
+        text: expect.stringContaining("affinity=81"),
+      }),
+    );
     expect(result.contexts[0]?.text).toContain('signature="第二个"');
     expect(result.contexts[0]?.text).not.toContain("affinity=67");
     await loaded.value?.();
@@ -383,10 +888,29 @@ describe("Host accepted-turn relationship contract", () => {
   });
 
   it("registers a global compaction waterfall that reads live scope, delegates once, and disposes", async () => {
-    let configured = { workspaceId: "workspace-a", companionName: "Companion", userName: "你", preferredAddress: "你", defaultAffinity: 50 };
-    const workspace = { id: "workspace-a", path: "/test-workspace", sessionIds: ["session-a"] as string[] };
-    const scope = { get: () => configured, update: async () => undefined, watch: () => () => undefined };
-    let listener: ((options: GenerateOptions, next: () => AsyncIterable<StreamChunk>) => AsyncIterable<StreamChunk>) | undefined;
+    let configured = {
+      workspaceId: "workspace-a",
+      companionName: "Companion",
+      userName: "你",
+      preferredAddress: "你",
+      defaultAffinity: 50,
+    };
+    const workspace = {
+      id: "workspace-a",
+      path: "/test-workspace",
+      sessionIds: ["session-a"] as string[],
+    };
+    const scope = {
+      get: () => configured,
+      update: async () => undefined,
+      watch: () => () => undefined,
+    };
+    let listener:
+      | ((
+          options: GenerateOptions,
+          next: () => AsyncIterable<StreamChunk>,
+        ) => AsyncIterable<StreamChunk>)
+      | undefined;
     let listenerOptions: unknown;
     let listenerDisposed = 0;
     const ctx = {
@@ -395,13 +919,18 @@ describe("Host accepted-turn relationship contract", () => {
       systemPrompt: { context: () => () => undefined },
       tools: { register: () => undefined },
       connection: { rpc: { handle: () => () => undefined } },
-      workspaceRegistry: { get: (id: string) => id === workspace.id ? workspace : undefined, list: () => [workspace] },
+      workspaceRegistry: {
+        get: (id: string) => (id === workspace.id ? workspace : undefined),
+        list: () => [workspace],
+      },
       llm: {},
       on: (name: string, callback: typeof listener, options: unknown) => {
         if (name !== "llm/stream") return () => undefined;
         listener = callback;
         listenerOptions = options;
-        return () => { listenerDisposed += 1; };
+        return () => {
+          listenerDisposed += 1;
+        };
       },
       webServer: { port: 1, register: () => () => undefined },
     };
@@ -409,24 +938,57 @@ describe("Host accepted-turn relationship contract", () => {
     host.register();
     expect(listenerOptions).toEqual({ global: true });
 
-    const basicTail = createUserMessage({ content: [{ type: "text", text: "standard basic prompt" }], source: { kind: "plugin", plugin: "dsh-compaction-basic" } });
-    const prefix = createUserMessage({ content: [{ type: "text", text: "hello" }], source: { kind: "user" } });
-    const qualified: GenerateOptions = { provider: "fake", model: "fake", messages: [prefix, basicTail], sessionId: "session-a" as GenerateOptions["sessionId"], purpose: "compaction" };
+    const basicTail = createUserMessage({
+      content: [{ type: "text", text: "standard basic prompt" }],
+      source: { kind: "plugin", plugin: "dsh-compaction-basic" },
+    });
+    const prefix = createUserMessage({
+      content: [{ type: "text", text: "hello" }],
+      source: { kind: "user" },
+    });
+    const qualified: GenerateOptions = {
+      provider: "fake",
+      model: "fake",
+      messages: [prefix, basicTail],
+      sessionId: "session-a" as GenerateOptions["sessionId"],
+      purpose: "compaction",
+    };
     const downstream = (options: GenerateOptions) => {
       let calls = 0;
-      const stream = (async function* (): AsyncGenerator<StreamChunk> { yield { type: "finish", reason: { kind: "stop" } }; })();
-      const next = () => { calls += 1; return stream; };
+      const stream = (async function* (): AsyncGenerator<StreamChunk> {
+        yield { type: "finish", reason: { kind: "stop" } };
+      })();
+      const next = () => {
+        calls += 1;
+        return stream;
+      };
       return { result: listener!(options, next), calls: () => calls, stream };
     };
     const changed = downstream(qualified);
     expect(changed.result).toBe(changed.stream);
     expect(changed.calls()).toBe(1);
     expect(qualified.messages[0]).toBe(prefix);
-    expect(qualified.messages.at(-1)).toMatchObject({ source: { kind: "plugin", plugin: "dsh-companion" } });
+    expect(qualified.messages.at(-1)).toMatchObject({
+      source: { kind: "plugin", plugin: "dsh-companion" },
+    });
 
-    const malformed = { ...qualified, messages: [prefix, createUserMessage({ content: [{ type: "text", text: "unknown backend" }], source: { kind: "plugin", plugin: "different-backend" } })] };
+    const malformed = {
+      ...qualified,
+      messages: [
+        prefix,
+        createUserMessage({
+          content: [{ type: "text", text: "unknown backend" }],
+          source: { kind: "plugin", plugin: "different-backend" },
+        }),
+      ],
+    };
     let malformedNextCalls = 0;
-    expect(() => listener!(malformed, () => { malformedNextCalls += 1; return changed.stream; })).toThrow(/dsh-compaction-basic/i);
+    expect(() =>
+      listener!(malformed, () => {
+        malformedNextCalls += 1;
+        return changed.stream;
+      }),
+    ).toThrow(/dsh-compaction-basic/i);
     expect(malformedNextCalls).toBe(0);
 
     configured = { ...configured, workspaceId: "" };

@@ -22,7 +22,9 @@ function selectedPackage(selector: string | undefined): PublicPackage[] {
 
 const [selector, requestedDestination] = process.argv.slice(2);
 const destination = resolve(
-  requestedDestination ?? process.env.RELEASE_ARTIFACT_DIR ?? ".release-artifacts",
+  requestedDestination ??
+    process.env.RELEASE_ARTIFACT_DIR ??
+    ".release-artifacts",
 );
 await mkdir(destination, { recursive: true });
 

@@ -1,4 +1,7 @@
-import type { ImageAttachmentLimits, ImageMediaType } from "@deepseek-ai/dsh-attachment";
+import type {
+  ImageAttachmentLimits,
+  ImageMediaType,
+} from "@deepseek-ai/dsh-attachment";
 
 export const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
@@ -35,17 +38,29 @@ export function imageIntakeError(
 ): string | undefined {
   if (incoming.length === 0) return undefined;
   if (!limits) return "当前无法发送图片。";
-  if (incoming.some((file) => !IMAGE_MEDIA_TYPES.has(file.type as ImageMediaType) || !limits.mediaTypes.includes(file.type as ImageMediaType))) {
+  if (
+    incoming.some(
+      (file) =>
+        !IMAGE_MEDIA_TYPES.has(file.type as ImageMediaType) ||
+        !limits.mediaTypes.includes(file.type as ImageMediaType),
+    )
+  ) {
     return "只支持 PNG、JPEG、WebP 或 GIF。";
   }
-  if (current.length + incoming.length > limits.maxImagesPerMessage) return `一次最多 ${limits.maxImagesPerMessage} 张图片。`;
-  if (incoming.some((file) => file.size > limits.maxImageBytes)) return "图片太大了。";
-  const total = current.reduce((sum, image) => sum + image.file.size, 0) + incoming.reduce((sum, file) => sum + file.size, 0);
+  if (current.length + incoming.length > limits.maxImagesPerMessage)
+    return `一次最多 ${limits.maxImagesPerMessage} 张图片。`;
+  if (incoming.some((file) => file.size > limits.maxImageBytes))
+    return "图片太大了。";
+  const total =
+    current.reduce((sum, image) => sum + image.file.size, 0) +
+    incoming.reduce((sum, file) => sum + file.size, 0);
   if (total > limits.maxMessageImageBytes) return "图片总大小超出限制。";
   return undefined;
 }
 
-export function createImageDrafts(files: readonly File[]): CompanionImageDraft[] {
+export function createImageDrafts(
+  files: readonly File[],
+): CompanionImageDraft[] {
   return files.map((file) => ({
     id: crypto.randomUUID(),
     file,
@@ -53,12 +68,18 @@ export function createImageDrafts(files: readonly File[]): CompanionImageDraft[]
   }));
 }
 
-export function releaseImageDrafts(drafts: readonly CompanionImageDraft[]): void {
-  for (const draft of drafts) if (draft.previewUrl.startsWith("blob:")) URL.revokeObjectURL(draft.previewUrl);
+export function releaseImageDrafts(
+  drafts: readonly CompanionImageDraft[],
+): void {
+  for (const draft of drafts)
+    if (draft.previewUrl.startsWith("blob:"))
+      URL.revokeObjectURL(draft.previewUrl);
 }
 
 /** Preserve the clipboard's image order while leaving ordinary text paste alone. */
-export function imageFilesFromClipboard(clipboard: Pick<DataTransfer, "items" | "files"> | null): File[] {
+export function imageFilesFromClipboard(
+  clipboard: Pick<DataTransfer, "items" | "files"> | null,
+): File[] {
   if (!clipboard) return [];
   const files: File[] = [];
   for (let index = 0; index < clipboard.items.length; index += 1) {
@@ -68,7 +89,9 @@ export function imageFilesFromClipboard(clipboard: Pick<DataTransfer, "items" | 
     if (file) files.push(file);
   }
   if (files.length > 0) return files;
-  return Array.from(clipboard.files).filter((file) => file.type.startsWith("image/"));
+  return Array.from(clipboard.files).filter((file) =>
+    file.type.startsWith("image/"),
+  );
 }
 
 /** Fetch a Capacitor camera result into the same File shape used by every image intake path. */
@@ -82,7 +105,10 @@ export async function imageFileFromCapturedMedia(
     const response = await fetchMedia(url);
     if (!response.ok) throw new Error("camera-media-fetch-failed");
     const blob = await response.blob();
-    const type = imageMediaType(blob.type) ?? imageMediaType(media.metadata?.format) ?? imageMediaType(url);
+    const type =
+      imageMediaType(blob.type) ??
+      imageMediaType(media.metadata?.format) ??
+      imageMediaType(url);
     if (!type) throw new Error("camera-media-unsupported-type");
     const extension = type.slice("image/".length);
     return new File([blob], `camera-photo.${extension}`, { type });
@@ -91,13 +117,17 @@ export async function imageFileFromCapturedMedia(
   }
 }
 
-export async function serializeImageDrafts(drafts: readonly CompanionImageDraft[]): Promise<ImagePromptPart[]> {
-  return Promise.all(drafts.map(async (draft) => ({
-    type: "image" as const,
-    mediaType: draft.file.type as ImageMediaType,
-    data: await base64Of(draft.file),
-    ...(draft.file.name ? { name: draft.file.name } : {}),
-  })));
+export async function serializeImageDrafts(
+  drafts: readonly CompanionImageDraft[],
+): Promise<ImagePromptPart[]> {
+  return Promise.all(
+    drafts.map(async (draft) => ({
+      type: "image" as const,
+      mediaType: draft.file.type as ImageMediaType,
+      data: await base64Of(draft.file),
+      ...(draft.file.name ? { name: draft.file.name } : {}),
+    })),
+  );
 }
 
 function base64Of(file: File): Promise<string> {
@@ -106,10 +136,14 @@ function base64Of(file: File): Promise<string> {
     reader.onload = () => {
       const value = typeof reader.result === "string" ? reader.result : "";
       const separator = value.indexOf(",");
-      if (separator < 0) { reject(new Error("image-read-failed")); return; }
+      if (separator < 0) {
+        reject(new Error("image-read-failed"));
+        return;
+      }
       resolve(value.slice(separator + 1));
     };
-    reader.onerror = () => reject(reader.error ?? new Error("image-read-failed"));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("image-read-failed"));
     reader.readAsDataURL(file);
   });
 }
@@ -117,7 +151,13 @@ function base64Of(file: File): Promise<string> {
 function imageMediaType(value: string | undefined): ImageMediaType | undefined {
   const normalized = value?.trim().toLowerCase().replace(/^\./u, "");
   if (!normalized) return undefined;
-  if (normalized === "jpg" || normalized === "jpeg" || normalized === "image/jpg" || normalized === "image/jpeg") return "image/jpeg";
+  if (
+    normalized === "jpg" ||
+    normalized === "jpeg" ||
+    normalized === "image/jpg" ||
+    normalized === "image/jpeg"
+  )
+    return "image/jpeg";
   if (normalized === "png" || normalized === "image/png") return "image/png";
   if (normalized === "webp" || normalized === "image/webp") return "image/webp";
   if (normalized === "gif" || normalized === "image/gif") return "image/gif";

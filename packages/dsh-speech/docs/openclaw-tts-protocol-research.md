@@ -24,12 +24,12 @@ audio-only form keeps the agent contract unambiguous.
 
 ## What the other apparent forms mean
 
-| Form | OpenClaw meaning | Use in DSH Speech |
-| --- | --- | --- |
-| `[[tts:text]]speech[[/tts:text]]` | Speech payload; it is removed from visible text. | **Yes — the sole agent-emitted format.** |
-| `[[tts:speakerVoiceId=... speed=1.1]]` | A key/value directive that overrides provider settings for the reply; it carries no spoken content. | No. |
-| `[[tts]]speech[[/tts]]` | A supported plain block: its content is both used as speech text and retained as visible text. | No; it is not the documented form we need. |
-| `[[tts:speech]][[/tts:]]` | Not an OpenClaw speech block. The content after `tts:` is parsed as directive tokens, which must be `key=value`; there is no speech payload. | No. |
+| Form                                   | OpenClaw meaning                                                                                                                             | Use in DSH Speech                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `[[tts:text]]speech[[/tts:text]]`      | Speech payload; it is removed from visible text.                                                                                             | **Yes — the sole agent-emitted format.**   |
+| `[[tts:speakerVoiceId=... speed=1.1]]` | A key/value directive that overrides provider settings for the reply; it carries no spoken content.                                          | No.                                        |
+| `[[tts]]speech[[/tts]]`                | A supported plain block: its content is both used as speech text and retained as visible text.                                               | No; it is not the documented form we need. |
+| `[[tts:speech]][[/tts:]]`              | Not an OpenClaw speech block. The content after `tts:` is parsed as directive tokens, which must be `key=value`; there is no speech payload. | No.                                        |
 
 The parser is explicit about these semantics:
 

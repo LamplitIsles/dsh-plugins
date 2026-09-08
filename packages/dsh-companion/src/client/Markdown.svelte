@@ -1,5 +1,8 @@
 <script lang="ts">
-  import SvelteMarkdown, { buildUnsupportedHTML, defaultRenderers } from "@humanspeak/svelte-markdown";
+  import SvelteMarkdown, {
+    buildUnsupportedHTML,
+    defaultRenderers,
+  } from "@humanspeak/svelte-markdown";
 
   export let text = "";
 

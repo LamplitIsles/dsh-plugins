@@ -9,7 +9,7 @@ installed `@lamplitisles/dsh-speech` plugin.
 
 ## Install and build
 
-From the workspace root, use the pinned Node.js 24 and pnpm 11.22.0 toolchain:
+From the workspace root, use Node.js `>=24.11.0` and the pinned pnpm 12.3.4 toolchain:
 
 ```sh
 corepack pnpm install --frozen-lockfile

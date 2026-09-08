@@ -86,7 +86,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsup",
+    "build": "tsdown",
     "pack-smoke": "tsx scripts/pack-smoke.ts"
   },
   "devDependencies": {
@@ -100,9 +100,9 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-test-renderer": "18.3.1",
-    "tsup": "^8.5.1",
+    "tsdown": "catalog:",
     "tsx": "^4.23.12",
-    "typescript": "5.7.3",
+    "typescript": "catalog:",
     "vitest": "^4.1.11"
   }
 }

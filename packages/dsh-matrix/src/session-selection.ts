@@ -45,16 +45,34 @@ function hasHumanPromptContent(data: unknown): boolean {
   if (content === undefined) return true;
   if (typeof content === "string") return content.trim().length > 0;
   if (!Array.isArray(content)) return false;
-  return content.some((block) => typeof block === "object" && block !== null && (block as { type?: unknown; text?: unknown }).type === "text" && typeof (block as { text?: unknown }).text === "string" && (block as { text: string }).text.trim().length > 0);
+  return content.some(
+    (block) =>
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown; text?: unknown }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string" &&
+      (block as { text: string }).text.trim().length > 0,
+  );
 }
 
 /** Return the latest timestamp at which a persisted human user prompt entered the session. */
-export function lastHumanPromptAt(inspection: SessionInspectionLike): number | undefined {
+export function lastHumanPromptAt(
+  inspection: SessionInspectionLike,
+): number | undefined {
   let latest: number | undefined;
   for (const event of inspection.events) {
-    if (event.type !== "user/message" || sourceKind(event.data) !== "user" || !hasHumanPromptContent(event.data)) continue;
-    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : undefined;
-    if (time !== undefined && (latest === undefined || time > latest)) latest = time;
+    if (
+      event.type !== "user/message" ||
+      sourceKind(event.data) !== "user" ||
+      !hasHumanPromptContent(event.data)
+    )
+      continue;
+    const time =
+      typeof event.time === "number" && Number.isFinite(event.time)
+        ? event.time
+        : undefined;
+    if (time !== undefined && (latest === undefined || time > latest))
+      latest = time;
   }
   return latest;
 }
@@ -67,7 +85,7 @@ export function lastHumanPromptAt(inspection: SessionInspectionLike): number | u
 export function selectMostRecentEligibleSession(
   workspace: WorkspaceLike,
   inspections: ReadonlyMap<string, SessionInspectionLike>,
-  archivedSessionIds: ReadonlySet<string> = new Set()
+  archivedSessionIds: ReadonlySet<string> = new Set(),
 ): ActiveSessionCandidate | undefined {
   const candidates: ActiveSessionCandidate[] = [];
   for (const rawId of workspace.sessionIds) {
@@ -82,14 +100,21 @@ export function selectMostRecentEligibleSession(
     candidates.push({ sessionId, inspection, lastHumanPromptAt: last });
   }
   candidates.sort((left, right) => {
-    if (left.lastHumanPromptAt !== right.lastHumanPromptAt) return right.lastHumanPromptAt - left.lastHumanPromptAt;
+    if (left.lastHumanPromptAt !== right.lastHumanPromptAt)
+      return right.lastHumanPromptAt - left.lastHumanPromptAt;
     // Compare code points directly so ties do not depend on the host locale.
-    return left.sessionId < right.sessionId ? -1 : left.sessionId > right.sessionId ? 1 : 0;
+    return left.sessionId < right.sessionId
+      ? -1
+      : left.sessionId > right.sessionId
+        ? 1
+        : 0;
   });
   return candidates[0];
 }
 
 /** Resolve the selected workspace id without allowing a later workspace to switch the lock. */
-export function selectedWorkspaceId(settings: Pick<MatrixSettings, "workspaceId">): string {
+export function selectedWorkspaceId(
+  settings: Pick<MatrixSettings, "workspaceId">,
+): string {
   return settings.workspaceId.trim();
 }

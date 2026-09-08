@@ -25,7 +25,11 @@ function fencedRanges(input: string): Array<[number, number]> {
       open = { character: token[0]!, length: token.length, start: match.index };
       continue;
     }
-    if (open.character === token[0] && token.length >= open.length && /^[ \t]*$/.test(suffix)) {
+    if (
+      open.character === token[0] &&
+      token.length >= open.length &&
+      /^[ \t]*$/.test(suffix)
+    ) {
       ranges.push([open.start, marker.lastIndex]);
       open = undefined;
     }
@@ -34,7 +38,11 @@ function fencedRanges(input: string): Array<[number, number]> {
   return ranges;
 }
 
-function overlapsFence(start: number, end: number, ranges: Array<[number, number]>): boolean {
+function overlapsFence(
+  start: number,
+  end: number,
+  ranges: Array<[number, number]>,
+): boolean {
   return ranges.some(([from, to]) => start < to && end > from);
 }
 
@@ -58,8 +66,12 @@ export function digestText(value: string): string {
  * malformed marker pairs are rejected, and a second passage is rejected so a
  * single assistant node always maps to at most one voice row.
  */
-export function parseTtsPassage(value: unknown, finalized: boolean): TtsPassage | undefined {
-  if (!finalized || typeof value !== "string" || value.length === 0) return undefined;
+export function parseTtsPassage(
+  value: unknown,
+  finalized: boolean,
+): TtsPassage | undefined {
+  if (!finalized || typeof value !== "string" || value.length === 0)
+    return undefined;
   const fences = fencedRanges(value);
   let cursor = 0;
   while (cursor < value.length) {
@@ -70,7 +82,11 @@ export function parseTtsPassage(value: unknown, finalized: boolean): TtsPassage 
     const end = closeStart + CLOSE_TAG.length;
     const raw = value.slice(start + OPEN_TAG.length, closeStart);
     const text = normalizeTtsText(raw);
-    const valid = text && !raw.includes("[[") && !raw.includes("]]") && Array.from(text).length <= 240;
+    const valid =
+      text &&
+      !raw.includes("[[") &&
+      !raw.includes("]]") &&
+      Array.from(text).length <= 240;
     if (!overlapsFence(start, end, fences) && valid) {
       return { text, start, end, digest: digestText(text) };
     }
@@ -108,10 +124,14 @@ export function resolveImageDisplaySize(
   height: number | undefined,
   maxLongEdge = 240,
 ): ImageDisplaySize {
-  const validWidth = typeof width === "number" && Number.isFinite(width) && width > 0;
-  const validHeight = typeof height === "number" && Number.isFinite(height) && height > 0;
-  const cap = Number.isFinite(maxLongEdge) && maxLongEdge > 0 ? maxLongEdge : 240;
-  if (!validWidth || !validHeight) return { width: cap, height: Math.round(cap * 0.75), cropped: false };
+  const validWidth =
+    typeof width === "number" && Number.isFinite(width) && width > 0;
+  const validHeight =
+    typeof height === "number" && Number.isFinite(height) && height > 0;
+  const cap =
+    Number.isFinite(maxLongEdge) && maxLongEdge > 0 ? maxLongEdge : 240;
+  if (!validWidth || !validHeight)
+    return { width: cap, height: Math.round(cap * 0.75), cropped: false };
 
   const sourceWidth = width!;
   const sourceHeight = height!;
@@ -128,23 +148,38 @@ export function resolveImageDisplaySize(
     displayHeight = Math.max(1, Math.round(displayWidth / 4));
     cropped = true;
   }
-  return { width: displayWidth, height: displayHeight, sourceAspectRatio, cropped };
+  return {
+    width: displayWidth,
+    height: displayHeight,
+    sourceAspectRatio,
+    cropped,
+  };
 }
 
 export function isImageAttachment(value: unknown): value is ImageRefLike {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
   const record = value as Record<string, unknown>;
-  return typeof record.attachmentId === "string" && record.attachmentId.length > 0
-    && typeof record.mediaType === "string" && record.mediaType.startsWith("image/");
+  return (
+    typeof record.attachmentId === "string" &&
+    record.attachmentId.length > 0 &&
+    typeof record.mediaType === "string" &&
+    record.mediaType.startsWith("image/")
+  );
 }
 
 /** Extract an assistant structured image content block. */
-export function imageFromContent(content: unknown): ImageAttachmentRef | undefined {
+export function imageFromContent(
+  content: unknown,
+): ImageAttachmentRef | undefined {
   if (!Array.isArray(content)) return undefined;
   for (const item of content) {
     if (typeof item !== "object" || item === null) continue;
     const record = item as Record<string, unknown>;
-    if ((record.type === "image" || record.kind === "image") && isImageAttachment(record.attachment)) {
+    if (
+      (record.type === "image" || record.kind === "image") &&
+      isImageAttachment(record.attachment)
+    ) {
       return record.attachment as ImageAttachmentRef;
     }
   }
@@ -163,28 +198,69 @@ export interface ImageGenProjection {
  * Recognize only the allowlisted durable ImageGen result. Generic Tool
  * content never reaches this projection.
  */
-export function recognizeImageGenResult(block: unknown, fallbackId = "imagegen"): ImageGenProjection | undefined {
+export function recognizeImageGenResult(
+  block: unknown,
+  fallbackId = "imagegen",
+): ImageGenProjection | undefined {
   if (typeof block !== "object" || block === null) return undefined;
   const record = block as Record<string, unknown>;
-  const name = typeof record.name === "string" ? record.name : typeof record.toolName === "string" ? record.toolName : undefined;
-  const isImageGen = name === "kepos_image_generate" || record.kind === "tool-result" && record.tool === "kepos_image_generate";
+  const name =
+    typeof record.name === "string"
+      ? record.name
+      : typeof record.toolName === "string"
+        ? record.toolName
+        : undefined;
+  const isImageGen =
+    name === "kepos_image_generate" ||
+    (record.kind === "tool-result" && record.tool === "kepos_image_generate");
   if (!isImageGen) return undefined;
-  const id = typeof record.callId === "string" ? record.callId : typeof record.id === "string" ? record.id : fallbackId;
-  if (record.kind === "tool-call" || record.running === true || record.state === "running") {
+  const id =
+    typeof record.callId === "string"
+      ? record.callId
+      : typeof record.id === "string"
+        ? record.id
+        : fallbackId;
+  if (
+    record.kind === "tool-call" ||
+    record.running === true ||
+    record.state === "running"
+  ) {
     return { id, state: "running", alt: "正在生成的图片" };
   }
-  if (record.isError === true || record.state === "failed" || record.error !== undefined) {
-    return { id, state: "failed", alt: "图片生成失败", error: safeError(record.error) };
+  if (
+    record.isError === true ||
+    record.state === "failed" ||
+    record.error !== undefined
+  ) {
+    return {
+      id,
+      state: "failed",
+      alt: "图片生成失败",
+      error: safeError(record.error),
+    };
   }
   const attachment = imageFromContent(record.content);
-  if (!attachment) return { id, state: "failed", alt: "图片生成失败", error: "未找到图片附件" };
-  const nameHint = typeof attachment.name === "string" && attachment.name.trim() ? attachment.name.trim() : "生成的图片";
+  if (!attachment)
+    return {
+      id,
+      state: "failed",
+      alt: "图片生成失败",
+      error: "未找到图片附件",
+    };
+  const nameHint =
+    typeof attachment.name === "string" && attachment.name.trim()
+      ? attachment.name.trim()
+      : "生成的图片";
   return { id, state: "ready", attachment, alt: nameHint };
 }
 
 function safeError(value: unknown): string {
   if (typeof value === "string") return value.slice(0, 160);
-  if (typeof value === "object" && value !== null && typeof (value as { message?: unknown }).message === "string") {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { message?: unknown }).message === "string"
+  ) {
     return String((value as { message: string }).message).slice(0, 160);
   }
   return "图片生成没有完成。";
@@ -194,11 +270,17 @@ export function imageProjectionId(nodeId: string, blockIndex: number): string {
   return `image:${nodeId}:${blockIndex}`;
 }
 
-export function imageGenProjectionId(callId: string, attachmentId: string): string {
+export function imageGenProjectionId(
+  callId: string,
+  attachmentId: string,
+): string {
   return `imagegen:${callId}:${attachmentId}`;
 }
 
-export function ttsProjectionId(nodeId: string, passage: Pick<TtsPassage, "start" | "digest">): string {
+export function ttsProjectionId(
+  nodeId: string,
+  passage: Pick<TtsPassage, "start" | "digest">,
+): string {
   return `tts:${nodeId}:${passage.start}:${passage.digest}`;
 }
 
@@ -210,7 +292,9 @@ export interface ObjectUrlRegistry {
 export function createObjectUrlRegistry(): ObjectUrlRegistry {
   const urls = new Set<string>();
   return {
-    add(url) { urls.add(url); },
+    add(url) {
+      urls.add(url);
+    },
     revokeAll() {
       for (const url of urls) URL.revokeObjectURL(url);
       urls.clear();

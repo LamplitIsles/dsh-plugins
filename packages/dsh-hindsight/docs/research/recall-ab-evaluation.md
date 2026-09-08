@@ -24,9 +24,7 @@ Input is JSON:
       "query": "synthetic query",
       "recallExpected": true,
       "queryTimestamp": "2026-09-03T10:00:00+08:00",
-      "gold": [
-        { "label": "expected memory", "terms": ["synthetic marker"] }
-      ],
+      "gold": [{ "label": "expected memory", "terms": ["synthetic marker"] }],
       "unwanted": [
         { "label": "unrelated contact", "terms": ["synthetic contact"] }
       ]

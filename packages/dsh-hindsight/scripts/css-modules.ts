@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { transform } from "lightningcss";
+import type { TsdownPlugin } from "tsdown";
 export async function compileCssModule(filename: string) {
   const result = transform({
     filename,
@@ -15,5 +17,41 @@ export async function compileCssModule(filename: string) {
         value.name,
       ]),
     ),
+  };
+}
+
+const virtualCssPrefix = "\0dsh-hindsight-css:";
+
+export function cssModulesPlugin(styleId: string): TsdownPlugin {
+  return {
+    name: "dsh-hindsight-css-modules",
+    resolveId(source, importer) {
+      if (!importer || !source.endsWith(".css")) return null;
+      return `${virtualCssPrefix}${resolve(dirname(importer), source)}?dsh-css`;
+    },
+    async load(id) {
+      if (!id.startsWith(virtualCssPrefix)) return null;
+      const filename = id
+        .slice(virtualCssPrefix.length)
+        .replace(/\?dsh-css$/u, "");
+      if (!filename.endsWith(".module.css")) {
+        return {
+          code: `export default ${JSON.stringify(await readFile(filename, "utf8"))};`,
+          moduleType: "js",
+          moduleSideEffects: true,
+        };
+      }
+      const { css, classes } = await compileCssModule(filename);
+      return {
+        code: [
+          `const css=${JSON.stringify(css)};`,
+          `const styleId=${JSON.stringify(styleId)};`,
+          "if(typeof document!=='undefined'&&!document.querySelector(`style[data-plugin-css=\\\"${styleId}\\\"]`)){const tag=document.createElement('style');tag.dataset.pluginCss=styleId;tag.textContent=css;document.head.appendChild(tag)}",
+          `export default ${JSON.stringify(classes)};`,
+        ].join("\n"),
+        moduleType: "js",
+        moduleSideEffects: true,
+      };
+    },
   };
 }

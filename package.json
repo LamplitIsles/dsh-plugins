@@ -9,18 +9,22 @@
     "url": "https://github.com/LamplitIsles/dsh-plugins.git"
   },
   "type": "module",
-  "packageManager": "pnpm@11.22.0",
+  "packageManager": "pnpm@12.3.4",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.11.0"
   },
   "scripts": {
-    "typecheck": "pnpm run typecheck:root && pnpm --filter \"./packages/*\" run typecheck",
+    "typecheck": "corepack pnpm run typecheck:root && corepack pnpm --filter \"./packages/*\" run typecheck",
     "typecheck:root": "tsc --noEmit",
-    "test": "pnpm --filter \"./packages/*\" run test && pnpm run test:release",
+    "test": "corepack pnpm --filter \"./packages/*\" run test && corepack pnpm run test:release",
     "test:release": "vitest run tests/release.test.ts tests/build-declarations.test.ts tests/npm-bootstrap.test.ts",
-    "test:e2e": "pnpm --filter @lamplitisles/dsh-companion run test:e2e",
-    "build": "pnpm --filter \"./packages/*\" run build",
-    "pack:check": "pnpm run build && tsx scripts/pack-check.ts",
+    "test:e2e": "corepack pnpm --filter @lamplitisles/dsh-companion run test:e2e",
+    "build": "corepack pnpm --filter \"./packages/*\" run build",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "pack:check": "corepack pnpm run build && tsx scripts/pack-check.ts",
     "pack:all": "tsx scripts/pack.ts",
     "artifact:smoke": "tsx scripts/artifact-smoke.ts",
     "release:check": "tsx scripts/release.ts check",
@@ -28,9 +32,13 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "prettier": "^3.6.2",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "svelte": "catalog:",
+    "tsdown": "catalog:",
     "tsx": "^4.23.13",
-    "typescript": "^5.9.3",
+    "typescript": "catalog:",
     "vitest": "^4.1.11"
   }
 }

@@ -1,13 +1,28 @@
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Context as ClientContext } from "@deepseek-ai/cordis";
-import type { ClientConnectionRpc, ConnectionRpcResult } from "@deepseek-ai/dsh-client-connection/client";
-import type { SessionListState, SessionSnapshot } from "@deepseek-ai/dsh-api-session-controller/client";
-import type { WorkspaceSnapshot, WorkspaceView } from "@deepseek-ai/dsh-api-workspace-controller/client";
-import type { SettingsScope, SettingsScopeSnapshot } from "@deepseek-ai/dsh-client-ui-settings/client";
+import type {
+  ClientConnectionRpc,
+  ConnectionRpcResult,
+} from "@deepseek-ai/dsh-client-connection/client";
+import type {
+  SessionListState,
+  SessionSnapshot,
+} from "@deepseek-ai/dsh-api-session-controller/client";
+import type {
+  WorkspaceSnapshot,
+  WorkspaceView,
+} from "@deepseek-ai/dsh-api-workspace-controller/client";
+import type {
+  SettingsScope,
+  SettingsScopeSnapshot,
+} from "@deepseek-ai/dsh-client-ui-settings/client";
 import type { ClientSettings } from "../src/client/settings.js";
 import { CompanionRoot } from "../src/client/CompanionRoot.js";
-import { VOICE_CAPABILITY_ENDPOINT, VOICE_TRANSCRIBE_ENDPOINT } from "../src/voice-contract.js";
+import {
+  VOICE_CAPABILITY_ENDPOINT,
+  VOICE_TRANSCRIBE_ENDPOINT,
+} from "../src/voice-contract.js";
 
 type Listener = () => void;
 
@@ -80,12 +95,37 @@ const sessionSummary = {
 };
 
 function listSnapshot(mode: ReadinessMode): SessionListState {
-  if (mode === "pending") return { ids: [], byId: {}, current: undefined, phase: "pending", subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined };
-  return { ids: [sessionId as never], byId: { [sessionId]: sessionSummary } as unknown as SessionListState["byId"], current: undefined, phase: "ready", subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined };
+  if (mode === "pending")
+    return {
+      ids: [],
+      byId: {},
+      current: undefined,
+      phase: "pending",
+      subagentsByParent: {},
+      jobsBySession: {},
+      currentAddress: undefined,
+    };
+  return {
+    ids: [sessionId as never],
+    byId: {
+      [sessionId]: sessionSummary,
+    } as unknown as SessionListState["byId"],
+    current: undefined,
+    phase: "ready",
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  };
 }
 
-function sessionSnapshot(openState: SessionSnapshot["openState"]): SessionSnapshot {
-  const openError = { code: "gateway/internal", message: "fixture session failed", details: {} } as unknown as NonNullable<SessionSnapshot["openError"]>;
+function sessionSnapshot(
+  openState: SessionSnapshot["openState"],
+): SessionSnapshot {
+  const openError = {
+    code: "gateway/internal",
+    message: "fixture session failed",
+    details: {},
+  } as unknown as NonNullable<SessionSnapshot["openError"]>;
   return {
     sessionId: sessionId as never,
     queue: [],
@@ -105,20 +145,40 @@ function sessionSnapshot(openState: SessionSnapshot["openState"]): SessionSnapsh
   };
 }
 
-function relationshipView(present: boolean, revision: number): Record<string, unknown> {
+function relationshipView(
+  present: boolean,
+  revision: number,
+): Record<string, unknown> {
   return {
     identity: settingsValue,
-    state: { mood: "tender", note: "今天想慢一点", affinity: 67, signature: "留一盏灯" },
+    state: {
+      mood: "tender",
+      note: "今天想慢一点",
+      affinity: 67,
+      signature: "留一盏灯",
+    },
     workspacePresent: present,
     revision,
   };
 }
 
 export function mountBridgeFixture(target: HTMLElement): void {
-  const workspaceStore = new FixtureStore<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], state: "loading", phase: "pending", error: null });
-  const sessionListStore = new FixtureStore<SessionListState>(listSnapshot("pending"));
-  const sessionStore = new FixtureStore<SessionSnapshot>(sessionSnapshot("cold"));
-  const settingsStore = new FixtureStore<SettingsScopeSnapshot<ClientSettings>>(settingsSnapshot);
+  const workspaceStore = new FixtureStore<WorkspaceSnapshot>({
+    items: [],
+    archivedSessionIds: [],
+    state: "loading",
+    phase: "pending",
+    error: null,
+  });
+  const sessionListStore = new FixtureStore<SessionListState>(
+    listSnapshot("pending"),
+  );
+  const sessionStore = new FixtureStore<SessionSnapshot>(
+    sessionSnapshot("cold"),
+  );
+  const settingsStore = new FixtureStore<SettingsScopeSnapshot<ClientSettings>>(
+    settingsSnapshot,
+  );
   const connectionStore = new FixtureStore<string>("connected");
   const chatStore = new FixtureStore<unknown>({ order: [], nodes: new Map() });
   const undefinedProjection = new FixtureStore<unknown>(undefined);
@@ -128,29 +188,42 @@ export function mountBridgeFixture(target: HTMLElement): void {
 
   const relationshipResult = (): ConnectionRpcResult<unknown> => {
     relationshipRevision += 1;
-    if (relationshipMode === "missing") return ok(relationshipView(false, relationshipRevision));
+    if (relationshipMode === "missing")
+      return ok(relationshipView(false, relationshipRevision));
     return ok(relationshipView(true, relationshipRevision));
   };
 
   const settleRelationshipCalls = (): void => {
-    for (const pending of [...pendingRelationshipCalls]) {
+    for (const pending of pendingRelationshipCalls) {
       pendingRelationshipCalls.delete(pending);
-      if (relationshipMode === "error") pending.reject(new Error("fixture relationship unavailable"));
+      if (relationshipMode === "error")
+        pending.reject(new Error("fixture relationship unavailable"));
       else pending.resolve(relationshipResult());
     }
   };
 
   const rpc: ClientConnectionRpc = {
     call(_channel, endpoint, _payload, signal) {
-      if (endpoint === VOICE_CAPABILITY_ENDPOINT) return Promise.resolve(ok({ available: true }));
-      if (endpoint === VOICE_TRANSCRIBE_ENDPOINT) return Promise.resolve(ok({ text: "来自桥接夹具的语音消息", expression: "sad" }));
-      if (endpoint !== "relationship/get" && endpoint !== "relationship/watch") return Promise.resolve(ok({}));
+      if (endpoint === VOICE_CAPABILITY_ENDPOINT)
+        return Promise.resolve(ok({ available: true }));
+      if (endpoint === VOICE_TRANSCRIBE_ENDPOINT)
+        return Promise.resolve(
+          ok({ text: "来自桥接夹具的语音消息", expression: "sad" }),
+        );
+      if (endpoint !== "relationship/get" && endpoint !== "relationship/watch")
+        return Promise.resolve(ok({}));
       if (relationshipMode !== "pending" && endpoint === "relationship/get") {
-        if (relationshipMode === "error") return Promise.reject(new Error("fixture relationship unavailable"));
+        if (relationshipMode === "error")
+          return Promise.reject(new Error("fixture relationship unavailable"));
         return Promise.resolve(relationshipResult());
       }
       return new Promise<ConnectionRpcResult<unknown>>((resolve, reject) => {
-        const pending: PendingRelationshipCall = { endpoint, resolve, reject, signal };
+        const pending: PendingRelationshipCall = {
+          endpoint,
+          resolve,
+          reject,
+          signal,
+        };
         pendingRelationshipCalls.add(pending);
         const abort = (): void => {
           pendingRelationshipCalls.delete(pending);
@@ -166,9 +239,12 @@ export function mountBridgeFixture(target: HTMLElement): void {
     getSnapshot: sessionStore.getSnapshot,
     subscribe: sessionStore.subscribe,
     projections: { faceOf: () => undefinedProjection },
-    beginSubmission: () => { throw new Error("bridge fixture does not submit"); },
+    beginSubmission: () => {
+      throw new Error("bridge fixture does not submit");
+    },
     prompt: async () => ok({ accepted: true as const }),
-    readAttachment: async () => failure("fixture-attachment", "fixture attachment unavailable"),
+    readAttachment: async () =>
+      failure("fixture-attachment", "fixture attachment unavailable"),
     updateQueue: async () => ok({ accepted: true as const }),
     cancel: async () => ok({ accepted: true as const }),
     rename: async (title: string) => ok({ title, seq: 1 }),
@@ -186,11 +262,19 @@ export function mountBridgeFixture(target: HTMLElement): void {
   };
   const sessions = {
     list: sessionListStore,
-    binding: (id: string) => id === sessionId ? { sessionId: sessionId as never, session: fakeSession } : undefined,
-    open: (id: string) => { if (id === sessionId) sessionStore.set(sessionSnapshot("open")); },
+    binding: (id: string) =>
+      id === sessionId
+        ? { sessionId: sessionId as never, session: fakeSession }
+        : undefined,
+    open: (id: string) => {
+      if (id === sessionId) sessionStore.set(sessionSnapshot("open"));
+    },
     create: async () => sessionId as never,
   };
-  const conversation = { target: (targetName: string) => targetName === "chat" ? chatStore : undefined };
+  const conversation = {
+    target: (targetName: string) =>
+      targetName === "chat" ? chatStore : undefined,
+  };
   const ctx = {
     sessions,
     workspaces: { list: workspaceStore },
@@ -203,22 +287,64 @@ export function mountBridgeFixture(target: HTMLElement): void {
   reactRoot.render(createElement(CompanionRoot, { ctx, settings }));
 
   const setWorkspace = (mode: "ready" | "missing" | "error"): void => {
-    if (mode === "ready") workspaceStore.set({ items: [workspace], archivedSessionIds: [], state: "idle", phase: "ready", error: null });
-    else if (mode === "missing") workspaceStore.set({ items: [], archivedSessionIds: [], state: "idle", phase: "ready", error: null });
-    else workspaceStore.set({ items: [], archivedSessionIds: [], state: "error", phase: "ready", error: { code: "gateway/internal", message: "fixture workspace unavailable", details: {} } as unknown as NonNullable<WorkspaceSnapshot["error"]> });
+    if (mode === "ready")
+      workspaceStore.set({
+        items: [workspace],
+        archivedSessionIds: [],
+        state: "idle",
+        phase: "ready",
+        error: null,
+      });
+    else if (mode === "missing")
+      workspaceStore.set({
+        items: [],
+        archivedSessionIds: [],
+        state: "idle",
+        phase: "ready",
+        error: null,
+      });
+    else
+      workspaceStore.set({
+        items: [],
+        archivedSessionIds: [],
+        state: "error",
+        phase: "ready",
+        error: {
+          code: "gateway/internal",
+          message: "fixture workspace unavailable",
+          details: {},
+        } as unknown as NonNullable<WorkspaceSnapshot["error"]>,
+      });
   };
-  const setRelationship = (mode: Exclude<RelationshipMode, "pending">): void => {
+  const setRelationship = (
+    mode: Exclude<RelationshipMode, "pending">,
+  ): void => {
     relationshipMode = mode;
     settleRelationshipCalls();
   };
   const setSession = (mode: "ready" | "error"): void => {
     sessionListStore.set(listSnapshot("ready"));
     sessionStore.set(sessionSnapshot(mode === "error" ? "error" : "cold"));
-    if (mode === "ready") queueMicrotask(() => sessionStore.set(sessionSnapshot("open")));
+    if (mode === "ready")
+      queueMicrotask(() => sessionStore.set(sessionSnapshot("open")));
   };
-  const setSettingsUnavailable = (): void => { settingsStore.set({ ...settingsSnapshot, status: "unavailable", value: undefined }); };
-  const dispose = (): void => { reactRoot.unmount(); };
-  window.__companionBridgeFixture = { setWorkspace, setRelationship, setSession, setSettingsUnavailable, dispose };
+  const setSettingsUnavailable = (): void => {
+    settingsStore.set({
+      ...settingsSnapshot,
+      status: "unavailable",
+      value: undefined,
+    });
+  };
+  const dispose = (): void => {
+    reactRoot.unmount();
+  };
+  window.__companionBridgeFixture = {
+    setWorkspace,
+    setRelationship,
+    setSession,
+    setSettingsUnavailable,
+    dispose,
+  };
 }
 
 declare global {

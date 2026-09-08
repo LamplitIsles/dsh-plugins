@@ -15,10 +15,12 @@ async function configFile(config: unknown): Promise<string> {
 
 describe("resolveCompanionConfig", () => {
   it("uses the focused automatic-recall defaults", () => {
-    expect(resolveCompanionConfig({ configPath: "/missing/config.json" }).recall).toMatchObject({
+    expect(
+      resolveCompanionConfig({ configPath: "/missing/config.json" }).recall,
+    ).toMatchObject({
       maxTokens: 900,
       preferObservations: true,
-      topK: 3
+      topK: 3,
     });
   });
 
@@ -27,39 +29,53 @@ describe("resolveCompanionConfig", () => {
       apiUrl: "http://memory.test/",
       mapPathToBank: {
         "/work": "general",
-        "/work/yuki": "yuki-bank"
+        "/work/yuki": "yuki-bank",
       },
       harnesses: {
         dsh: {
-          companion: { recall: { contextTurns: 3, topK: 4 } }
-        }
+          companion: { recall: { contextTurns: 3, topK: 4 } },
+        },
       },
       banks: {
         "yuki-bank": {
           retain_mission: "not read or changed by the plugin",
-          disabled: false
-        }
-      }
+          disabled: false,
+        },
+      },
     });
 
-    const config = resolveCompanionConfig({ configPath: path }, { bankId: "yuki-bank" });
+    const config = resolveCompanionConfig(
+      { configPath: path },
+      { bankId: "yuki-bank" },
+    );
 
     expect(config).toMatchObject({
       enabled: true,
       apiUrl: "http://memory.test",
-      bankId: "yuki-bank"
+      bankId: "yuki-bank",
     });
-    expect(config.recall).toMatchObject({ contextTurns: 3, topK: 4, budget: "low" });
+    expect(config.recall).toMatchObject({
+      contextTurns: 3,
+      topK: 4,
+      budget: "low",
+    });
   });
 
   it("honors shared and bank-level disable switches", async () => {
     const sharedDisabled = await configFile({ disabled: true });
     const bankDisabled = await configFile({
       bankId: "yuki-bank",
-      banks: { "yuki-bank": { disabled: true } }
+      banks: { "yuki-bank": { disabled: true } },
     });
 
-    expect(resolveCompanionConfig({ configPath: sharedDisabled }).enabled).toBe(false);
-    expect(resolveCompanionConfig({ configPath: bankDisabled }, { bankId: "yuki-bank" }).enabled).toBe(false);
+    expect(resolveCompanionConfig({ configPath: sharedDisabled }).enabled).toBe(
+      false,
+    );
+    expect(
+      resolveCompanionConfig(
+        { configPath: bankDisabled },
+        { bankId: "yuki-bank" },
+      ).enabled,
+    ).toBe(false);
   });
 });

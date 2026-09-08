@@ -13,7 +13,7 @@ import {
   SETTINGS_NAMESPACE,
 } from "./settings.js";
 import type { CompanionSettings } from "./settings.js";
-import styles from "./HindsightSettings.module.dshcss";
+import styles from "./HindsightSettings.module.css";
 
 export const inject = ["settingsScope", "slots"] as const;
 
@@ -54,7 +54,9 @@ export async function saveSetting(
 
 function SettingsCard({ scope }: { scope: ClientSettingsScope }) {
   const initialSnapshot = scope.getSnapshot();
-  const initialBankId = normalizeCompanionSettings(initialSnapshot.value).bankId;
+  const initialBankId = normalizeCompanionSettings(
+    initialSnapshot.value,
+  ).bankId;
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [draft, setDraft] = useState<BankIdDraft>({
     value: initialBankId,
@@ -71,10 +73,11 @@ function SettingsCard({ scope }: { scope: ClientSettingsScope }) {
     () => scope.subscribe(() => setSnapshot(scope.getSnapshot())),
     [scope],
   );
-  useEffect(
-    () => setDraft((current) => syncBankIdDraft(current, settings.bankId)),
-    [settings.bankId],
-  );
+  useEffect(() => {
+    // The draft follows an external Host snapshot while preserving edits.
+    // oxlint-disable-next-line react/set-state-in-effect -- this is external-store reconciliation.
+    setDraft((current) => syncBankIdDraft(current, settings.bankId));
+  }, [settings.bankId]);
 
   const saveBank = async () => {
     setStatus(undefined);

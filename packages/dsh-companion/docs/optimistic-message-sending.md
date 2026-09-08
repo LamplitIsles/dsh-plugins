@@ -22,14 +22,14 @@ The guarantee is visual continuity, not offline delivery. Pending echoes are bro
 
 The send path has deliberately narrow owners:
 
-| Layer | Responsibility |
-| --- | --- |
-| `Companion.svelte` | Captures the draft and image objects, clears the composer, restores only pre-controller failures, and applies the Session retirement result to draft/preview ownership. |
-| `submitCompanionInput` | Calls `beginSubmission` before serialization, sends the exact request ID to `prompt`, and abandons the controller handle on serialization/carrier/admission failure. |
-| DSH Session controller | Creates the official pending echo, chooses its placement, observes queue/durable correlation, and emits exactly one `observed` or `failed` retirement. |
-| `SubmissionHandoff` | Bridges temporary holes between separately published Session and Chat snapshots without becoming a transport or persistence authority. |
-| `projectConversation` | Deduplicates correlated sources and derives stable presentation identity while preserving authoritative item identity. |
-| Svelte timeline | Keys a complete message unit by its presentation identity and renders its ordered text/image items. |
+| Layer                  | Responsibility                                                                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Companion.svelte`     | Captures the draft and image objects, clears the composer, restores only pre-controller failures, and applies the Session retirement result to draft/preview ownership. |
+| `submitCompanionInput` | Calls `beginSubmission` before serialization, sends the exact request ID to `prompt`, and abandons the controller handle on serialization/carrier/admission failure.    |
+| DSH Session controller | Creates the official pending echo, chooses its placement, observes queue/durable correlation, and emits exactly one `observed` or `failed` retirement.                  |
+| `SubmissionHandoff`    | Bridges temporary holes between separately published Session and Chat snapshots without becoming a transport or persistence authority.                                  |
+| `projectConversation`  | Deduplicates correlated sources and derives stable presentation identity while preserving authoritative item identity.                                                  |
+| Svelte timeline        | Keys a complete message unit by its presentation identity and renders its ordered text/image items.                                                                     |
 
 There must not be a second custom optimistic-send owner. In particular, Companion does not maintain a bespoke outbox, infer acknowledgements from matching text, or create a retry-card state machine.
 
@@ -64,13 +64,13 @@ This is why Companion no longer needs content-shape matching or its former custo
 
 One logical send has several legitimate identities. They must not be conflated.
 
-| Identity | Meaning | Lifetime |
-| --- | --- | --- |
-| Session `requestId` | Correlation minted by `beginSubmission` and passed unchanged to `prompt` | Local submission through authoritative observation |
-| Host/Chat `rpcId` | The same correlation echoed on queue and durable sources | Authoritative source lifetime |
-| Authoritative item ID | Queue occurrence, Chat node, or attachment identity used for business data and loading | Owned by its authoritative source |
-| `messageKey` | Presentation identity used to group/key one outgoing contribution | `submission:<requestId-or-rpcId>` for a correlated send |
-| `projectionKey` | Identity of an individual projected item where needed | Item-specific |
+| Identity              | Meaning                                                                                | Lifetime                                                |
+| --------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Session `requestId`   | Correlation minted by `beginSubmission` and passed unchanged to `prompt`               | Local submission through authoritative observation      |
+| Host/Chat `rpcId`     | The same correlation echoed on queue and durable sources                               | Authoritative source lifetime                           |
+| Authoritative item ID | Queue occurrence, Chat node, or attachment identity used for business data and loading | Owned by its authoritative source                       |
+| `messageKey`          | Presentation identity used to group/key one outgoing contribution                      | `submission:<requestId-or-rpcId>` for a correlated send |
+| `projectionKey`       | Identity of an individual projected item where needed                                  | Item-specific                                           |
 
 The central rule is:
 
@@ -313,18 +313,18 @@ Before merging a change to ordinary sending, confirm:
 
 This is the complete commit lineage that establishes or directly fixes the current optimistic-send contract. Squash commits represent their complete merged PR implementation.
 
-| Commit | Contribution |
-| --- | --- |
+| Commit    | Contribution                                                                                                                                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `7b8d96d` | `feat(companion): migrate to alpha session submissions (#5)` — migrated to the DSH Session submission contract and replaced the custom optimistic overlay with `beginSubmission`, exact request-ID propagation, and controller retirement. |
-| `4cef10f` | `feat(companion): improve composer, media, and relationship state (#7)` — established canonical message units, text/image grouping, optimistic preview ownership, and durable media takeover behavior used by this design. |
-| `e32097f` | `fix(companion): preserve correlated message continuity` — made pending, queue, steering, and durable contributions share `submission:<rpcId>`. |
-| `d7fce01` | `chore(companion): add implementation report` — recorded the first continuity implementation and verification. |
-| `4813cb1` | `fix(companion): simplify correlated durable fixture helper` — removed the fixture's optional fallback identity and made correlation deterministic. |
-| `ae40f48` | `chore(companion): document deterministic review fix` — updated the implementation record after review. |
-| `8aa5fca` | `chore(deploy): add local DSH update recipe` — added the guarded local build/restart/readiness workflow. |
-| `432f80e` | `chore(deploy): document local update command` — made `just deploy-local` discoverable to future agents. |
-| `22a383e` | `fix(companion): bridge submission snapshot handoff` — fixed the real Session/Chat empty-snapshot race and added idle, queued, and failed handoff tests. |
-| `56ca048` | `chore(docs): document optimistic message continuity` — consolidated the final architecture, diagnostic lessons, and regression contract into this document. |
+| `4cef10f` | `feat(companion): improve composer, media, and relationship state (#7)` — established canonical message units, text/image grouping, optimistic preview ownership, and durable media takeover behavior used by this design.                 |
+| `e32097f` | `fix(companion): preserve correlated message continuity` — made pending, queue, steering, and durable contributions share `submission:<rpcId>`.                                                                                            |
+| `d7fce01` | `chore(companion): add implementation report` — recorded the first continuity implementation and verification.                                                                                                                             |
+| `4813cb1` | `fix(companion): simplify correlated durable fixture helper` — removed the fixture's optional fallback identity and made correlation deterministic.                                                                                        |
+| `ae40f48` | `chore(companion): document deterministic review fix` — updated the implementation record after review.                                                                                                                                    |
+| `8aa5fca` | `chore(deploy): add local DSH update recipe` — added the guarded local build/restart/readiness workflow.                                                                                                                                   |
+| `432f80e` | `chore(deploy): document local update command` — made `just deploy-local` discoverable to future agents.                                                                                                                                   |
+| `22a383e` | `fix(companion): bridge submission snapshot handoff` — fixed the real Session/Chat empty-snapshot race and added idle, queued, and failed handoff tests.                                                                                   |
+| `56ca048` | `chore(docs): document optimistic message continuity` — consolidated the final architecture, diagnostic lessons, and regression contract into this document.                                                                               |
 
 Commits for unrelated Companion features are intentionally not listed. The table is exhaustive for the optimistic submission, message-unit/media continuity foundation, follow-up continuity fixes, and their local deployment/documentation path.
 

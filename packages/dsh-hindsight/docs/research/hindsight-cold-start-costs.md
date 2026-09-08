@@ -21,21 +21,21 @@ first import cheap.
 
 Hindsight 0.8.6's successful trace records showed:
 
-| Metric | Tokens / calls |
-| --- | ---: |
-| Successful calls | 2,009 |
-| Input | 13,629,456 |
-| Cached input | 6,874,368 |
-| Uncached input | 6,755,088 |
-| Visible output | 2,387,148 |
-| Visible total | 16,016,604 |
+| Metric           | Tokens / calls |
+| ---------------- | -------------: |
+| Successful calls |          2,009 |
+| Input            |     13,629,456 |
+| Cached input     |      6,874,368 |
+| Uncached input   |      6,755,088 |
+| Visible output   |      2,387,148 |
+| Visible total    |     16,016,604 |
 
 The DeepSeek billing view showed these components:
 
-| Billing component | Tokens |
-| --- | ---: |
-| Input, cache hit | 8,135,424 |
-| Input, cache miss | 6,173,130 |
+| Billing component           |     Tokens |
+| --------------------------- | ---------: |
+| Input, cache hit            |  8,135,424 |
+| Input, cache miss           |  6,173,130 |
 | Output, including reasoning | 14,857,288 |
 
 Those three copied components sum to **29,165,842**, while the copied dashboard

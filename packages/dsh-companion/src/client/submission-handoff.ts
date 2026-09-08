@@ -16,8 +16,13 @@ interface SubmissionSources {
   readonly queue: readonly QueuedMessageLike[];
 }
 
-function collectRpcIds(value: unknown, result = new Set<string>(), seen = new Set<unknown>()): Set<string> {
-  if (value === null || typeof value !== "object" || seen.has(value)) return result;
+function collectRpcIds(
+  value: unknown,
+  result = new Set<string>(),
+  seen = new Set<unknown>(),
+): Set<string> {
+  if (value === null || typeof value !== "object" || seen.has(value))
+    return result;
   seen.add(value);
   if (Array.isArray(value)) {
     for (const item of value) collectRpcIds(item, result, seen);
@@ -49,7 +54,10 @@ export class SubmissionHandoff {
     this.failed.add(requestId);
   }
 
-  merge<T extends SubmissionSources>(session: T, chat: unknown): T & { chat: unknown } {
+  merge<T extends SubmissionSources>(
+    session: T,
+    chat: unknown,
+  ): T & { chat: unknown } {
     if (this.sessionId !== session.sessionId) {
       this.sessionId = session.sessionId;
       this.pending.clear();
@@ -69,9 +77,15 @@ export class SubmissionHandoff {
     const currentPending = new Set<string>();
     for (const submission of session.pendingSubmissions) {
       currentPending.add(submission.requestId);
-      if (!durable.has(submission.requestId) && !this.failed.has(submission.requestId)) {
+      if (
+        !durable.has(submission.requestId) &&
+        !this.failed.has(submission.requestId)
+      ) {
         this.pending.set(submission.requestId, submission);
-        this.waitsForCurrentReply.set(submission.requestId, submission.placement === "queued");
+        this.waitsForCurrentReply.set(
+          submission.requestId,
+          submission.placement === "queued",
+        );
       }
     }
 
@@ -80,24 +94,44 @@ export class SubmissionHandoff {
       if (!row.rpcId) continue;
       currentQueued.add(row.rpcId);
       if (!durable.has(row.rpcId) && !this.failed.has(row.rpcId)) {
-        const waitsForReply = this.waitsForCurrentReply.get(row.rpcId) ?? row.placement === "queued";
+        const waitsForReply =
+          this.waitsForCurrentReply.get(row.rpcId) ??
+          row.placement === "queued";
         this.waitsForCurrentReply.set(row.rpcId, waitsForReply);
-        this.queued.set(row.rpcId, { ...row, waitsForCurrentReply: waitsForReply });
+        this.queued.set(row.rpcId, {
+          ...row,
+          waitsForCurrentReply: waitsForReply,
+        });
         this.pending.delete(row.rpcId);
       }
     }
 
-    for (const requestId of [...this.failed]) {
-      if (!currentPending.has(requestId) && !currentQueued.has(requestId)) this.failed.delete(requestId);
+    for (const requestId of this.failed) {
+      if (!currentPending.has(requestId) && !currentQueued.has(requestId))
+        this.failed.delete(requestId);
     }
 
     const pendingSubmissions = [
       ...session.pendingSubmissions,
-      ...[...this.pending].flatMap(([requestId, submission]) => currentPending.has(requestId) || durable.has(requestId) || this.failed.has(requestId) ? [] : [submission]),
+      ...[...this.pending].flatMap(([requestId, submission]) =>
+        currentPending.has(requestId) ||
+        durable.has(requestId) ||
+        this.failed.has(requestId)
+          ? []
+          : [submission],
+      ),
     ];
     const queue = [
-      ...session.queue.map((row) => row.rpcId ? this.queued.get(row.rpcId) ?? row : row),
-      ...[...this.queued].flatMap(([requestId, row]) => currentQueued.has(requestId) || durable.has(requestId) || this.failed.has(requestId) ? [] : [row]),
+      ...session.queue.map((row) =>
+        row.rpcId ? (this.queued.get(row.rpcId) ?? row) : row,
+      ),
+      ...[...this.queued].flatMap(([requestId, row]) =>
+        currentQueued.has(requestId) ||
+        durable.has(requestId) ||
+        this.failed.has(requestId)
+          ? []
+          : [row],
+      ),
     ];
 
     return { ...session, pendingSubmissions, queue, chat };

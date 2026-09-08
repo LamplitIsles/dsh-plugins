@@ -37,5 +37,5 @@ export const DEFAULT_SETTINGS: MatrixSettings = Object.freeze({
   userId: "",
   roomId: "",
   workspaceId: "",
-  respondToAll: false
+  respondToAll: false,
 });

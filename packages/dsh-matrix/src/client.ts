@@ -7,12 +7,30 @@ import type {} from "@deepseek-ai/dsh-client-locale/client";
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import type {} from "@deepseek-ai/dsh-client-ui-settings-plugins/client";
 import type {} from "@deepseek-ai/dsh-client-ui-slots";
-import { CREDENTIAL_REF, RPC_CHANNEL, RPC_ENDPOINT, SETTINGS_NAMESPACE, type MatrixSettings } from "./constants.js";
+import {
+  RPC_CHANNEL,
+  RPC_ENDPOINT,
+  SETTINGS_NAMESPACE,
+  type MatrixSettings,
+} from "./constants.js";
 import { decodeSettings } from "./settings-client.js";
-import { MatrixSettingsCard, type CredentialApi, type ReadinessApi, type WorkspaceSource } from "./client/settings-card.js";
+import {
+  MatrixSettingsCard,
+  type CredentialApi,
+  type ReadinessApi,
+  type WorkspaceSource,
+} from "./client/settings-card.js";
 import { matrixLocale, type MatrixLocaleKey } from "./client/labels.js";
 
-export const inject = ["connection", "locale", "remote", "remote.credentials", "settingsScope", "slots", "workspaces"] as const;
+export const inject = [
+  "connection",
+  "locale",
+  "remote",
+  "remote.credentials",
+  "settingsScope",
+  "slots",
+  "workspaces",
+] as const;
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -20,27 +38,40 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
   }
 }
 
-function createReadinessApi(connection: Pick<ConnectionHandle, "rpc">): ReadinessApi {
+function createReadinessApi(
+  connection: Pick<ConnectionHandle, "rpc">,
+): ReadinessApi {
   return {
     async get(signal?: AbortSignal): Promise<unknown> {
       return connection.rpc.call(RPC_CHANNEL, RPC_ENDPOINT, {}, signal);
-    }
+    },
   };
 }
 
 export function apply(ctx: ClientContext): void {
   const clientRoot = ctx as ClientContext & {
-    locale: { register: (namespace: string, dictionaries: { en: Record<string, string>; zh: Record<string, string> }) => unknown };
+    locale: {
+      register: (
+        namespace: string,
+        dictionaries: {
+          en: Record<string, string>;
+          zh: Record<string, string>;
+        },
+      ) => unknown;
+    };
     slots: {
       inject: (name: string, factory: () => unknown) => unknown;
       register: (options: unknown, component: unknown) => unknown;
     };
   };
-  ctx.effect(() => clientRoot.locale.register(SETTINGS_NAMESPACE, matrixLocale), "dsh-matrix: dictionaries");
+  ctx.effect(
+    () => clientRoot.locale.register(SETTINGS_NAMESPACE, matrixLocale),
+    "dsh-matrix: dictionaries",
+  );
 
   const scope = ctx.settingsScope.bind<Partial<MatrixSettings>>({
     namespace: SETTINGS_NAMESPACE,
-    decode: decodeSettings
+    decode: decodeSettings,
   }) as SettingsScope<Partial<MatrixSettings>>;
   const clientContext = ctx as ClientContext & {
     connection: ConnectionHandle;
@@ -51,26 +82,46 @@ export function apply(ctx: ClientContext): void {
   const api: CredentialApi = { credentials: clientContext.remote.credentials };
   const readiness = createReadinessApi(connection);
 
-  clientRoot.slots.inject("settings.plugin.item", () => clientRoot.slots.register(
-    {
-      name: "settings.plugin.item",
-      key: SETTINGS_NAMESPACE,
-      priority: 0,
-      inject: () => ({
-        scope,
-        workspaceSource: clientContext.workspaces.list,
-        api,
-        readiness
-      }),
-      locale: SETTINGS_NAMESPACE
-    } as never,
-    MatrixSettingsCard as never
-  ));
+  clientRoot.slots.inject("settings.plugin.item", () =>
+    clientRoot.slots.register(
+      {
+        name: "settings.plugin.item",
+        key: SETTINGS_NAMESPACE,
+        priority: 0,
+        inject: () => ({
+          scope,
+          workspaceSource: clientContext.workspaces.list,
+          api,
+          readiness,
+        }),
+        locale: SETTINGS_NAMESPACE,
+      } as never,
+      MatrixSettingsCard as never,
+    ),
+  );
 }
 
-export { MatrixSettingsCard, decodeSettings, describeCredential, saveCredential } from "./client/settings-card.js";
+export {
+  MatrixSettingsCard,
+  decodeSettings,
+  describeCredential,
+  saveCredential,
+} from "./client/settings-card.js";
 export { matrixLabels, matrixLocale, matrixZhLabels } from "./client/labels.js";
-export type { ClientSettingsScope, CredentialApi, CredentialStatus, MatrixSettingsCardProps, ReadinessApi, WorkspaceChoice, WorkspaceSource } from "./client/settings-card.js";
+export type {
+  ClientSettingsScope,
+  CredentialApi,
+  CredentialStatus,
+  MatrixSettingsCardProps,
+  ReadinessApi,
+  WorkspaceChoice,
+  WorkspaceSource,
+} from "./client/settings-card.js";
 export type { MatrixLocaleKey } from "./client/labels.js";
-export { CREDENTIAL_REF, RPC_CHANNEL, RPC_ENDPOINT, SETTINGS_NAMESPACE } from "./constants.js";
+export {
+  CREDENTIAL_REF,
+  RPC_CHANNEL,
+  RPC_ENDPOINT,
+  SETTINGS_NAMESPACE,
+} from "./constants.js";
 export default { inject, apply };

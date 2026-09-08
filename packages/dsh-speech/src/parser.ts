@@ -34,7 +34,11 @@ function fencedRanges(input: string): Array<[number, number]> {
     }
     // A closing fence must use the same marker character and be at least as
     // long as the opener. A shorter run is ordinary fenced-code content.
-    if (open.character === token[0] && token.length >= open.length && /^[ \t]*$/.test(suffix)) {
+    if (
+      open.character === token[0] &&
+      token.length >= open.length &&
+      /^[ \t]*$/.test(suffix)
+    ) {
       ranges.push([open.start, marker.lastIndex]);
       open = undefined;
     }
@@ -43,7 +47,11 @@ function fencedRanges(input: string): Array<[number, number]> {
   return ranges;
 }
 
-function overlapsFence(start: number, end: number, ranges: Array<[number, number]>): boolean {
+function overlapsFence(
+  start: number,
+  end: number,
+  ranges: Array<[number, number]>,
+): boolean {
   return ranges.some(([from, to]) => start < to && end > from);
 }
 
@@ -75,8 +83,17 @@ export function parseTaggedText(input: string): ParsedTaggedText {
     const end = closeAt + CLOSE.length;
     const raw = input.slice(openAt + OPEN.length, closeAt);
     const normalized = normalizeSpeechText(raw);
-    if (!passage && !overlapsFence(openAt, end, fences) && isValidPassage(normalized, raw)) {
-      passage = { text: normalized, transcript: normalized, start: openAt, end };
+    if (
+      !passage &&
+      !overlapsFence(openAt, end, fences) &&
+      isValidPassage(normalized, raw)
+    ) {
+      passage = {
+        text: normalized,
+        transcript: normalized,
+        start: openAt,
+        end,
+      };
       break;
     }
     cursor = end;
@@ -84,8 +101,14 @@ export function parseTaggedText(input: string): ParsedTaggedText {
 
   if (!passage) return { segments: [{ kind: "text", text: input }] };
   const segments: TaggedTextSegment[] = [];
-  if (passage.start > 0) segments.push({ kind: "text", text: input.slice(0, passage.start) });
-  segments.push({ kind: "speech", text: passage.text, transcript: passage.transcript });
-  if (passage.end < input.length) segments.push({ kind: "text", text: input.slice(passage.end) });
+  if (passage.start > 0)
+    segments.push({ kind: "text", text: input.slice(0, passage.start) });
+  segments.push({
+    kind: "speech",
+    text: passage.text,
+    transcript: passage.transcript,
+  });
+  if (passage.end < input.length)
+    segments.push({ kind: "text", text: input.slice(passage.end) });
   return { segments, passage };
 }

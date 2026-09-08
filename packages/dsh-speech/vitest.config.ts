@@ -7,17 +7,17 @@ export default defineConfig({
       name: "dsh-speech-css-modules-test",
       enforce: "pre",
       async load(id) {
-        if (!id.endsWith(".module.dshcss")) return undefined;
+        if (!id.endsWith(".module.css")) return undefined;
         const { classes } = await compileCssModule(id);
         return `export default ${JSON.stringify(classes)};`;
-      }
-    }
+      },
+    },
   ],
   test: {
     server: {
       deps: {
-        inline: ["@deepseek-ai/dsh-client-ui-primitives"]
-      }
-    }
-  }
+        inline: ["@deepseek-ai/dsh-client-ui-primitives"],
+      },
+    },
+  },
 });

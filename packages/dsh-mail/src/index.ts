@@ -1,5 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { credentialKey, type CredentialKey, type CredentialRecord } from "@deepseek-ai/dsh-credentials";
+import {
+  credentialKey,
+  type CredentialKey,
+  type CredentialRecord,
+} from "@deepseek-ai/dsh-credentials";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { RuntimeFactory } from "./mcporter.js";
 import {
@@ -14,24 +18,36 @@ import {
   SETTINGS_NAMESPACE,
   type ConnectionStatus,
   type MailConfig,
-  type StartConnectionResult
+  type StartConnectionResult,
 } from "./constants.js";
 import { GuionMcpClient } from "./mcporter.js";
-import { OAuthManager, type CredentialStore, type OAuthManagerOptions } from "./oauth.js";
-import { createMailToolDefinitions } from "./mail-tools.js";
-import { MailSettingsSchema, normalizeMailboxAddress, validateMailboxSetting } from "./settings.js";
 import {
-  resolveMailConfig
-} from "./config.js";
+  OAuthManager,
+  type CredentialStore,
+  type OAuthManagerOptions,
+} from "./oauth.js";
+import { createMailToolDefinitions } from "./mail-tools.js";
+import {
+  MailSettingsSchema,
+  normalizeMailboxAddress,
+  validateMailboxSetting,
+} from "./settings.js";
+import { resolveMailConfig } from "./config.js";
 import type { MailSettings } from "./constants.js";
 import z from "@deepseek-ai/schemastery";
 
 export const name = PLUGIN_ID;
-export const inject = ["webServer", "connection", "credentials", "settings", "tools"] as const;
+export const inject = [
+  "webServer",
+  "connection",
+  "credentials",
+  "settings",
+  "tools",
+] as const;
 
 export const Config: z<MailConfig> = z.object({
   oauthScope: z.string().default(""),
-  clientName: z.string().default("DSH Mail")
+  clientName: z.string().default("DSH Mail"),
 });
 
 export interface HostContext {
@@ -40,53 +56,86 @@ export interface HostContext {
     register(route: {
       kind: "exact";
       path: string;
-      handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
+      handler: (
+        req: IncomingMessage,
+        res: ServerResponse,
+      ) => void | Promise<void>;
     }): () => void;
   };
   connection: {
     rpc: {
-      handle: (channel: string, handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<HostRpcResult>) => () => Promise<void>;
+      handle: (
+        channel: string,
+        handler: (
+          endpoint: string,
+          payload: unknown,
+          signal: AbortSignal,
+        ) => Promise<HostRpcResult>,
+      ) => () => Promise<void>;
     };
   };
   credentials: {
     readRecord(key: CredentialKey): Promise<CredentialRecord | undefined>;
-    modifyRecord(key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>;
+    modifyRecord(
+      key: CredentialKey,
+      mutate: (
+        current: CredentialRecord | undefined,
+      ) => Promise<CredentialRecord | undefined>,
+    ): Promise<CredentialRecord | undefined>;
     deleteRecord(key: CredentialKey): Promise<void>;
   };
   settings: {
-    register(namespace: string, schema: unknown, options?: unknown): { get(): unknown };
+    register(
+      namespace: string,
+      schema: unknown,
+      options?: unknown,
+    ): { get(): unknown };
   };
   tools: {
     register(tool: ToolDefinition): void;
   };
 }
 
-export type HostRpcResult = {
-  readonly ok: true;
-  readonly value: unknown;
-} | {
-  readonly ok: false;
-  readonly error: {
-    readonly code: string;
-    readonly message: string;
-    readonly details: Record<string, unknown>;
-  };
-};
+export type HostRpcResult =
+  | {
+      readonly ok: true;
+      readonly value: unknown;
+    }
+  | {
+      readonly ok: false;
+      readonly error: {
+        readonly code: string;
+        readonly message: string;
+        readonly details: Record<string, unknown>;
+      };
+    };
 
-export function createCredentialStore(credentials: HostContext["credentials"], grantKey: CredentialKey): CredentialStore {
+export function createCredentialStore(
+  credentials: HostContext["credentials"],
+  grantKey: CredentialKey,
+): CredentialStore {
   return {
     read: async () => {
       const record = await credentials.readRecord(grantKey);
-      return record?.kind === "grant" ? { kind: "grant", payload: record.payload } : undefined;
+      return record?.kind === "grant"
+        ? { kind: "grant", payload: record.payload }
+        : undefined;
     },
     write: async (_ref, value) => {
       let payload: unknown;
-      try { payload = JSON.parse(value); } catch { throw new Error("Invalid mail grant."); }
-      await credentials.modifyRecord(grantKey, async () => ({ kind: "grant", payload }));
+      try {
+        payload = JSON.parse(value);
+      } catch {
+        throw new Error("Invalid mail grant.");
+      }
+      await credentials.modifyRecord(grantKey, async () => ({
+        kind: "grant",
+        payload,
+      }));
     },
     clear: async () => {
       await credentials.deleteRecord(grantKey);
-    }
+    },
   };
 }
 
@@ -114,7 +163,13 @@ export class MailService {
   private clients(): { oauth: OAuthManager; mcp: GuionMcpClient } {
     const settings = this.options.settings();
     const connection = resolveMailConfig(settings);
-    const key = JSON.stringify([connection.upstreamEndpoint, connection.oauthAuthorizationServer, connection.oauthCallbackUrl, this.options.config.oauthScope, this.options.config.clientName]);
+    const key = JSON.stringify([
+      connection.upstreamEndpoint,
+      connection.oauthAuthorizationServer,
+      connection.oauthCallbackUrl,
+      this.options.config.oauthScope,
+      this.options.config.clientName,
+    ]);
     if (this.activeConfig !== key) {
       void this.mcp?.close();
       this.activeConfig = key;
@@ -126,17 +181,23 @@ export class MailService {
       credentialStore: this.options.credentialStore,
       resourceEndpoint: connection.upstreamEndpoint,
       authorizationServer: connection.oauthAuthorizationServer,
-      ...(this.options.config.oauthScope ? { scope: this.options.config.oauthScope } : {}),
-      ...(this.options.config.clientName ? { clientName: this.options.config.clientName } : {}),
+      ...(this.options.config.oauthScope
+        ? { scope: this.options.config.oauthScope }
+        : {}),
+      ...(this.options.config.clientName
+        ? { clientName: this.options.config.clientName }
+        : {}),
       redirectUri: connection.oauthCallbackUrl,
       grantBinding: key,
       ...(this.options.now ? { now: this.options.now } : {}),
-      ...(this.options.fetcher ? { fetcher: this.options.fetcher } : {})
+      ...(this.options.fetcher ? { fetcher: this.options.fetcher } : {}),
     };
     this.oauth = new OAuthManager(oauthOptions);
     this.mcp = new GuionMcpClient({
       endpoint: connection.upstreamEndpoint,
-      ...(this.options.runtimeFactory ? { runtimeFactory: this.options.runtimeFactory } : {})
+      ...(this.options.runtimeFactory
+        ? { runtimeFactory: this.options.runtimeFactory }
+        : {}),
     });
     return { oauth: this.oauth, mcp: this.mcp };
   }
@@ -158,9 +219,15 @@ export class MailService {
     return this.clients().oauth.callback(params);
   }
 
-  async call(tool: Parameters<GuionMcpClient["call"]>[0], args: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
+  async call(
+    tool: Parameters<GuionMcpClient["call"]>[0],
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<unknown> {
     const { oauth, mcp } = this.clients();
-    const mailboxAddress = this.requireMailboxAddress(this.options.settings().mailboxAddress);
+    const mailboxAddress = this.requireMailboxAddress(
+      this.options.settings().mailboxAddress,
+    );
     const token = await oauth.accessToken();
     // Override even a direct caller's mailboxId. The public tool projections
     // never include that field, and this second boundary keeps the invariant
@@ -174,44 +241,75 @@ export class MailService {
   }
 
   private requireMailboxAddress(value: unknown): string {
-    try { return normalizeMailboxAddress(value); } catch {
-      throw new Error("Agent mailbox is not configured. Set it in DSH Settings before connecting or using mail.");
+    try {
+      return normalizeMailboxAddress(value);
+    } catch {
+      throw new Error(
+        "Agent mailbox is not configured. Set it in DSH Settings before connecting or using mail.",
+      );
     }
   }
 }
 
 function safeStatus(value: ConnectionStatus): ConnectionStatus {
-  if (value.state === "connected" || value.state === "pending" || value.state === "cancelled" || value.state === "failed" || value.state === "idle") {
+  if (
+    value.state === "connected" ||
+    value.state === "pending" ||
+    value.state === "cancelled" ||
+    value.state === "failed" ||
+    value.state === "idle"
+  ) {
     return {
       state: value.state,
       ...(value.retryable === true ? { retryable: true } : {}),
-      ...(typeof value.message === "string" ? { message: value.message.slice(0, 256) } : {})
+      ...(typeof value.message === "string"
+        ? { message: value.message.slice(0, 256) }
+        : {}),
     };
   }
-  return { state: "failed", retryable: true, message: "Mail authorization failed. Retry from DSH Settings." };
+  return {
+    state: "failed",
+    retryable: true,
+    message: "Mail authorization failed. Retry from DSH Settings.",
+  };
 }
 
 function recordPayload(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function callbackPage(ok: boolean): string {
   const title = ok ? "DSH Mail connected" : "DSH Mail authorization failed";
-  const message = ok ? "The Agent mailbox is connected. You may close this tab." : "Authorization failed. Return to DSH Settings and retry.";
+  const message = ok
+    ? "The Agent mailbox is connected. You may close this tab."
+    : "Authorization failed. Return to DSH Settings and retry.";
   return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'"><title>${title}</title><p>${message}</p>`;
 }
 
-async function callbackHandler(service: MailService, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function callbackHandler(
+  service: MailService,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   if (req.method !== "GET") {
-    res.writeHead(405, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    res.writeHead(405, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
     res.end("Method not allowed");
     return;
   }
   let params: URLSearchParams;
   try {
-    params = new URL(req.url ?? OAUTH_CALLBACK_PATH, "http://127.0.0.1").searchParams;
+    params = new URL(req.url ?? OAUTH_CALLBACK_PATH, "http://127.0.0.1")
+      .searchParams;
   } catch {
-    res.writeHead(400, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    res.writeHead(400, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
     res.end("Invalid callback");
     return;
   }
@@ -221,51 +319,92 @@ async function callbackHandler(service: MailService, req: IncomingMessage, res: 
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
     "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff"
+    "x-content-type-options": "nosniff",
   });
   res.end(callbackPage(ok));
 }
 
-async function rpcHandler(service: MailService, endpoint: string, payload: unknown, signal: AbortSignal): Promise<HostRpcResult> {
+async function rpcHandler(
+  service: MailService,
+  endpoint: string,
+  payload: unknown,
+  signal: AbortSignal,
+): Promise<HostRpcResult> {
   if (signal.aborted) {
-    return { ok: false, error: { code: "cancelled", message: "Mail request cancelled.", details: {} } };
+    return {
+      ok: false,
+      error: {
+        code: "cancelled",
+        message: "Mail request cancelled.",
+        details: {},
+      },
+    };
   }
   try {
     const record = recordPayload(payload);
-    if (endpoint === RPC_START) return { ok: true, value: await service.startAuthorization(record.force === true) };
-    if (endpoint === RPC_STATUS) return { ok: true, value: safeStatus(await service.status()) };
+    if (endpoint === RPC_START)
+      return {
+        ok: true,
+        value: await service.startAuthorization(record.force === true),
+      };
+    if (endpoint === RPC_STATUS)
+      return { ok: true, value: safeStatus(await service.status()) };
     if (endpoint === RPC_CANCEL) {
-      const attemptId = typeof record.attemptId === "string" ? record.attemptId : undefined;
+      const attemptId =
+        typeof record.attemptId === "string" ? record.attemptId : undefined;
       return { ok: true, value: safeStatus(service.cancel(attemptId)) };
     }
-    return { ok: false, error: { code: "not-found", message: "Unknown dsh-mail RPC endpoint.", details: {} } };
+    return {
+      ok: false,
+      error: {
+        code: "not-found",
+        message: "Unknown dsh-mail RPC endpoint.",
+        details: {},
+      },
+    };
   } catch {
-    return { ok: false, error: { code: "internal", message: "Mail connection is unavailable.", details: {} } };
+    return {
+      ok: false,
+      error: {
+        code: "internal",
+        message: "Mail connection is unavailable.",
+        details: {},
+      },
+    };
   }
 }
 
 export function apply(ctx: HostContext, config: MailConfig = {}): void {
-  const settings = ctx.settings.register(SETTINGS_NAMESPACE, MailSettingsSchema, {
-    applies: "live",
-    validate: validateMailboxSetting
-  });
+  const settings = ctx.settings.register(
+    SETTINGS_NAMESPACE,
+    MailSettingsSchema,
+    {
+      applies: "live",
+      validate: validateMailboxSetting,
+    },
+  );
   const grantKey = credentialKey(PLUGIN_ID, CREDENTIAL_KEY_ID);
   const credentialStore = createCredentialStore(ctx.credentials, grantKey);
   const service = new MailService({
-    config, credentialStore,
-    settings: () => settings.get() as MailSettings
+    config,
+    credentialStore,
+    settings: () => settings.get() as MailSettings,
   });
   const tools = createMailToolDefinitions({
-    call: async (tool, args, signal) => await service.call(tool, args, signal)
+    call: async (tool, args, signal) => await service.call(tool, args, signal),
   });
   for (const tool of tools) ctx.tools.register(tool);
   ctx.effect(() => {
     const disposeRoute = ctx.webServer.register({
       kind: "exact",
       path: OAUTH_CALLBACK_PATH,
-      handler: (req, res) => callbackHandler(service, req, res)
+      handler: (req, res) => callbackHandler(service, req, res),
     });
-    const disposeRpc = ctx.connection.rpc.handle(RPC_CHANNEL, (endpoint, payload, signal) => rpcHandler(service, endpoint, payload, signal));
+    const disposeRpc = ctx.connection.rpc.handle(
+      RPC_CHANNEL,
+      (endpoint, payload, signal) =>
+        rpcHandler(service, endpoint, payload, signal),
+    );
     return async () => {
       disposeRoute();
       await disposeRpc();
@@ -274,15 +413,54 @@ export function apply(ctx: HostContext, config: MailConfig = {}): void {
   }, "dsh-mail: OAuth callback and RPC lifecycle");
 }
 
-export { CREDENTIAL_KEY_ID, CREDENTIAL_REF, OAUTH_CALLBACK_PATH, RPC_CANCEL, RPC_CHANNEL, RPC_START, RPC_STATUS, SETTINGS_NAMESPACE };
-export { createMailToolDefinitions, MAIL_LIST, MAIL_SEARCH, MAIL_READ, MAIL_READ_THREAD, MAIL_SEND, MAIL_REPLY, MAIL_TOOL_NAMES } from "./mail-tools.js";
+export {
+  CREDENTIAL_KEY_ID,
+  CREDENTIAL_REF,
+  OAUTH_CALLBACK_PATH,
+  RPC_CANCEL,
+  RPC_CHANNEL,
+  RPC_START,
+  RPC_STATUS,
+  SETTINGS_NAMESPACE,
+};
+export {
+  createMailToolDefinitions,
+  MAIL_LIST,
+  MAIL_SEARCH,
+  MAIL_READ,
+  MAIL_READ_THREAD,
+  MAIL_SEND,
+  MAIL_REPLY,
+  MAIL_TOOL_NAMES,
+} from "./mail-tools.js";
 export type { MailToolDependencies, MailToolResult } from "./mail-tools.js";
 export { GuionMcpClient, normalizeMcpResult } from "./mcporter.js";
 export type { McpRuntimeLike, RuntimeFactory } from "./mcporter.js";
-export { OAuthManager, parseOAuthGrant, serializeOAuthGrant, pkceChallenge } from "./oauth.js";
-export type { CredentialStore, OAuthGrant, OAuthMetadata, OAuthManagerOptions } from "./oauth.js";
+export {
+  OAuthManager,
+  parseOAuthGrant,
+  serializeOAuthGrant,
+  pkceChallenge,
+} from "./oauth.js";
+export type {
+  CredentialStore,
+  OAuthGrant,
+  OAuthMetadata,
+  OAuthManagerOptions,
+} from "./oauth.js";
 export { MailSettingsSchema, normalizeMailboxAddress } from "./settings.js";
-export { resolveMailConfig, validateHttpsUrl, validateOAuthAuthorizationServerUrl, validateOAuthCallbackUrl } from "./config.js";
-export type { MailConfig, MailSettings, ConnectionStatus, ConnectionState, StartConnectionResult } from "./constants.js";
+export {
+  resolveMailConfig,
+  validateHttpsUrl,
+  validateOAuthAuthorizationServerUrl,
+  validateOAuthCallbackUrl,
+} from "./config.js";
+export type {
+  MailConfig,
+  MailSettings,
+  ConnectionStatus,
+  ConnectionState,
+  StartConnectionResult,
+} from "./constants.js";
 
 export default { name, inject, apply };

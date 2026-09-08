@@ -23,7 +23,7 @@ Host fiber is mounted. Its stable contract is:
 interface DshSpeechService {
   synthesize(
     request: { sessionId: string; text: string },
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<{ mediaType: "audio/mpeg"; data: Uint8Array }>;
   transcribe(
     request: {
@@ -32,7 +32,7 @@ interface DshSpeechService {
       data: Uint8Array;
       language?: string;
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<{
     text: string;
     language?: string;

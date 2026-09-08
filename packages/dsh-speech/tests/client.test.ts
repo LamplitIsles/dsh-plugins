@@ -15,35 +15,47 @@ describe("createSpeechRpcClient", () => {
             value: {
               mediaType: "audio/mpeg",
               url: "/dsh-speech/audio/a.mp3?sessionId=session-a",
-              bytes: 3
-            }
+              bytes: 3,
+            },
           };
-        }
-      }
+        },
+      },
     };
 
-    await createSpeechRpcClient(connection as never).synthesize("你好", "session-a");
+    await createSpeechRpcClient(connection as never).synthesize(
+      "你好",
+      "session-a",
+    );
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.slice(0, 3)).toEqual([
       RPC_CHANNEL,
       RPC_ENDPOINT,
-      { text: "你好", sessionId: "session-a" }
+      { text: "你好", sessionId: "session-a" },
     ]);
   });
 });
 
 describe("createProfileSource", () => {
   it("publishes only selected provider-profile changes", () => {
-    let value: any = { provider: "alibaba", alibabaVoice: "Maia", bytedanceVoice: "byte" };
+    let value: any = {
+      provider: "alibaba",
+      alibabaVoice: "Maia",
+      bytedanceVoice: "byte",
+    };
     const listeners = new Set<() => void>();
     const source = createProfileSource({
-      getSnapshot: () => ({ status: "ready", mode: "host", value } as any),
-      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); }
+      getSnapshot: () => ({ status: "ready", mode: "host", value }) as any,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
     });
     const initial = source.getSnapshot();
     let updates = 0;
-    const unsubscribe = source.subscribe(() => { updates += 1; });
+    const unsubscribe = source.subscribe(() => {
+      updates += 1;
+    });
     value = { ...value, bytedanceVoice: "other" };
     listeners.forEach((listener) => listener());
     expect(source.getSnapshot()).toBe(initial);
@@ -57,22 +69,39 @@ describe("createProfileSource", () => {
   });
 
   it("does not fabricate a profile until a Host snapshot is ready", () => {
-    let snapshot: any = { status: "unavailable", mode: "host", value: undefined };
+    let snapshot: any = {
+      status: "unavailable",
+      mode: "host",
+      value: undefined,
+    };
     const listeners = new Set<() => void>();
     const source = createProfileSource({
       getSnapshot: () => snapshot,
-      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); }
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
     });
     let updates = 0;
-    source.subscribe(() => { updates += 1; });
+    source.subscribe(() => {
+      updates += 1;
+    });
     expect(source.getSnapshot()).toBeUndefined();
 
-    snapshot = { status: "ready", mode: "memory", value: { provider: "alibaba", alibabaVoice: "Maia" } };
+    snapshot = {
+      status: "ready",
+      mode: "memory",
+      value: { provider: "alibaba", alibabaVoice: "Maia" },
+    };
     listeners.forEach((listener) => listener());
     expect(source.getSnapshot()).toBeUndefined();
     expect(updates).toBe(0);
 
-    snapshot = { status: "ready", mode: "host", value: { provider: "alibaba", alibabaVoice: "Maia" } };
+    snapshot = {
+      status: "ready",
+      mode: "host",
+      value: { provider: "alibaba", alibabaVoice: "Maia" },
+    };
     listeners.forEach((listener) => listener());
     expect(source.getSnapshot()).toBe('["alibaba","qwen3-tts-flash","Maia"]');
     expect(updates).toBe(1);

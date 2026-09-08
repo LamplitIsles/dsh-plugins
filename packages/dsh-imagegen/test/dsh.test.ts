@@ -1,7 +1,4 @@
-import {
-  DEFAULT_BRIDGE_URL,
-  MAX_BRIDGE_JSON_BYTES,
-} from "../src/core.js";
+import { DEFAULT_BRIDGE_URL, MAX_BRIDGE_JSON_BYTES } from "../src/core.js";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { SettingsProvider } from "@deepseek-ai/dsh-settings";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -33,6 +30,17 @@ import {
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0]);
 
 type Target = { targetKey: string };
+
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
+function requestBody(init: RequestInit | undefined): string {
+  if (typeof init?.body !== "string")
+    throw new Error("test request body was not a string");
+  return init.body;
+}
 
 class MemorySettingsProvider extends SettingsProvider {
   readonly writable = true;
@@ -123,7 +131,7 @@ function bridgeFetch(
   calls: Array<{ url: string; init: RequestInit | undefined }>,
 ): typeof fetch {
   return (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), init });
+    calls.push({ url: requestUrl(url), init });
     return new Response(
       JSON.stringify({ image_url: "data:image/png;base64,iVBORw0KGgoA" }),
       { status: 200 },
@@ -181,7 +189,7 @@ describe("DSH image adapter", () => {
       },
     );
 
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+    expect(JSON.parse(requestBody(calls[0]?.init))).toEqual({
       prompt: "make it watercolor",
       images: ["data:image/png;base64,iVBORw0KGgoA"],
     });
@@ -223,9 +231,9 @@ describe("DSH image adapter", () => {
       exec,
       services,
     );
-    expect(JSON.parse(String(calls[0]?.init?.body)).images).toHaveLength(5);
+    expect(JSON.parse(requestBody(calls[0]?.init)).images).toHaveLength(5);
     await generateWithDsh({ prompt: "generate" }, exec, services);
-    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
+    expect(JSON.parse(requestBody(calls[1]?.init))).toEqual({
       prompt: "generate",
     });
     await expect(

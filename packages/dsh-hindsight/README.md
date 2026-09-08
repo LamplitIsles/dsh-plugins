@@ -1,7 +1,7 @@
 # DSH Hindsight
 
 A small [Hindsight](https://github.com/vectorize-io/hindsight) adapter for a
-companion-style DSH agent. It replaces only DSH's official *coding-agent*
+companion-style DSH agent. It replaces only DSH's official _coding-agent_
 adapter. Codex can keep using the official coding-agent hooks and the same
 `~/.hindsight/coding-agent.json` file.
 
@@ -35,17 +35,17 @@ continuing across unrelated conversations and workspaces.
 
 This adapter changes the product contract rather than merely changing a prompt:
 
-| Concern | Official coding-agent integration | This companion adapter |
-| --- | --- | --- |
-| Durable identity | Repository/workspace | One user-selected relationship bank |
-| Automatic retrieval | Coding knowledge, initial synthesis, and page guidance | Raw, non-LLM recall before every direct user turn |
-| Repetition | Coding lifecycle decides when synthesis/guidance is useful | Every result remains eligible on every relevant turn; no cross-turn suppression |
-| Retention | Coding sessions, repository facts, Git/doc strategies | Clean user/assistant dialogue in one repairable document per chat session |
-| Reflect | Part of the coding knowledge workflow | Deliberate explicit tool for questions that need synthesis |
-| Tools | Knowledge pages, project search/capture/ingest, Reflect | One read-only `hindsight_reflect` tool |
-| Routing | Workspace-derived banks | Workspace, CWD, and preset never reroute the selected bank |
-| Policy ownership | Ships coding missions and strategies | Sends no strategy or mission; the bank owner defines companion memory policy |
-| Agent topology | Supports coding-agent and subagent workflows | Direct companion sessions only; subagents are excluded |
+| Concern             | Official coding-agent integration                          | This companion adapter                                                          |
+| ------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Durable identity    | Repository/workspace                                       | One user-selected relationship bank                                             |
+| Automatic retrieval | Coding knowledge, initial synthesis, and page guidance     | Raw, non-LLM recall before every direct user turn                               |
+| Repetition          | Coding lifecycle decides when synthesis/guidance is useful | Every result remains eligible on every relevant turn; no cross-turn suppression |
+| Retention           | Coding sessions, repository facts, Git/doc strategies      | Clean user/assistant dialogue in one repairable document per chat session       |
+| Reflect             | Part of the coding knowledge workflow                      | Deliberate explicit tool for questions that need synthesis                      |
+| Tools               | Knowledge pages, project search/capture/ingest, Reflect    | One read-only `hindsight_reflect` tool                                          |
+| Routing             | Workspace-derived banks                                    | Workspace, CWD, and preset never reroute the selected bank                      |
+| Policy ownership    | Ships coding missions and strategies                       | Sends no strategy or mission; the bank owner defines companion memory policy    |
+| Agent topology      | Supports coding-agent and subagent workflows               | Direct companion sessions only; subagents are excluded                          |
 
 The practical result is continuity without coding-agent overhead: inexpensive
 retrieval runs each turn, the full source dialogue is submitted as a stable

@@ -6,7 +6,9 @@
   let { propsStore } = $props<{ propsStore: Readable<CompanionBridgeProps> }>();
   let currentProps = $state<CompanionBridgeProps>({});
   $effect(() => {
-    const unsubscribe = propsStore.subscribe((next) => { currentProps = next; });
+    const unsubscribe = propsStore.subscribe((next) => {
+      currentProps = next;
+    });
     return unsubscribe;
   });
 </script>

@@ -7,7 +7,10 @@ import {
   recognizeImageGenResult,
   ttsProjectionId,
 } from "./media.js";
-import { projectContinuityRecords, type CompanionContinuitySnapshot, type ContinuityRecord } from "./continuity.js";
+import {
+  projectContinuityRecords,
+  type ContinuityRecord,
+} from "./continuity.js";
 
 export type MessageSide = "incoming" | "outgoing";
 
@@ -74,7 +77,12 @@ export interface TimelineNotice {
 /** A quiet, durable completion marker for automatic conversation organization. */
 export interface TimelineContinuityRecord extends ContinuityRecord {}
 
-export type TimelineItem = TimelineText | TimelineImage | TimelineVoice | TimelineNotice | TimelineContinuityRecord;
+export type TimelineItem =
+  | TimelineText
+  | TimelineImage
+  | TimelineVoice
+  | TimelineNotice
+  | TimelineContinuityRecord;
 
 /** One speaker contribution as presented in the Companion transcript. */
 export interface TimelineMessageUnit {
@@ -110,14 +118,15 @@ export interface CompanionProjection {
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
 function nodeId(node: Record<string, unknown>, fallback: string): string {
   for (const key of ["key", "id", "seq", "messageId", "callId"]) {
     const value = node[key];
-    if (typeof value === "string" || typeof value === "number") return String(value);
+    if (typeof value === "string" || typeof value === "number")
+      return String(value);
   }
   return fallback;
 }
@@ -132,7 +141,9 @@ function nodeTime(node: Record<string, unknown>): number | undefined {
 function textFromValue(value: unknown): string | undefined {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {
-    const parts = value.map(textFromValue).filter((part): part is string => part !== undefined);
+    const parts = value
+      .map(textFromValue)
+      .filter((part): part is string => part !== undefined);
     return parts.length ? parts.join("") : undefined;
   }
   const record = asRecord(value);
@@ -141,7 +152,9 @@ function textFromValue(value: unknown): string | undefined {
     if (typeof record[key] === "string") return record[key] as string;
   }
   if (Array.isArray(record.content)) {
-    const parts = record.content.map(textFromValue).filter((part): part is string => part !== undefined);
+    const parts = record.content
+      .map(textFromValue)
+      .filter((part): part is string => part !== undefined);
     if (parts.length) return parts.join("");
   }
   return undefined;
@@ -155,17 +168,25 @@ function contentOf(node: Record<string, unknown>): readonly unknown[] {
 }
 
 function kindOf(node: Record<string, unknown>): string {
-  return typeof node.kind === "string" ? node.kind : typeof node.role === "string" ? node.role : "";
+  return typeof node.kind === "string"
+    ? node.kind
+    : typeof node.role === "string"
+      ? node.role
+      : "";
 }
 
 function isUserNode(node: Record<string, unknown>): boolean {
   const kind = kindOf(node).toLowerCase();
-  return kind.includes("user") || kind.includes("human") || node.role === "user";
+  return (
+    kind.includes("user") || kind.includes("human") || node.role === "user"
+  );
 }
 
 function isAssistantNode(node: Record<string, unknown>): boolean {
   const kind = kindOf(node).toLowerCase();
-  return kind.includes("assistant") || kind === "model" || node.role === "assistant";
+  return (
+    kind.includes("assistant") || kind === "model" || node.role === "assistant"
+  );
 }
 
 function isSteeringNode(node: Record<string, unknown>): boolean {
@@ -185,7 +206,12 @@ function messageKeyFor(authoritativeId: string, rpcId?: string): string {
 }
 
 function isFinalized(node: Record<string, unknown>): boolean {
-  if (node.finalized === false || node.streaming === true || node.partial === true) return false;
+  if (
+    node.finalized === false ||
+    node.streaming === true ||
+    node.partial === true
+  )
+    return false;
   if (node.status === "streaming" || node.status === "running") return false;
   return true;
 }
@@ -197,28 +223,57 @@ function assistantText(node: Record<string, unknown>): string {
     .map((block) => {
       const record = asRecord(block);
       if (!record) return undefined;
-      const blockKind = typeof record.kind === "string" ? record.kind : record.type;
+      const blockKind =
+        typeof record.kind === "string" ? record.kind : record.type;
       return blockKind === "text" ? textFromValue(record) : undefined;
     })
     .filter((part): part is string => part !== undefined);
   return parts.join("");
 }
 
-function visibleAssistantText(value: string, passage = parseTtsPassage(value, true)): string {
-  return passage ? `${value.slice(0, passage.start)}${value.slice(passage.end)}`.trim() : value;
+function visibleAssistantText(
+  value: string,
+  passage = parseTtsPassage(value, true),
+): string {
+  return passage
+    ? `${value.slice(0, passage.start)}${value.slice(passage.end)}`.trim()
+    : value;
 }
 
 /** Preserve structured assistant text/image order while keeping one source key. */
-function assistantContentItems(node: Record<string, unknown>, id: string, time?: number): TimelineItem[] {
+function assistantContentItems(
+  node: Record<string, unknown>,
+  id: string,
+  time?: number,
+): TimelineItem[] {
   const items: TimelineItem[] = [];
   const blocks = contentOf(node);
   if (blocks.length === 0) {
     const text = assistantText(node);
     const passage = parseTtsPassage(text, true);
     const visible = visibleAssistantText(text, passage);
-    if (visible) items.push({ id, messageKey: id, kind: "text", side: "incoming", text: visible, time });
-    if (passage) items.push({ id: ttsProjectionId(id, passage), projectionKey: ttsProjectionId(id, passage), messageKey: id, kind: "voice", side: "incoming", text: passage.text, status: "preparing", time });
-    if (!items.some((item) => item.kind === "image")) items.push(...nodeMedia(node, id, "incoming", time, undefined, id));
+    if (visible)
+      items.push({
+        id,
+        messageKey: id,
+        kind: "text",
+        side: "incoming",
+        text: visible,
+        time,
+      });
+    if (passage)
+      items.push({
+        id: ttsProjectionId(id, passage),
+        projectionKey: ttsProjectionId(id, passage),
+        messageKey: id,
+        kind: "voice",
+        side: "incoming",
+        text: passage.text,
+        status: "preparing",
+        time,
+      });
+    if (!items.some((item) => item.kind === "image"))
+      items.push(...nodeMedia(node, id, "incoming", time, undefined, id));
     return items;
   }
 
@@ -236,18 +291,38 @@ function assistantContentItems(node: Record<string, unknown>, id: string, time?:
     const passage = parseTtsPassage(directText, true);
     const visible = visibleAssistantText(directText, passage);
     if (visible) {
-      items.push({ id, messageKey: id, kind: "text", side: "incoming", text: visible, time });
+      items.push({
+        id,
+        messageKey: id,
+        kind: "text",
+        side: "incoming",
+        text: visible,
+        time,
+      });
       textIndex += 1;
     }
-    if (passage) voice = { id: ttsProjectionId(id, passage), projectionKey: ttsProjectionId(id, passage), messageKey: id, kind: "voice", side: "incoming", text: passage.text, status: "preparing", time };
+    if (passage)
+      voice = {
+        id: ttsProjectionId(id, passage),
+        projectionKey: ttsProjectionId(id, passage),
+        messageKey: id,
+        kind: "voice",
+        side: "incoming",
+        text: passage.text,
+        status: "preparing",
+        time,
+      };
   }
   for (const block of blocks) {
     const record = asRecord(block);
     if (!record) continue;
-    const blockKind = typeof record.kind === "string" ? record.kind : record.type;
+    const blockKind =
+      typeof record.kind === "string" ? record.kind : record.type;
     const attachment = imageFromContent([record]);
     if (attachment) {
-      const imageIndex = items.filter((item): item is TimelineImage => item.kind === "image").length;
+      const imageIndex = items.filter(
+        (item): item is TimelineImage => item.kind === "image",
+      ).length;
       items.push({
         id: imageProjectionId(id, imageIndex),
         messageKey: id,
@@ -266,18 +341,46 @@ function assistantContentItems(node: Record<string, unknown>, id: string, time?:
     const passage = parseTtsPassage(text, true);
     const visible = visibleAssistantText(text, passage);
     if (visible) {
-      const textId = textIndex === 0 && textBlockCount === 1 ? id : `${id}:text:${textIndex}`;
-      items.push({ id: textId, messageKey: id, kind: "text", side: "incoming", text: visible, time });
+      const textId =
+        textIndex === 0 && textBlockCount === 1
+          ? id
+          : `${id}:text:${textIndex}`;
+      items.push({
+        id: textId,
+        messageKey: id,
+        kind: "text",
+        side: "incoming",
+        text: visible,
+        time,
+      });
       textIndex += 1;
     }
-    if (passage && !voice) voice = { id: ttsProjectionId(id, passage), projectionKey: ttsProjectionId(id, passage), messageKey: id, kind: "voice", side: "incoming", text: passage.text, status: "preparing", time };
+    if (passage && !voice)
+      voice = {
+        id: ttsProjectionId(id, passage),
+        projectionKey: ttsProjectionId(id, passage),
+        messageKey: id,
+        kind: "voice",
+        side: "incoming",
+        text: passage.text,
+        status: "preparing",
+        time,
+      };
   }
   if (voice) items.push(voice);
-  if (!items.some((item) => item.kind === "image")) items.push(...nodeMedia(node, id, "incoming", time, undefined, id));
+  if (!items.some((item) => item.kind === "image"))
+    items.push(...nodeMedia(node, id, "incoming", time, undefined, id));
   return items;
 }
 
-function nodeMedia(node: Record<string, unknown>, id: string, side: MessageSide, time?: number, origin?: "user" | "steering", messageKey = id): TimelineItem[] {
+function nodeMedia(
+  node: Record<string, unknown>,
+  id: string,
+  side: MessageSide,
+  time?: number,
+  origin?: "user" | "steering",
+  messageKey = id,
+): TimelineItem[] {
   const items: TimelineItem[] = [];
   const blocks = contentOf(node);
   let imageIndex = 0;
@@ -294,15 +397,32 @@ function nodeMedia(node: Record<string, unknown>, id: string, side: MessageSide,
         ...(origin ? { origin } : {}),
         state: "ready",
         attachment,
-        alt: attachment.name ?? (side === "incoming" ? "Companion 图片" : "图片"),
+        alt:
+          attachment.name ?? (side === "incoming" ? "Companion 图片" : "图片"),
         time,
       });
     }
   }
   // A node may use a single attachment property rather than content[].
-  if (items.length === 0 && node.attachment && imageFromContent([{ type: "image", attachment: node.attachment }])) {
-    const attachment = imageFromContent([{ type: "image", attachment: node.attachment }])!;
-    items.push({ id: imageProjectionId(id, 0), messageKey, kind: "image", side, ...(origin ? { origin } : {}), state: "ready", attachment, alt: attachment.name ?? "图片", time });
+  if (
+    items.length === 0 &&
+    node.attachment &&
+    imageFromContent([{ type: "image", attachment: node.attachment }])
+  ) {
+    const attachment = imageFromContent([
+      { type: "image", attachment: node.attachment },
+    ])!;
+    items.push({
+      id: imageProjectionId(id, 0),
+      messageKey,
+      kind: "image",
+      side,
+      ...(origin ? { origin } : {}),
+      state: "ready",
+      attachment,
+      alt: attachment.name ?? "图片",
+      time,
+    });
   }
   return items;
 }
@@ -318,7 +438,11 @@ function orderedNodes(snapshot: unknown): readonly unknown[] {
     const store = asRecord(chat.nodes);
     const order = Array.isArray(chat.order) ? chat.order : [];
     if (store && typeof store.get === "function" && order.length) {
-      return order.map((key) => (store.get as (key: string) => unknown).call(store, String(key))).filter(Boolean);
+      return order
+        .map((key) =>
+          (store.get as (key: string) => unknown).call(store, String(key)),
+        )
+        .filter(Boolean);
     }
   }
   if (Array.isArray(root.nodes)) return root.nodes;
@@ -326,11 +450,18 @@ function orderedNodes(snapshot: unknown): readonly unknown[] {
 }
 
 /** Flatten DSH's keyed Chat view node while retaining its render-stable key. */
-function normalizeChatNode(value: unknown): Record<string, unknown> | undefined {
+function normalizeChatNode(
+  value: unknown,
+): Record<string, unknown> | undefined {
   const wrapper = asRecord(value);
   if (!wrapper) return undefined;
   const data = asRecord(wrapper.data);
-  if (!data || typeof wrapper.key !== "string" || typeof wrapper.kind !== "string") return wrapper;
+  if (
+    !data ||
+    typeof wrapper.key !== "string" ||
+    typeof wrapper.kind !== "string"
+  )
+    return wrapper;
   if (wrapper.visibility === "hidden") return undefined;
   return {
     ...data,
@@ -346,7 +477,11 @@ function pendingNodes(snapshot: unknown): readonly unknown[] {
 }
 
 /** Project only Companion-visible rows; ordinary Tool/reasoning nodes disappear. */
-export function projectConversation(snapshot: unknown, connected = true, continuity?: CompanionContinuitySnapshot | unknown): CompanionProjection {
+export function projectConversation(
+  snapshot: unknown,
+  connected = true,
+  continuity?: unknown,
+): CompanionProjection {
   const root = asRecord(snapshot) ?? {};
   const items: TimelineItem[] = [];
   const admittedQueueIds = new Set<string>();
@@ -363,9 +498,16 @@ export function projectConversation(snapshot: unknown, connected = true, continu
     }
   }
   const continuityValue = continuity ?? root.continuity;
-  const continuityRecords = projectContinuityRecords(continuityValue, normalizedNodes.filter((node): node is Record<string, unknown> => node !== undefined));
+  const continuityRecords = projectContinuityRecords(
+    continuityValue,
+    normalizedNodes.filter(
+      (node): node is Record<string, unknown> => node !== undefined,
+    ),
+  );
   const emittedRecords = new Set<string>();
-  const emitContinuityRecords = (predicate: (anchorSeq: number) => boolean): void => {
+  const emitContinuityRecords = (
+    predicate: (anchorSeq: number) => boolean,
+  ): void => {
     for (const record of continuityRecords) {
       if (!emittedRecords.has(record.id) && predicate(record.anchorSeq)) {
         items.push(record);
@@ -376,64 +518,140 @@ export function projectConversation(snapshot: unknown, connected = true, continu
   for (let index = 0; index < nodes.length; index += 1) {
     const node = normalizedNodes[index];
     if (!node) continue;
-    const sequence = typeof node.seq === "number" && Number.isSafeInteger(node.seq) ? node.seq : undefined;
-    if (sequence !== undefined) emitContinuityRecords((anchorSeq) => anchorSeq < sequence);
+    const sequence =
+      typeof node.seq === "number" && Number.isSafeInteger(node.seq)
+        ? node.seq
+        : undefined;
+    if (sequence !== undefined)
+      emitContinuityRecords((anchorSeq) => anchorSeq < sequence);
     const id = nodeId(node, `node-${index}`);
     const time = nodeTime(node);
     if (isUserNode(node)) {
-      const text = textFromValue(node.text) ?? textFromValue(node.content) ?? "";
+      const text =
+        textFromValue(node.text) ?? textFromValue(node.content) ?? "";
       const messageKey = messageKeyFor(id, rpcIdOf(node));
-      if (text) items.push({ id, messageKey, kind: "text", side: "outgoing", origin: "user", text, time });
+      if (text)
+        items.push({
+          id,
+          messageKey,
+          kind: "text",
+          side: "outgoing",
+          origin: "user",
+          text,
+          time,
+        });
       items.push(...nodeMedia(node, id, "outgoing", time, "user", messageKey));
-      if (sequence !== undefined) emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
+      if (sequence !== undefined)
+        emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
       continue;
     }
     if (isAssistantNode(node)) {
       if (!isFinalized(node)) {
-        if (sequence !== undefined) emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
+        if (sequence !== undefined)
+          emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
         continue;
       }
       items.push(...assistantContentItems(node, id, time));
-      if (sequence !== undefined) emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
+      if (sequence !== undefined)
+        emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
       continue;
     }
     if (isSteeringNode(node)) {
-      const text = textFromValue(node.text) ?? textFromValue(node.content) ?? "";
-      const messageId = typeof node.messageId === "string" ? node.messageId : undefined;
+      const text =
+        textFromValue(node.text) ?? textFromValue(node.content) ?? "";
+      const messageId =
+        typeof node.messageId === "string" ? node.messageId : undefined;
       if (messageId) admittedQueueIds.add(messageId);
       const messageKey = messageKeyFor(id, rpcIdOf(node));
-      if (text) items.push({ id, projectionKey: id, messageKey, kind: "text", side: "outgoing", origin: "steering", text, time });
-      items.push(...nodeMedia(node, id, "outgoing", time, "steering", messageKey));
-      if (sequence !== undefined) emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
+      if (text)
+        items.push({
+          id,
+          projectionKey: id,
+          messageKey,
+          kind: "text",
+          side: "outgoing",
+          origin: "steering",
+          text,
+          time,
+        });
+      items.push(
+        ...nodeMedia(node, id, "outgoing", time, "steering", messageKey),
+      );
+      if (sequence !== undefined)
+        emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
       continue;
     }
     const call = asRecord(node.call);
-    const image = recognizeImageGenResult({ ...node, name: node.name ?? node.toolName ?? call?.name, callId: node.callId ?? nodeId(node, id) }, id);
+    const image = recognizeImageGenResult(
+      {
+        ...node,
+        name: node.name ?? node.toolName ?? call?.name,
+        callId: node.callId ?? nodeId(node, id),
+      },
+      id,
+    );
     if (image) {
-      const projectionId = image.attachment ? imageGenProjectionId(image.id, image.attachment.attachmentId) : `imagegen:${image.id}`;
-      items.push({ id: projectionId, projectionKey: `imagegen:${image.id}`, messageKey: `imagegen:${image.id}`, kind: "image", side: "incoming", state: image.state, attachment: image.attachment, alt: image.alt, error: image.error, time });
+      const projectionId = image.attachment
+        ? imageGenProjectionId(image.id, image.attachment.attachmentId)
+        : `imagegen:${image.id}`;
+      items.push({
+        id: projectionId,
+        projectionKey: `imagegen:${image.id}`,
+        messageKey: `imagegen:${image.id}`,
+        kind: "image",
+        side: "incoming",
+        state: image.state,
+        attachment: image.attachment,
+        alt: image.alt,
+        error: image.error,
+        time,
+      });
     }
-    if (sequence !== undefined) emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
+    if (sequence !== undefined)
+      emitContinuityRecords((anchorSeq) => anchorSeq === sequence);
   }
-  for (const record of continuityRecords) if (!emittedRecords.has(record.id)) items.push(record);
+  for (const record of continuityRecords)
+    if (!emittedRecords.has(record.id)) items.push(record);
   const pending = pendingNodes(snapshot);
   for (const value of pending) {
     const row = asRecord(value);
     if (typeof row?.rpcId === "string") observedRpcIds.add(row.rpcId);
   }
-  const pendingSubmissions = Array.isArray(root.pendingSubmissions) ? root.pendingSubmissions : [];
+  const pendingSubmissions = Array.isArray(root.pendingSubmissions)
+    ? root.pendingSubmissions
+    : [];
   const submissionWaitsForCurrentReply = new Map<string, boolean>();
   for (const value of pendingSubmissions) {
     const submission = asRecord(value);
-    if (typeof submission?.requestId === "string") submissionWaitsForCurrentReply.set(submission.requestId, submission.placement === "queued");
+    if (typeof submission?.requestId === "string")
+      submissionWaitsForCurrentReply.set(
+        submission.requestId,
+        submission.placement === "queued",
+      );
   }
   for (const value of pendingSubmissions) {
     const submission = asRecord(value);
-    if (!submission || typeof submission.requestId !== "string" || observedRpcIds.has(submission.requestId)) continue;
+    if (
+      !submission ||
+      typeof submission.requestId !== "string" ||
+      observedRpcIds.has(submission.requestId)
+    )
+      continue;
     const text = typeof submission.text === "string" ? submission.text : "";
-    const time = typeof submission.time === "number" ? submission.time : undefined;
+    const time =
+      typeof submission.time === "number" ? submission.time : undefined;
     const baseId = `submission:${submission.requestId}`;
-    if (text) items.push({ id: `${baseId}:text`, messageKey: baseId, kind: "text", side: "outgoing", origin: "user", text, waitsForCurrentReply: submission.placement === "queued", time });
+    if (text)
+      items.push({
+        id: `${baseId}:text`,
+        messageKey: baseId,
+        kind: "text",
+        side: "outgoing",
+        origin: "user",
+        text,
+        waitsForCurrentReply: submission.placement === "queued",
+        time,
+      });
     const images = Array.isArray(submission.images) ? submission.images : [];
     for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
       const image = asRecord(images[imageIndex]);
@@ -454,56 +672,123 @@ export function projectConversation(snapshot: unknown, connected = true, continu
   for (let index = 0; index < pending.length; index += 1) {
     const row = asRecord(pending[index]);
     if (!row) continue;
-    const identity = typeof row.messageId === "string" ? row.messageId : typeof row.id === "string" ? row.id : `pending-${index}`;
+    const identity =
+      typeof row.messageId === "string"
+        ? row.messageId
+        : typeof row.id === "string"
+          ? row.id
+          : `pending-${index}`;
     if (admittedQueueIds.has(identity)) continue;
     const rpcId = typeof row.rpcId === "string" ? row.rpcId : undefined;
     if (rpcId && durableRpcIds.has(rpcId)) continue;
-    const text = typeof row.text === "string" ? row.text : textFromValue(row.content) ?? "";
+    const text =
+      typeof row.text === "string"
+        ? row.text
+        : (textFromValue(row.content) ?? "");
     const pendingKey = `pending:${identity}`;
     const messageKey = messageKeyFor(pendingKey, rpcId);
-    const waitsForCurrentReply = row.waitsForCurrentReply === true
-      || (row.waitsForCurrentReply === undefined && (submissionWaitsForCurrentReply.get(rpcId ?? "") ?? row.placement === "queued"));
-    if (text) items.push({ id: pendingKey, messageKey, kind: "text", side: "outgoing", text, pending: true, waitsForCurrentReply });
+    const waitsForCurrentReply =
+      row.waitsForCurrentReply === true ||
+      (row.waitsForCurrentReply === undefined &&
+        (submissionWaitsForCurrentReply.get(rpcId ?? "") ??
+          row.placement === "queued"));
+    if (text)
+      items.push({
+        id: pendingKey,
+        messageKey,
+        kind: "text",
+        side: "outgoing",
+        text,
+        pending: true,
+        waitsForCurrentReply,
+      });
     const content = Array.isArray(row.content) ? row.content : [];
-    items.push(...nodeMedia({ id: identity, content }, identity, "outgoing", undefined, undefined, messageKey));
+    items.push(
+      ...nodeMedia(
+        { id: identity, content },
+        identity,
+        "outgoing",
+        undefined,
+        undefined,
+        messageKey,
+      ),
+    );
   }
   const promptError = asRecord(root.promptError);
-  const promptErrorKey = promptError ? stableValueKey(root.promptError) : undefined;
+  const promptErrorKey = promptError
+    ? stableValueKey(root.promptError)
+    : undefined;
   const error = asRecord(promptError?.error);
-  const promptErrorCode = typeof error?.code === "string" ? error.code : undefined;
-  const promptErrorNotice = promptError?.op === "stop"
-    ? "暂时停不下来，请再试一次。"
-    : "这条消息没发出去，可以再试一次。";
-  const promptErrorAnnouncement = promptError?.op === "stop"
-    ? "暂时停不下来，请再试一次。"
-    : promptError ? "这条消息没发出去，可以再试一次。" : undefined;
+  const promptErrorCode =
+    typeof error?.code === "string" ? error.code : undefined;
+  const promptErrorNotice =
+    promptError?.op === "stop"
+      ? "暂时停不下来，请再试一次。"
+      : "这条消息没发出去，可以再试一次。";
+  const promptErrorAnnouncement =
+    promptError?.op === "stop"
+      ? "暂时停不下来，请再试一次。"
+      : promptError
+        ? "这条消息没发出去，可以再试一次。"
+        : undefined;
   if (promptError) {
-    items.push({ id: "prompt-error", messageKey: "prompt-error", kind: "notice", side: "incoming", tone: "error", text: promptErrorNotice });
+    items.push({
+      id: "prompt-error",
+      messageKey: "prompt-error",
+      kind: "notice",
+      side: "incoming",
+      tone: "error",
+      text: promptErrorNotice,
+    });
   }
-  const lastError = typeof root.lastAgentError === "string" ? root.lastAgentError : undefined;
-  if (lastError) items.push({ id: "agent-error", messageKey: "agent-error", kind: "notice", side: "incoming", tone: "error", text: lastError });
-  const openState = root.openState === "error" ? "error" : root.openState === "loading" ? "loading" : root.openState === "cold" ? "cold" : "open";
+  const lastError =
+    typeof root.lastAgentError === "string" ? root.lastAgentError : undefined;
+  if (lastError)
+    items.push({
+      id: "agent-error",
+      messageKey: "agent-error",
+      kind: "notice",
+      side: "incoming",
+      tone: "error",
+      text: lastError,
+    });
+  const openState =
+    root.openState === "error"
+      ? "error"
+      : root.openState === "loading"
+        ? "loading"
+        : root.openState === "cold"
+          ? "cold"
+          : "open";
   const running = root.running === true;
   const timeline = dedupeTimeline(items);
   return {
     items: timeline,
     messageUnits: groupTimelineItems(timeline),
-    pendingCount: timeline.filter((item) => item.kind === "text" && item.pending).length,
+    pendingCount: timeline.filter(
+      (item) => item.kind === "text" && item.pending,
+    ).length,
     running,
     status: deriveStatus({ connected, running, openState }),
     openState,
     hasMore: root.hasMore === true,
     loadingOlder: root.loadingOlder === true,
-    ...(promptErrorAnnouncement ? { promptError: promptErrorAnnouncement } : {}),
+    ...(promptErrorAnnouncement
+      ? { promptError: promptErrorAnnouncement }
+      : {}),
     ...(promptErrorKey ? { promptErrorKey } : {}),
-    ...(typeof promptError?.op === "string" ? { promptErrorOp: promptError.op } : {}),
+    ...(typeof promptError?.op === "string"
+      ? { promptErrorOp: promptError.op }
+      : {}),
     ...(promptErrorCode ? { promptErrorCode } : {}),
     ...(lastError ? { lastAgentError: lastError } : {}),
   };
 }
 
 /** Group a canonical flat projection into stable speaker contributions. */
-export function groupTimelineItems(items: readonly TimelineItem[]): TimelineMessageUnit[] {
+export function groupTimelineItems(
+  items: readonly TimelineItem[],
+): TimelineMessageUnit[] {
   const groups: TimelineMessageUnit[] = [];
   const positions = new Map<string, number>();
   for (const item of items) {
@@ -527,7 +812,9 @@ export function groupTimelineItems(items: readonly TimelineItem[]): TimelineMess
     groups[position] = {
       ...current,
       items: nextItems,
-      ...(current.pending || (item.kind === "text" && item.pending) ? { pending: true } : {}),
+      ...(current.pending || (item.kind === "text" && item.pending)
+        ? { pending: true }
+        : {}),
     };
   }
   return groups;
@@ -545,10 +832,14 @@ function dedupeTimeline(items: readonly TimelineItem[]): TimelineItem[] {
   const result: TimelineItem[] = [];
   const positions = new Map<string, number>();
   for (const item of items) {
-    const key = ("projectionKey" in item && item.projectionKey) ? item.projectionKey : item.id;
+    const key =
+      "projectionKey" in item && item.projectionKey
+        ? item.projectionKey
+        : item.id;
     const position = positions.get(key);
     if (position !== undefined) {
-      if (timelineRank(item) > timelineRank(result[position]!)) result[position] = item;
+      if (timelineRank(item) > timelineRank(result[position]!))
+        result[position] = item;
       continue;
     }
     positions.set(key, result.length);
@@ -558,13 +849,23 @@ function dedupeTimeline(items: readonly TimelineItem[]): TimelineItem[] {
 }
 
 function timelineRank(item: TimelineItem): number {
-  if (item.kind === "image") return item.state === "ready" || item.state === "failed" ? 2 : 1;
+  if (item.kind === "image")
+    return item.state === "ready" || item.state === "failed" ? 2 : 1;
   if (item.kind === "text") return item.pending ? 1 : 2;
   return 2;
 }
 
-export function deriveStatus(input: { connected: boolean; running: boolean; openState?: string }): "ready" | "working" | "reconnecting" {
-  if (!input.connected || input.openState === "error" || input.openState === "loading") return "reconnecting";
+export function deriveStatus(input: {
+  connected: boolean;
+  running: boolean;
+  openState?: string;
+}): "ready" | "working" | "reconnecting" {
+  if (
+    !input.connected ||
+    input.openState === "error" ||
+    input.openState === "loading"
+  )
+    return "reconnecting";
   return input.running ? "working" : "ready";
 }
 
@@ -575,12 +876,30 @@ export interface ScrollPlan {
   previousHeight?: number;
 }
 
-export function scrollPlan(input: { scrollTop: number; scrollHeight: number; clientHeight: number; nearBottomPx?: number; prepending?: boolean; previousHeight?: number }): ScrollPlan {
+export function scrollPlan(input: {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  nearBottomPx?: number;
+  prepending?: boolean;
+  previousHeight?: number;
+}): ScrollPlan {
   const threshold = input.nearBottomPx ?? 96;
   const distance = input.scrollHeight - input.clientHeight - input.scrollTop;
   if (input.prepending) {
-    return { follow: false, preserveAnchor: true, showNewMessageAffordance: false, ...(input.previousHeight === undefined ? {} : { previousHeight: input.previousHeight }) };
+    return {
+      follow: false,
+      preserveAnchor: true,
+      showNewMessageAffordance: false,
+      ...(input.previousHeight === undefined
+        ? {}
+        : { previousHeight: input.previousHeight }),
+    };
   }
   const nearBottom = distance <= threshold;
-  return { follow: nearBottom, preserveAnchor: !nearBottom, showNewMessageAffordance: !nearBottom };
+  return {
+    follow: nearBottom,
+    preserveAnchor: !nearBottom,
+    showNewMessageAffordance: !nearBottom,
+  };
 }

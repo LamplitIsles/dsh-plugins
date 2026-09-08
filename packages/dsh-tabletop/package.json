@@ -45,15 +45,15 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsup",
+    "build": "tsdown",
     "pack-smoke": "tsx scripts/pack-smoke.ts"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "catalog:",
     "@types/node": "^24.10.1",
-    "tsup": "^8.5.1",
+    "tsdown": "catalog:",
     "tsx": "^4.23.13",
-    "typescript": "^5.9.3",
+    "typescript": "catalog:",
     "vitest": "^4.1.11"
   }
 }

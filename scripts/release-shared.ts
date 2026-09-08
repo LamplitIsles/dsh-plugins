@@ -180,7 +180,9 @@ function parsePnpmPackOutput(output: string): PackedManifest {
   try {
     return JSON.parse(trimmed) as PackedManifest;
   } catch {
-    throw new Error(`pnpm pack returned invalid JSON: ${trimmed.slice(0, 200)}`);
+    throw new Error(
+      `pnpm pack returned invalid JSON: ${trimmed.slice(0, 200)}`,
+    );
   }
 }
 
@@ -194,7 +196,7 @@ export function pnpmPack(
     args.push("--pack-destination", resolve(options.destination));
   }
   return parsePnpmPackOutput(
-    execFileSync("pnpm", args, {
+    execFileSync("corepack", ["pnpm", ...args], {
       cwd: directory,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -208,7 +210,9 @@ export function packedArtifactPath(
 ): string {
   const filename = packedManifest(packed)?.filename;
   if (!filename) throw new Error("pnpm pack did not return a tarball name.");
-  return resolve(filename.startsWith("/") ? filename : join(destination, filename));
+  return resolve(
+    filename.startsWith("/") ? filename : join(destination, filename),
+  );
 }
 
 export function checkReleaseManifest(
@@ -231,11 +235,17 @@ export function checkReleaseManifest(
     return [`${entry.name} package.json could not be read.`];
   }
 
-  if (manifest.name !== entry.name) errors.push(`package name must be ${entry.name}.`);
-  if (manifest.version !== version) errors.push(`${entry.name} version does not match ${tag}.`);
-  if (manifest.private === true) errors.push(`${entry.name} must be publishable.`);
-  if (manifest.repository?.type !== "git" || manifest.repository?.url !== REPOSITORY_URL ||
-      manifest.repository?.directory !== `packages/${entry.directory}`) {
+  if (manifest.name !== entry.name)
+    errors.push(`package name must be ${entry.name}.`);
+  if (manifest.version !== version)
+    errors.push(`${entry.name} version does not match ${tag}.`);
+  if (manifest.private === true)
+    errors.push(`${entry.name} must be publishable.`);
+  if (
+    manifest.repository?.type !== "git" ||
+    manifest.repository?.url !== REPOSITORY_URL ||
+    manifest.repository?.directory !== `packages/${entry.directory}`
+  ) {
     errors.push(`${entry.name} has the wrong repository metadata.`);
   }
   if (
@@ -248,16 +258,15 @@ export function checkReleaseManifest(
     errors.push(`${entry.name} leaks a workspace protocol.`);
   }
   const scripts = manifest.scripts ?? {};
-  if (["install", "preinstall", "postinstall"].some((name) => name in scripts)) {
+  if (
+    ["install", "preinstall", "postinstall"].some((name) => name in scripts)
+  ) {
     errors.push(`${entry.name} must not have install hooks.`);
   }
   return errors;
 }
 
-export function checkPackedFiles(
-  root: string,
-  entry: PublicPackage,
-): string[] {
+export function checkPackedFiles(root: string, entry: PublicPackage): string[] {
   const directory = packageDirectory(root, entry);
   const errors: string[] = [];
   for (const required of entry.requiredFiles) {
@@ -271,18 +280,29 @@ export function checkPackedFiles(
   try {
     packed = pnpmPack(directory, { dryRun: true });
   } catch (error) {
-    return [`${entry.name} could not produce a pnpm packed manifest: ${String(error)}`];
+    return [
+      `${entry.name} could not produce a pnpm packed manifest: ${String(error)}`,
+    ];
   }
   const packageManifest = readJson(join(directory, "package.json"));
   const packedEntry = packedManifest(packed);
-  if (packedEntry?.name !== entry.name) errors.push(`${entry.name} packed manifest has the wrong name.`);
-  if (packedEntry?.version !== packageManifest.version) errors.push(`${entry.name} packed manifest has the wrong version.`);
+  if (packedEntry?.name !== entry.name)
+    errors.push(`${entry.name} packed manifest has the wrong name.`);
+  if (packedEntry?.version !== packageManifest.version)
+    errors.push(`${entry.name} packed manifest has the wrong version.`);
   const files = packedFilePaths(packed);
   for (const required of entry.requiredFiles) {
-    if (!files.has(required)) errors.push(`${entry.name} packed manifest omits ${required}.`);
+    if (!files.has(required))
+      errors.push(`${entry.name} packed manifest omits ${required}.`);
   }
-  if ([...files].some((file) => file.includes("node_modules") || file.endsWith(".tgz"))) {
-    errors.push(`${entry.name} packed manifest contains an unsafe build artifact.`);
+  if (
+    [...files].some(
+      (file) => file.includes("node_modules") || file.endsWith(".tgz"),
+    )
+  ) {
+    errors.push(
+      `${entry.name} packed manifest contains an unsafe build artifact.`,
+    );
   }
   return errors;
 }
@@ -296,7 +316,9 @@ export function packRelease(
   const packed = pnpmPack(directory, { destination });
   const metadata = packedManifest(packed);
   if (metadata?.name !== entry.name) {
-    throw new Error(`${entry.name} did not produce the expected release tarball.`);
+    throw new Error(
+      `${entry.name} did not produce the expected release tarball.`,
+    );
   }
   return packedArtifactPath(packed, destination);
 }

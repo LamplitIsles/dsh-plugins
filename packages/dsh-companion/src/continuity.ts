@@ -53,7 +53,7 @@ declare module "@deepseek-ai/dsh-client-ui-conversation/client" {
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
@@ -67,22 +67,32 @@ function positiveFinite(value: unknown): value is number {
  * used only when projection is absent. Malformed telemetry is hidden rather
  * than guessed at.
  */
-export function resolveContextCapacity(value: ContextPressureProjection | unknown): ContextCapacity | undefined {
+export function resolveContextCapacity(
+  value: unknown,
+): ContextCapacity | undefined {
   const record = asRecord(value);
   if (!record || !positiveFinite(record.contextWindow)) return undefined;
-  const hasProjection = Object.hasOwn(record, "projectedTokens") && record.projectedTokens !== undefined;
-  const selected = hasProjection ? record.projectedTokens : record.pressureTokens;
+  const hasProjection =
+    Object.hasOwn(record, "projectedTokens") &&
+    record.projectedTokens !== undefined;
+  const selected = hasProjection
+    ? record.projectedTokens
+    : record.pressureTokens;
   if (!positiveFinite(selected)) return undefined;
   return {
     usedTokens: selected,
     contextWindow: record.contextWindow,
-    percentage: Math.min(100, Math.max(0, Math.round((selected / record.contextWindow) * 100))),
+    percentage: Math.min(
+      100,
+      Math.max(0, Math.round((selected / record.contextWindow) * 100)),
+    ),
   };
 }
 
 /** Round a token estimate to a quiet, human-scale value for Companion copy. */
 export function roundTokenEstimate(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+    return undefined;
   const unit = value >= 1_000 ? 1_000 : 100;
   return Math.round(value / unit) * unit;
 }
@@ -96,13 +106,16 @@ export function formatTokenCount(value: unknown): string | undefined {
 }
 
 function eventCompactionId(event: SessionEventLike): string | undefined {
-  if (event.type !== "compaction/start" && event.type !== "compaction/end") return undefined;
+  if (event.type !== "compaction/start" && event.type !== "compaction/end")
+    return undefined;
   const value = event.data.compactionId;
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function eventTime(event: SessionEventLike): number {
-  return typeof event.time === "number" && Number.isFinite(event.time) ? event.time : 0;
+  return typeof event.time === "number" && Number.isFinite(event.time)
+    ? event.time
+    : 0;
 }
 
 function eventSeq(event: SessionEventLike): number {
@@ -112,86 +125,118 @@ function eventSeq(event: SessionEventLike): number {
 interface ContinuityContextState extends CompactionLifecycleState {}
 
 /** Public DSH conversation Definition for the two log-only compaction edges. */
-export const compactionLifecycleDefinition: ConversationNodeDefinition<ContinuityContextState> = {
-  kind: "dsh-companion:compaction-lifecycle",
-  target: CONTINUITY_VIEW_TARGET,
-  match(event) {
-    const compactionId = eventCompactionId(event);
-    if (compactionId === undefined) return null;
-    return {
-      id: compactionId,
-      role: event.type === "compaction/start" ? "start" : "update",
-    };
-  },
-  start(_context, match) {
-    if (match.event.type !== "compaction/start") throw new Error("compaction lifecycle start requires compaction/start");
-    return {
-      compactionId: String(match.event.data.compactionId),
-      status: "running",
-      startSeq: eventSeq(match.event),
-      startedAt: eventTime(match.event),
-    };
-  },
-  update(context, match) {
-    if (match.event.type !== "compaction/end") throw new Error("compaction lifecycle update requires compaction/end");
-    return {
-      ...context.state,
-      status: Object.hasOwn(match.event.data, "error") ? "failed" : "complete",
-      endSeq: eventSeq(match.event),
-      endedAt: eventTime(match.event),
-    };
-  },
-  buildViewNode(context): CompactionLifecycleNode | null {
-    if (context.state === undefined) return null;
-    return {
-      key: context.key,
-      kind: "compaction-lifecycle",
-      id: context.id,
-      target: CONTINUITY_VIEW_TARGET,
-      data: context.state,
-    };
-  },
-};
+export const compactionLifecycleDefinition: ConversationNodeDefinition<ContinuityContextState> =
+  {
+    kind: "dsh-companion:compaction-lifecycle",
+    target: CONTINUITY_VIEW_TARGET,
+    match(event) {
+      const compactionId = eventCompactionId(event);
+      if (compactionId === undefined) return null;
+      return {
+        id: compactionId,
+        role: event.type === "compaction/start" ? "start" : "update",
+      };
+    },
+    start(_context, match) {
+      if (match.event.type !== "compaction/start")
+        throw new Error("compaction lifecycle start requires compaction/start");
+      return {
+        compactionId: String(match.event.data.compactionId),
+        status: "running",
+        startSeq: eventSeq(match.event),
+        startedAt: eventTime(match.event),
+      };
+    },
+    update(context, match) {
+      if (match.event.type !== "compaction/end")
+        throw new Error("compaction lifecycle update requires compaction/end");
+      return {
+        ...context.state,
+        status: Object.hasOwn(match.event.data, "error")
+          ? "failed"
+          : "complete",
+        endSeq: eventSeq(match.event),
+        endedAt: eventTime(match.event),
+      };
+    },
+    buildViewNode(context): CompactionLifecycleNode | null {
+      if (context.state === undefined) return null;
+      return {
+        key: context.key,
+        kind: "compaction-lifecycle",
+        id: context.id,
+        target: CONTINUITY_VIEW_TARGET,
+        data: context.state,
+      };
+    },
+  };
 
-function lifecycleSort(left: CompactionLifecycleState, right: CompactionLifecycleState): number {
-  return (left.endSeq ?? left.startSeq) - (right.endSeq ?? right.startSeq) || left.startSeq - right.startSeq || left.compactionId.localeCompare(right.compactionId);
+function lifecycleSort(
+  left: CompactionLifecycleState,
+  right: CompactionLifecycleState,
+): number {
+  return (
+    (left.endSeq ?? left.startSeq) - (right.endSeq ?? right.startSeq) ||
+    left.startSeq - right.startSeq ||
+    left.compactionId.localeCompare(right.compactionId)
+  );
 }
 
-function continuitySnapshot(rows: Iterable<CompactionLifecycleState>): CompanionContinuitySnapshot {
+function continuitySnapshot(
+  rows: Iterable<CompactionLifecycleState>,
+): CompanionContinuitySnapshot {
   const lifecycles = [...rows].sort(lifecycleSort);
   return {
     lifecycles,
-    ...(lifecycles.length > 0 ? { latest: lifecycles[ lifecycles.length - 1 ] } : {}),
+    ...(lifecycles.length > 0
+      ? { latest: lifecycles[lifecycles.length - 1] }
+      : {}),
   };
 }
 
-class ContinuityViewBuilder implements ConversationViewBuilder<CompactionLifecycleNode, CompanionContinuitySnapshot> {
+class ContinuityViewBuilder implements ConversationViewBuilder<
+  CompactionLifecycleNode,
+  CompanionContinuitySnapshot
+> {
   private readonly rows = new Map<string, CompactionLifecycleState>();
   readonly empty: CompanionContinuitySnapshot = { lifecycles: [] };
 
-  replace(input: { readonly nodes: readonly CompactionLifecycleNode[]; readonly timeline: ConversationTimelineSnapshot }): CompanionContinuitySnapshot {
+  replace(input: {
+    readonly nodes: readonly CompactionLifecycleNode[];
+    readonly timeline: ConversationTimelineSnapshot;
+  }): CompanionContinuitySnapshot {
     this.rows.clear();
     for (const node of input.nodes) this.rows.set(node.key, node.data);
     return continuitySnapshot(this.rows.values());
   }
 
-  apply(input: { readonly upserts: readonly CompactionLifecycleNode[]; readonly timeline: ConversationTimelineSnapshot }): CompanionContinuitySnapshot {
+  apply(input: {
+    readonly upserts: readonly CompactionLifecycleNode[];
+    readonly timeline: ConversationTimelineSnapshot;
+  }): CompanionContinuitySnapshot {
     for (const node of input.upserts) this.rows.set(node.key, node.data);
     return continuitySnapshot(this.rows.values());
   }
 }
 
 /** The target builder is intentionally a pure map: replay/upsert cannot duplicate records. */
-export const continuityViewDefinition: ConversationViewDefinition<CompactionLifecycleNode, CompanionContinuitySnapshot> = {
+export const continuityViewDefinition: ConversationViewDefinition<
+  CompactionLifecycleNode,
+  CompanionContinuitySnapshot
+> = {
   target: CONTINUITY_VIEW_TARGET,
   create: () => new ContinuityViewBuilder(),
 };
 
 /** Register both contributions and return one idempotent composite disposer. */
 export function registerCompanionContinuity(ctx: Context): () => void {
-  const disposeEvents = ctx.uiConversation.events.register(compactionLifecycleDefinition);
+  const disposeEvents = ctx.uiConversation.events.register(
+    compactionLifecycleDefinition,
+  );
   try {
-    const disposeViews = ctx.uiConversation.views.register(continuityViewDefinition);
+    const disposeViews = ctx.uiConversation.views.register(
+      continuityViewDefinition,
+    );
     let disposed = false;
     return () => {
       if (disposed) return;
@@ -199,8 +244,7 @@ export function registerCompanionContinuity(ctx: Context): () => void {
       disposeViews();
       disposeEvents();
     };
-  }
-  catch (error) {
+  } catch (error) {
     disposeEvents();
     throw error;
   }
@@ -209,17 +253,25 @@ export function registerCompanionContinuity(ctx: Context): () => void {
 function lifecycleRows(value: unknown): readonly CompactionLifecycleState[] {
   const record = asRecord(value);
   if (!record) return [];
-  const rows = Array.isArray(record.lifecycles) ? record.lifecycles : record.latest ? [record.latest] : [];
+  const rows = Array.isArray(record.lifecycles)
+    ? record.lifecycles
+    : record.latest
+      ? [record.latest]
+      : [];
   return rows.filter((row): row is CompactionLifecycleState => {
     const candidate = asRecord(row);
-    return candidate !== undefined
-      && typeof candidate.compactionId === "string"
-      && candidate.compactionId.length > 0
-      && (candidate.status === "running" || candidate.status === "complete" || candidate.status === "failed")
-      && Number.isSafeInteger(candidate.startSeq)
-      && Number(candidate.startSeq) >= 0
-      && typeof candidate.startedAt === "number"
-      && Number.isFinite(candidate.startedAt);
+    return (
+      candidate !== undefined &&
+      typeof candidate.compactionId === "string" &&
+      candidate.compactionId.length > 0 &&
+      (candidate.status === "running" ||
+        candidate.status === "complete" ||
+        candidate.status === "failed") &&
+      Number.isSafeInteger(candidate.startSeq) &&
+      Number(candidate.startSeq) >= 0 &&
+      typeof candidate.startedAt === "number" &&
+      Number.isFinite(candidate.startedAt)
+    );
   });
 }
 
@@ -238,17 +290,27 @@ interface CompactionEvidence {
   readonly shadowedTokenCount?: number;
 }
 
-function evidenceFromNode(node: Record<string, unknown>): CompactionEvidence | undefined {
+function evidenceFromNode(
+  node: Record<string, unknown>,
+): CompactionEvidence | undefined {
   const data = node.kind === "compaction" ? asRecord(node.data) : undefined;
   const candidate = data
     ? { ...data, ...(typeof node.id === "string" ? { id: node.id } : {}) }
     : node;
-  if (candidate.kind !== "compaction" && node.kind !== "compaction") return undefined;
-  const seq = typeof candidate.seq === "number" && Number.isSafeInteger(candidate.seq) && candidate.seq >= 0 ? candidate.seq : undefined;
+  if (candidate.kind !== "compaction" && node.kind !== "compaction")
+    return undefined;
+  const seq =
+    typeof candidate.seq === "number" &&
+    Number.isSafeInteger(candidate.seq) &&
+    candidate.seq >= 0
+      ? candidate.seq
+      : undefined;
   if (seq === undefined) return undefined;
-  const count = Number.isSafeInteger(candidate.shadowedTokenCount) && Number(candidate.shadowedTokenCount) >= 0
-    ? Number(candidate.shadowedTokenCount)
-    : undefined;
+  const count =
+    Number.isSafeInteger(candidate.shadowedTokenCount) &&
+    Number(candidate.shadowedTokenCount) >= 0
+      ? Number(candidate.shadowedTokenCount)
+      : undefined;
   return {
     id: summaryNodeId(candidate),
     seq,
@@ -257,7 +319,9 @@ function evidenceFromNode(node: Record<string, unknown>): CompactionEvidence | u
   };
 }
 
-function completionText(): string { return "已整理对话"; }
+function completionText(): string {
+  return "已整理对话";
+}
 
 export interface ContinuityRecord {
   readonly id: string;
@@ -273,7 +337,10 @@ export interface ContinuityRecord {
 }
 
 /** Build one safe completion record from a lifecycle and optional Chat evidence. */
-export function completionRecordForLifecycle(lifecycle: CompactionLifecycleState, evidence?: CompactionEvidence): ContinuityRecord | undefined {
+export function completionRecordForLifecycle(
+  lifecycle: CompactionLifecycleState,
+  evidence?: CompactionEvidence,
+): ContinuityRecord | undefined {
   if (lifecycle.status !== "complete") return undefined;
   const anchorSeq = evidence?.seq ?? lifecycle.endSeq ?? lifecycle.startSeq;
   return {
@@ -294,7 +361,7 @@ export function completionRecordForLifecycle(lifecycle: CompactionLifecycleState
  * helper deliberately accepts only Chat node metadata, never a raw summary.
  */
 export function projectContinuityRecords(
-  lifecycleView: CompanionContinuitySnapshot | unknown,
+  lifecycleView: unknown,
   chatNodes: readonly (ChatConversationViewNode | Record<string, unknown>)[],
 ): readonly ContinuityRecord[] {
   const rows = lifecycleRows(lifecycleView);
@@ -305,21 +372,34 @@ export function projectContinuityRecords(
   const usedLifecycleIds = new Set<string>();
   return rows
     .filter((row) => {
-      if (row.status !== "complete" || usedLifecycleIds.has(row.compactionId)) return false;
+      if (row.status !== "complete" || usedLifecycleIds.has(row.compactionId))
+        return false;
       usedLifecycleIds.add(row.compactionId);
       return true;
     })
     .map((row) => {
-      let match = evidence.find((candidate) => candidate.id === row.compactionId && !usedEvidence.has(candidate));
+      let match = evidence.find(
+        (candidate) =>
+          candidate.id === row.compactionId && !usedEvidence.has(candidate),
+      );
       if (match === undefined) {
         const endSeq = row.endSeq ?? Number.POSITIVE_INFINITY;
-        match = evidence.filter((candidate) => candidate.seq <= endSeq && !usedEvidence.has(candidate)).sort((left, right) => right.seq - left.seq)[0];
+        match = evidence
+          .filter(
+            (candidate) =>
+              candidate.seq <= endSeq && !usedEvidence.has(candidate),
+          )
+          .sort((left, right) => right.seq - left.seq)[0];
       }
       if (match !== undefined) usedEvidence.add(match);
       return completionRecordForLifecycle(row, match);
     })
     .filter((item): item is ContinuityRecord => item !== undefined)
-    .sort((left, right) => left.anchorSeq - right.anchorSeq || left.compactionId.localeCompare(right.compactionId));
+    .sort(
+      (left, right) =>
+        left.anchorSeq - right.anchorSeq ||
+        left.compactionId.localeCompare(right.compactionId),
+    );
 }
 
 export type { ContextPressureProjection };

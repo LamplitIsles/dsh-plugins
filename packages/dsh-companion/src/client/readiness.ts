@@ -10,8 +10,11 @@ export function resolveWorkspaceReadiness(
 ): CompanionReadiness {
   if (!workspaceId) return "missing";
   if (snapshot.state === "error") return "error";
-  if (snapshot.phase !== "ready" || snapshot.state === "loading") return "loading";
-  return snapshot.items.some((item) => item.workspaceId === workspaceId) ? "ready" : "missing";
+  if (snapshot.phase !== "ready" || snapshot.state === "loading")
+    return "loading";
+  return snapshot.items.some((item) => item.workspaceId === workspaceId)
+    ? "ready"
+    : "missing";
 }
 export function resolveSessionReadiness(input: {
   workspace: CompanionReadiness;
@@ -21,7 +24,8 @@ export function resolveSessionReadiness(input: {
   snapshot?: Pick<SessionSnapshot, "openState">;
 }): CompanionReadiness {
   if (input.workspace !== "ready") return input.workspace;
-  if (input.listPhase !== "ready" || !input.selectedSessionId || !input.session) return "loading";
+  if (input.listPhase !== "ready" || !input.selectedSessionId || !input.session)
+    return "loading";
   if (input.snapshot?.openState === "error") return "error";
   if (input.snapshot?.openState === "open") return "ready";
   return "loading";

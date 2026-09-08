@@ -3,7 +3,7 @@
 ## Workspace ownership
 
 - Treat the root `package.json`, `pnpm-workspace.yaml`, and `pnpm-lock.yaml` as
-  the workspace source of truth. Use Node.js 24 and pnpm 11.22.0 through
+  the workspace source of truth. Use Node.js `>=24.11.0` and pnpm 12.3.4 through
   Corepack; keep dependency ownership in the package that imports it.
 - The seven public packages under `packages/` keep independent names and
   versions. Imagegen's core is an internal module in `packages/dsh-imagegen`;
@@ -20,11 +20,19 @@ commands from the root README:
 
 ```sh
 corepack pnpm install --frozen-lockfile
+corepack pnpm run lint
+corepack pnpm run format:check
 corepack pnpm run typecheck
 corepack pnpm run test
 corepack pnpm run build
 corepack pnpm run pack:check
 ```
+
+`lint:fix` and `format` are local, explicitly requested write operations; CI
+and handoff checks use only `lint` and `format:check`. Oxlint covers authored
+JavaScript/TypeScript/TSX with the configured Svelte environment and Oxfmt also
+formats Svelte, CSS Modules, config, and docs. These static gates do not
+replace rendered-client acceptance or the real DSH artifact smoke.
 
 For packaging or Host changes, also run the real packed gate with an existing
 official DSH `0.1.2-rc.1` executable:
@@ -41,6 +49,24 @@ For explicitly requested host-local deployment, follow
 [`docs/local-deployment.md`](docs/local-deployment.md). Completion requires
 all seven links to resolve to this checkout and the restarted Host and cold
 client to load successfully.
+
+### Rendered-client acceptance
+
+For plugin UI, CSS injection, or client Loader changes, use the host-local
+DSH with the `agent-browser` skill to inspect the actual served client.
+Deployment and service restarts still require explicit user authorization;
+if the running instance does not contain the changes, ask before updating it.
+Check a representative affected surface, including expanded/collapsed states
+and applied styles where relevant, and record the observed result. Keep this
+as task-scoped browser acceptance, separate from isolated automated tests;
+do not change settings, credentials, or provider data without authorization.
+
+Do not add or extend Playwright suites, disposable browser environments, or
+permanent browser-test infrastructure for this acceptance path. Existing
+Companion fixture tests remain available for changes to that fixture; they
+are not a substitute for the host-local check. Reuse completed checks for
+unchanged code, and rerun heavy artifact gates only when later changes affect
+the packaging, Host, or client-loading contracts they verify.
 
 ## Artifacts and releases
 

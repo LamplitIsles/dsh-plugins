@@ -2,7 +2,9 @@ export type CompanionScheme = "light" | "dark";
 export const LIGHT_THEME = "sticker-messenger" as const;
 export const DARK_THEME = "night-voyage" as const;
 
-export function companionThemeForScheme(scheme: string): typeof LIGHT_THEME | typeof DARK_THEME {
+export function companionThemeForScheme(
+  scheme: string,
+): typeof LIGHT_THEME | typeof DARK_THEME {
   return scheme === "dark" ? DARK_THEME : LIGHT_THEME;
 }
 

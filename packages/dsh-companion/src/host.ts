@@ -1,11 +1,31 @@
-import { basename, normalize, resolve as resolvePath } from "node:path";
-import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { normalize, resolve as resolvePath } from "node:path";
+import {
+  request as httpRequest,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import z from "@deepseek-ai/schemastery";
-import { defineTool, type ToolDefinition, type ToolRunContext } from "@deepseek-ai/dsh-tools";
+import {
+  defineTool,
+  type ToolDefinition,
+  type ToolRunContext,
+} from "@deepseek-ai/dsh-tools";
 import type { RpcResult } from "@deepseek-ai/dsh-client-connection/client";
-import type { FsInfo, FsTarget, FsWriteIntent, FsWriteOutcome } from "@deepseek-ai/dsh-fs";
-import type { GenerateOptions, LlmRuntime, StreamChunk } from "@deepseek-ai/dsh-llm";
-import type { AssembleContext, PromptAssembly } from "@deepseek-ai/dsh-system-prompt";
+import type {
+  FsInfo,
+  FsTarget,
+  FsWriteIntent,
+  FsWriteOutcome,
+} from "@deepseek-ai/dsh-fs";
+import type {
+  GenerateOptions,
+  LlmRuntime,
+  StreamChunk,
+} from "@deepseek-ai/dsh-llm";
+import type {
+  AssembleContext,
+  PromptAssembly,
+} from "@deepseek-ai/dsh-system-prompt";
 import {
   CompanionStateStore,
   type CompanionFileSystem,
@@ -18,7 +38,6 @@ import {
   canonicalizeChangeReason,
   canonicalizeSignature,
   clampAffinity,
-  defaultCompanionState,
   formatCompanionPrompt,
   MOOD_LABELS,
   validateIdentitySettings,
@@ -37,25 +56,33 @@ import {
 
 export const SETTINGS_NAMESPACE = "dsh-companion" as const;
 export const RPC_CHANNEL = "/dsh-companion" as const;
-export { VOICE_CAPABILITY_ENDPOINT, VOICE_TRANSCRIBE_ENDPOINT } from "./voice-contract.js";
+export {
+  VOICE_CAPABILITY_ENDPOINT,
+  VOICE_TRANSCRIBE_ENDPOINT,
+} from "./voice-contract.js";
 export const SANDBOX_POSTURE = "workspace-write" as const;
 export const ESCALATION_ENABLED = false as const;
 const RELATIONSHIP_CONTEXT_NAME = "dsh-companion:relationship";
 
-export interface CompanionSettings extends Omit<CompanionIdentitySettings, "workspaceId"> {
+export interface CompanionSettings extends Omit<
+  CompanionIdentitySettings,
+  "workspaceId"
+> {
   workspaceId: string;
 }
 
 /** Schema remains serializable for native DSH settings surfaces. Cross-field and avatar bounds live in validate. */
-export const SettingsSchema = z.object({
-  workspaceId: z.string().default(""),
-  companionName: z.string().default("Companion"),
-  companionAvatar: z.any(),
-  userName: z.string().default("你"),
-  userAvatar: z.any(),
-  preferredAddress: z.string().default("你"),
-  defaultAffinity: z.number().step(1).min(0).max(100).default(50),
-}).loose();
+export const SettingsSchema = z
+  .object({
+    workspaceId: z.string().default(""),
+    companionName: z.string().default("Companion"),
+    companionAvatar: z.any(),
+    userName: z.string().default("你"),
+    userAvatar: z.any(),
+    preferredAddress: z.string().default("你"),
+    defaultAffinity: z.number().step(1).min(0).max(100).default(50),
+  })
+  .loose();
 
 interface SettingsScopeLike<T> {
   get(): T;
@@ -64,10 +91,18 @@ interface SettingsScopeLike<T> {
 }
 
 interface DshFileSystem {
-  resolve(path: string, options?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget>;
+  resolve(
+    path: string,
+    options?: { cwd?: string; signal?: AbortSignal },
+  ): Promise<FsTarget>;
   stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>;
   readText(target: FsTarget, signal?: AbortSignal): Promise<string>;
-  writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal): Promise<FsWriteOutcome>;
+  writeText(
+    target: FsTarget,
+    content: string,
+    expected?: FsWriteIntent,
+    signal?: AbortSignal,
+  ): Promise<FsWriteOutcome>;
 }
 
 interface WorkspaceRecord {
@@ -82,18 +117,50 @@ interface WorkspaceRegistryLike {
 }
 
 interface RpcLike {
-  handle(channel: string, handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<RpcResult<unknown>>): () => Promise<void>;
+  handle(
+    channel: string,
+    handler: (
+      endpoint: string,
+      payload: unknown,
+      signal: AbortSignal,
+    ) => Promise<RpcResult<unknown>>,
+  ): () => Promise<void>;
 }
 
 interface WebServerLike {
-  register(route: { kind: "prefix"; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void;
+  register(route: {
+    kind: "prefix";
+    path: string;
+    handler: (
+      req: IncomingMessage,
+      res: ServerResponse,
+    ) => void | Promise<void>;
+  }): () => void;
   readonly port: number;
 }
 
 interface HostContextLike {
   fs: DshFileSystem;
-  settings: { register<T>(namespace: string, schema: unknown, options?: { base?: Partial<T>; applies?: "live"; validate?: (value: T) => void }): SettingsScopeLike<T> };
-  systemPrompt: { context(input: { name: string; order: number; text: (context: { agent?: { session?: { header?: { cwd?: string } } } }) => string }): () => void };
+  settings: {
+    register<T>(
+      namespace: string,
+      schema: unknown,
+      options?: {
+        base?: Partial<T>;
+        applies?: "live";
+        validate?: (value: T) => void;
+      },
+    ): SettingsScopeLike<T>;
+  };
+  systemPrompt: {
+    context(input: {
+      name: string;
+      order: number;
+      text: (context: {
+        agent?: { session?: { header?: { cwd?: string } } };
+      }) => string;
+    }): () => void;
+  };
   tools: { register(definition: ToolDefinition): unknown };
   connection: { rpc: RpcLike };
   workspaceRegistry: WorkspaceRegistryLike;
@@ -102,12 +169,29 @@ interface HostContextLike {
   webServer: WebServerLike;
   /** Optional Host services are resolved at call time so Companion stays loadable without DSH Speech. */
   get?: (name: string) => unknown;
-  on(name: "llm/stream", listener: (options: GenerateOptions, next: () => AsyncIterable<StreamChunk>) => AsyncIterable<StreamChunk>, options: { global: true }): () => void;
-  on(name: "system-prompt/assemble", listener: (assembly: PromptAssembly, context: AssembleContext, next: () => Promise<PromptAssembly>) => Promise<PromptAssembly>): () => void;
+  on(
+    name: "llm/stream",
+    listener: (
+      options: GenerateOptions,
+      next: () => AsyncIterable<StreamChunk>,
+    ) => AsyncIterable<StreamChunk>,
+    options: { global: true },
+  ): () => void;
+  on(
+    name: "system-prompt/assemble",
+    listener: (
+      assembly: PromptAssembly,
+      context: AssembleContext,
+      next: () => Promise<PromptAssembly>,
+    ) => Promise<PromptAssembly>,
+  ): () => void;
 }
 
 interface DshSpeechTranscriptionServiceLike {
-  transcribe(request: { sessionId: string; mediaType: string; data: Uint8Array }, signal?: AbortSignal): Promise<unknown>;
+  transcribe(
+    request: { sessionId: string; mediaType: string; data: Uint8Array },
+    signal?: AbortSignal,
+  ): Promise<unknown>;
 }
 
 export interface CompanionVoiceTranscription {
@@ -133,22 +217,48 @@ export interface RelationshipView {
   revision: number;
 }
 
-function ok<T>(value: T): RpcResult<T> { return { ok: true, value }; }
+function ok<T>(value: T): RpcResult<T> {
+  return { ok: true, value };
+}
 function fail(message: string, code = "bad-request"): RpcResult<never> {
   return { ok: false, error: { code, message, details: {} } as never };
 }
 
 function asSettings(value: CompanionSettings): CompanionSettings {
-  const candidate: Record<string, unknown> = value as unknown as Record<string, unknown>;
+  const candidate: Record<string, unknown> = value as unknown as Record<
+    string,
+    unknown
+  >;
   const defaults = {
-    workspaceId: typeof candidate.workspaceId === "string" ? candidate.workspaceId.trim() : "",
-    companionName: typeof candidate.companionName === "string" && candidate.companionName.trim() ? candidate.companionName.trim() : "Companion",
-    userName: typeof candidate.userName === "string" && candidate.userName.trim() ? candidate.userName.trim() : "你",
-    preferredAddress: typeof candidate.preferredAddress === "string" && candidate.preferredAddress.trim() ? candidate.preferredAddress.trim() : "你",
-    defaultAffinity: typeof candidate.defaultAffinity === "number" ? clampAffinity(candidate.defaultAffinity) : 50,
+    workspaceId:
+      typeof candidate.workspaceId === "string"
+        ? candidate.workspaceId.trim()
+        : "",
+    companionName:
+      typeof candidate.companionName === "string" &&
+      candidate.companionName.trim()
+        ? candidate.companionName.trim()
+        : "Companion",
+    userName:
+      typeof candidate.userName === "string" && candidate.userName.trim()
+        ? candidate.userName.trim()
+        : "你",
+    preferredAddress:
+      typeof candidate.preferredAddress === "string" &&
+      candidate.preferredAddress.trim()
+        ? candidate.preferredAddress.trim()
+        : "你",
+    defaultAffinity:
+      typeof candidate.defaultAffinity === "number"
+        ? clampAffinity(candidate.defaultAffinity)
+        : 50,
   } as CompanionSettings;
-  if (candidate.companionAvatar !== undefined) defaults.companionAvatar = candidate.companionAvatar as CompanionSettings["companionAvatar"];
-  if (candidate.userAvatar !== undefined) defaults.userAvatar = candidate.userAvatar as CompanionSettings["userAvatar"];
+  if (candidate.companionAvatar !== undefined)
+    defaults.companionAvatar =
+      candidate.companionAvatar as CompanionSettings["companionAvatar"];
+  if (candidate.userAvatar !== undefined)
+    defaults.userAvatar =
+      candidate.userAvatar as CompanionSettings["userAvatar"];
   return defaults;
 }
 
@@ -157,65 +267,125 @@ function checkedSettings(value: CompanionSettings): CompanionSettings {
   return validateIdentitySettings(value) as CompanionSettings;
 }
 
-function workspaceFor(registry: WorkspaceRegistryLike, settings: CompanionSettings, cwd?: string): WorkspaceRecord | undefined {
+function workspaceFor(
+  registry: WorkspaceRegistryLike,
+  settings: CompanionSettings,
+  cwd?: string,
+): WorkspaceRecord | undefined {
   const configured = settings.workspaceId.trim();
   if (!configured) return undefined;
   const workspace = registry.get(configured);
   if (!workspace) return undefined;
   if (cwd === undefined) return workspace;
-  return resolvePath(normalize(cwd)) === resolvePath(normalize(workspace.path)) ? workspace : undefined;
+  return resolvePath(normalize(cwd)) === resolvePath(normalize(workspace.path))
+    ? workspace
+    : undefined;
 }
 
-function workspaceOwnsSession(workspace: WorkspaceRecord, sessionId: string): boolean {
-  return Array.isArray(workspace.sessionIds) && workspace.sessionIds.includes(sessionId);
+function workspaceOwnsSession(
+  workspace: WorkspaceRecord,
+  sessionId: string,
+): boolean {
+  return (
+    Array.isArray(workspace.sessionIds) &&
+    workspace.sessionIds.includes(sessionId)
+  );
 }
 
-function decodeVoiceBase64(value: unknown, mediaType: string): Uint8Array | undefined {
+function decodeVoiceBase64(
+  value: unknown,
+  mediaType: string,
+): Uint8Array | undefined {
   const maxBase64Chars = maxVoiceBase64CharsForMediaType(mediaType);
-  if (maxBase64Chars === undefined || !isCanonicalBase64(value, maxBase64Chars)) return undefined;
+  if (maxBase64Chars === undefined || !isCanonicalBase64(value, maxBase64Chars))
+    return undefined;
   try {
     const data = Buffer.from(value, "base64");
-    if (data.byteLength === 0 || !isVoiceAudioWithinDataUrlLimit(mediaType, data.byteLength) || data.toString("base64") !== value) return undefined;
+    if (
+      data.byteLength === 0 ||
+      !isVoiceAudioWithinDataUrlLimit(mediaType, data.byteLength) ||
+      data.toString("base64") !== value
+    )
+      return undefined;
     return new Uint8Array(data);
   } catch {
     return undefined;
   }
 }
 
-function parseCompanionVoiceRequest(payload: unknown): CompanionVoiceRequest | undefined {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return undefined;
+function parseCompanionVoiceRequest(
+  payload: unknown,
+): CompanionVoiceRequest | undefined {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload))
+    return undefined;
   const record = payload as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.length !== 4 || keys.some((key) => !["workspaceId", "sessionId", "mediaType", "data"].includes(key))) return undefined;
-  if (typeof record.workspaceId !== "string" || !record.workspaceId.trim()) return undefined;
-  if (typeof record.sessionId !== "string" || !record.sessionId.trim()) return undefined;
+  if (
+    keys.length !== 4 ||
+    keys.some(
+      (key) => !["workspaceId", "sessionId", "mediaType", "data"].includes(key),
+    )
+  )
+    return undefined;
+  if (typeof record.workspaceId !== "string" || !record.workspaceId.trim())
+    return undefined;
+  if (typeof record.sessionId !== "string" || !record.sessionId.trim())
+    return undefined;
   const mediaType = normalizeVoiceMediaType(record.mediaType);
   if (!mediaType) return undefined;
   const data = decodeVoiceBase64(record.data, mediaType);
   if (!data) return undefined;
-  return { workspaceId: record.workspaceId.trim(), sessionId: record.sessionId, mediaType, data };
+  return {
+    workspaceId: record.workspaceId.trim(),
+    sessionId: record.sessionId,
+    mediaType,
+    data,
+  };
 }
 
-function normalizeCompanionVoiceTranscription(raw: unknown): CompanionVoiceTranscription | undefined {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+function normalizeCompanionVoiceTranscription(
+  raw: unknown,
+): CompanionVoiceTranscription | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return undefined;
   const record = raw as Record<string, unknown>;
   const text = typeof record.text === "string" ? record.text.trim() : "";
-  if (!text || Array.from(text).length > VOICE_TRANSCRIPT_MAX_CHARS) return undefined;
-  const expressionCandidates: unknown[] = [record.expression, record.speechExpression, record.speech_expression, record.expressions];
-  if (Array.isArray(record.sentences)) expressionCandidates.push(...record.sentences);
+  if (!text || Array.from(text).length > VOICE_TRANSCRIPT_MAX_CHARS)
+    return undefined;
+  const expressionCandidates: unknown[] = [
+    record.expression,
+    record.speechExpression,
+    record.speech_expression,
+    record.expressions,
+  ];
+  if (Array.isArray(record.sentences))
+    expressionCandidates.push(...record.sentences);
   let expression: VoiceExpression | undefined;
   for (const candidate of expressionCandidates) {
     if (Array.isArray(candidate)) {
       for (const item of candidate) {
-        const normalized = normalizeVoiceExpression(typeof item === "object" && item !== null
-          ? (item as Record<string, unknown>).expression ?? (item as Record<string, unknown>).speechExpression ?? (item as Record<string, unknown>).speech_expression ?? (item as Record<string, unknown>).emotion
-          : item);
-        if (normalized) { expression = normalized; break; }
+        const normalized = normalizeVoiceExpression(
+          typeof item === "object" && item !== null
+            ? ((item as Record<string, unknown>).expression ??
+                (item as Record<string, unknown>).speechExpression ??
+                (item as Record<string, unknown>).speech_expression ??
+                (item as Record<string, unknown>).emotion)
+            : item,
+        );
+        if (normalized) {
+          expression = normalized;
+          break;
+        }
       }
     } else {
-      const normalized = normalizeVoiceExpression(typeof candidate === "object" && candidate !== null
-        ? (candidate as Record<string, unknown>).expression ?? (candidate as Record<string, unknown>).speechExpression ?? (candidate as Record<string, unknown>).speech_expression ?? (candidate as Record<string, unknown>).emotion
-        : candidate);
+      const normalized = normalizeVoiceExpression(
+        typeof candidate === "object" && candidate !== null
+          ? ((candidate as Record<string, unknown>).expression ??
+              (candidate as Record<string, unknown>).speechExpression ??
+              (candidate as Record<string, unknown>).speech_expression ??
+              (candidate as Record<string, unknown>).emotion)
+          : candidate,
+      );
       if (normalized) expression = normalized;
     }
     if (expression) break;
@@ -223,11 +393,21 @@ function normalizeCompanionVoiceTranscription(raw: unknown): CompanionVoiceTrans
   return expression ? { text, expression } : { text };
 }
 
-function optionalDshSpeech(ctx: HostContextLike): DshSpeechTranscriptionServiceLike | undefined {
+function optionalDshSpeech(
+  ctx: HostContextLike,
+): DshSpeechTranscriptionServiceLike | undefined {
   let service: unknown;
-  try { service = ctx.get?.("dshSpeech"); }
-  catch { return undefined; }
-  if (typeof service !== "object" || service === null || typeof (service as { transcribe?: unknown }).transcribe !== "function") return undefined;
+  try {
+    service = ctx.get?.("dshSpeech");
+  } catch {
+    return undefined;
+  }
+  if (
+    typeof service !== "object" ||
+    service === null ||
+    typeof (service as { transcribe?: unknown }).transcribe !== "function"
+  )
+    return undefined;
   return service as DshSpeechTranscriptionServiceLike;
 }
 
@@ -240,26 +420,44 @@ function adaptFs(fs: DshFileSystem): CompanionFileSystem {
     resolve: (path, options) => fs.resolve(path, options),
     stat: (target, signal) => fs.stat(target as FsTarget, signal),
     readText: (target, signal) => fs.readText(target as FsTarget, signal),
-    writeText: (target, content, expected, signal) => fs.writeText(target as FsTarget, content, expected as FsWriteIntent | undefined, signal),
+    writeText: (target, content, expected, signal) =>
+      fs.writeText(
+        target as FsTarget,
+        content,
+        expected as FsWriteIntent | undefined,
+        signal,
+      ),
   };
 }
 
 /** The published Agent session log is the only durable identity of an accepted turn. */
 export function acceptedTurnKey(exec: ToolRunContext): string {
   const agent = exec.agent;
-  if (!agent) throw new CompanionValidationError("Companion 只能在活动对话回合中更新亲近度。");
+  if (!agent)
+    throw new CompanionValidationError(
+      "Companion 只能在活动对话回合中更新亲近度。",
+    );
   let openTurn: number | undefined;
   for (const event of agent.session.snapshotEvents()) {
     if (event.type === "turn/start") openTurn = event.data.turn;
-    else if (event.type === "turn/end" && event.data.turn === openTurn) openTurn = undefined;
+    else if (event.type === "turn/end" && event.data.turn === openTurn)
+      openTurn = undefined;
   }
-  if (!Number.isSafeInteger(openTurn)) throw new CompanionValidationError("当前没有可更新亲近度的已接受用户回合。");
+  if (!Number.isSafeInteger(openTurn))
+    throw new CompanionValidationError(
+      "当前没有可更新亲近度的已接受用户回合。",
+    );
   return `${agent.id}:turn:${openTurn}`;
 }
 
-export async function updateRelationshipForAcceptedTurn(store: CompanionStateStore, input: unknown, exec: ToolRunContext): Promise<{ state: CompanionState; delta?: number }> {
+export async function updateRelationshipForAcceptedTurn(
+  store: CompanionStateStore,
+  input: unknown,
+  exec: ToolRunContext,
+): Promise<{ state: CompanionState; delta?: number }> {
   const update = canonicalizeRelationshipUpdate(input);
-  const turnId = update.affinity === undefined ? "current" : acceptedTurnKey(exec);
+  const turnId =
+    update.affinity === undefined ? "current" : acceptedTurnKey(exec);
   if (update.affinity !== undefined) store.beginTurn(turnId);
   return store.updateRelationship(input, turnId, exec.signal);
 }
@@ -330,12 +528,18 @@ function bootstrapPage(hasError: boolean): string {
 </html>`;
 }
 
-function writeBootstrap(res: ServerResponse, status: number, method: string | undefined, hasError: boolean): void {
+function writeBootstrap(
+  res: ServerResponse,
+  status: number,
+  method: string | undefined,
+  hasError: boolean,
+): void {
   const body = bootstrapPage(hasError);
   res.writeHead(status, {
     "cache-control": "no-store",
     "content-length": String(Buffer.byteLength(body)),
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
+    "content-security-policy":
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
     "content-type": "text/html; charset=utf-8",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
@@ -348,7 +552,11 @@ function writeBootstrapError(res: ServerResponse, status = 400): void {
   writeBootstrap(res, status, "POST", true);
 }
 
-function writePlainError(res: ServerResponse, status: 404 | 405, allow?: string): void {
+function writePlainError(
+  res: ServerResponse,
+  status: 404 | 405,
+  allow?: string,
+): void {
   res.writeHead(status, {
     "cache-control": "no-store",
     "referrer-policy": "no-referrer",
@@ -359,15 +567,22 @@ function writePlainError(res: ServerResponse, status: 404 | 405, allow?: string)
 
 type BootstrapTokenResult = { token: string } | { status: 400 | 413 };
 
-function readBootstrapToken(req: IncomingMessage): Promise<BootstrapTokenResult> {
+function readBootstrapToken(
+  req: IncomingMessage,
+): Promise<BootstrapTokenResult> {
   const contentType = req.headers["content-type"];
-  if (typeof contentType === "string" && contentType.split(";", 1)[0]?.trim().toLowerCase() !== "application/x-www-form-urlencoded") {
+  if (
+    typeof contentType === "string" &&
+    contentType.split(";", 1)[0]?.trim().toLowerCase() !==
+      "application/x-www-form-urlencoded"
+  ) {
     req.resume();
     return Promise.resolve({ status: 400 });
   }
   const contentLength = req.headers["content-length"];
   if (contentLength !== undefined) {
-    const declared = typeof contentLength === "string" ? Number(contentLength) : Number.NaN;
+    const declared =
+      typeof contentLength === "string" ? Number(contentLength) : Number.NaN;
     if (!Number.isSafeInteger(declared) || declared < 0) {
       req.resume();
       return Promise.resolve({ status: 400 });
@@ -411,7 +626,10 @@ function readBootstrapToken(req: IncomingMessage): Promise<BootstrapTokenResult>
         return;
       }
       const token = entries[0][1];
-      if (!token.trim() || Buffer.byteLength(token, "utf8") > BOOTSTRAP_MAX_BODY_BYTES) {
+      if (
+        !token.trim() ||
+        Buffer.byteLength(token, "utf8") > BOOTSTRAP_MAX_BODY_BYTES
+      ) {
         finish({ status: 400 });
         return;
       }
@@ -426,14 +644,23 @@ function readBootstrapToken(req: IncomingMessage): Promise<BootstrapTokenResult>
   });
 }
 
-function externalHeaders(req: IncomingMessage, includeCookie: boolean): Record<string, string> {
+function externalHeaders(
+  req: IncomingMessage,
+  includeCookie: boolean,
+): Record<string, string> {
   return {
-    ...(includeCookie && req.headers.cookie ? { cookie: req.headers.cookie } : {}),
+    ...(includeCookie && req.headers.cookie
+      ? { cookie: req.headers.cookie }
+      : {}),
     ...(req.headers.host ? { host: req.headers.host } : {}),
   };
 }
 
-function proxyCompanionRoot(webServer: WebServerLike, req: IncomingMessage, res: ServerResponse): Promise<void> {
+function proxyCompanionRoot(
+  webServer: WebServerLike,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (): void => {
@@ -442,37 +669,49 @@ function proxyCompanionRoot(webServer: WebServerLike, req: IncomingMessage, res:
       resolve();
     };
     const fail = (status: 502 | 504): void => {
-      if (!res.headersSent) res.writeHead(status, { "cache-control": "no-store", "referrer-policy": "no-referrer" });
+      if (!res.headersSent)
+        res.writeHead(status, {
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        });
       if (!res.writableEnded) res.end();
       finish();
     };
     let upstream;
     try {
-      upstream = httpRequest({
-        host: "127.0.0.1",
-        port: webServer.port,
-        path: "/",
-        method: req.method,
-        // BrowserAuth binds its cookie to the caller's external authority.
-        headers: externalHeaders(req, true),
-      }, (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-        response.on("error", () => fail(502));
-        response.on("end", () => {
-          if (settled) return;
-          if (response.statusCode === 401) {
-            writeBootstrap(res, 200, req.method, false);
+      upstream = httpRequest(
+        {
+          host: "127.0.0.1",
+          port: webServer.port,
+          path: "/",
+          method: req.method,
+          // BrowserAuth binds its cookie to the caller's external authority.
+          headers: externalHeaders(req, true),
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer | string) =>
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
+          );
+          response.on("error", () => fail(502));
+          response.on("end", () => {
+            if (settled) return;
+            if (response.statusCode === 401) {
+              writeBootstrap(res, 200, req.method, false);
+              finish();
+              return;
+            }
+            const contentType = response.headers["content-type"];
+            res.writeHead(
+              response.statusCode ?? 502,
+              contentType ? { "content-type": contentType } : undefined,
+            );
+            if (req.method === "HEAD") res.end();
+            else res.end(Buffer.concat(chunks));
             finish();
-            return;
-          }
-          const contentType = response.headers["content-type"];
-          res.writeHead(response.statusCode ?? 502, contentType ? { "content-type": contentType } : undefined);
-          if (req.method === "HEAD") res.end();
-          else res.end(Buffer.concat(chunks));
-          finish();
-        });
-      });
+          });
+        },
+      );
     } catch {
       fail(502);
       return;
@@ -487,11 +726,17 @@ function proxyCompanionRoot(webServer: WebServerLike, req: IncomingMessage, res:
 }
 
 function setCookieHeaders(value: string[] | undefined): string[] | undefined {
-  if (!Array.isArray(value) || value.length !== 1 || !value[0]) return undefined;
+  if (!Array.isArray(value) || value.length !== 1 || !value[0])
+    return undefined;
   return [value[0]];
 }
 
-function exchangeBootstrapToken(webServer: WebServerLike, req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
+function exchangeBootstrapToken(
+  webServer: WebServerLike,
+  req: IncomingMessage,
+  res: ServerResponse,
+  token: string,
+): Promise<void> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (): void => {
@@ -506,36 +751,39 @@ function exchangeBootstrapToken(webServer: WebServerLike, req: IncomingMessage, 
     };
     let upstream;
     try {
-      upstream = httpRequest({
-        host: "127.0.0.1",
-        port: webServer.port,
-        method: "GET",
-        path: `/?${BOOTSTRAP_TOKEN_FIELD}=${encodeURIComponent(token)}`,
-        // Deliberately omit the form request's Cookie. BrowserAuth must see
-        // only the submitted launch token during this root exchange.
-        headers: externalHeaders(req, false),
-      }, (response) => {
-        response.resume();
-        response.on("error", () => fail());
-        response.on("end", () => {
-          if (settled) return;
-          const cookie = setCookieHeaders(response.headers["set-cookie"]);
-          if (response.statusCode !== 303 || cookie === undefined) {
-            writeBootstrapError(res, 400);
+      upstream = httpRequest(
+        {
+          host: "127.0.0.1",
+          port: webServer.port,
+          method: "GET",
+          path: `/?${BOOTSTRAP_TOKEN_FIELD}=${encodeURIComponent(token)}`,
+          // Deliberately omit the form request's Cookie. BrowserAuth must see
+          // only the submitted launch token during this root exchange.
+          headers: externalHeaders(req, false),
+        },
+        (response) => {
+          response.resume();
+          response.on("error", () => fail());
+          response.on("end", () => {
+            if (settled) return;
+            const cookie = setCookieHeaders(response.headers["set-cookie"]);
+            if (response.statusCode !== 303 || cookie === undefined) {
+              writeBootstrapError(res, 400);
+              finish();
+              return;
+            }
+            res.writeHead(303, {
+              "cache-control": "no-store",
+              "content-length": "0",
+              location: COMPANION_ROOT_PATH,
+              "referrer-policy": "no-referrer",
+              "set-cookie": cookie,
+            });
+            res.end();
             finish();
-            return;
-          }
-          res.writeHead(303, {
-            "cache-control": "no-store",
-            "content-length": "0",
-            location: COMPANION_ROOT_PATH,
-            "referrer-policy": "no-referrer",
-            "set-cookie": cookie,
           });
-          res.end();
-          finish();
-        });
-      });
+        },
+      );
     } catch {
       fail();
       return;
@@ -556,7 +804,11 @@ function exchangeBootstrapToken(webServer: WebServerLike, req: IncomingMessage, 
  * second index or client transport. The pinned static service has no SPA
  * fallback, so this lifecycle-owned alias is required for this web plugin.
  */
-export function companionAliasHandler(webServer: WebServerLike, req: IncomingMessage, res: ServerResponse): Promise<void> {
+export function companionAliasHandler(
+  webServer: WebServerLike,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   let pathname: string;
   try {
     pathname = new URL(req.url ?? "/", "http://companion.local").pathname;
@@ -592,132 +844,276 @@ export function companionAliasHandler(webServer: WebServerLike, req: IncomingMes
   return proxyCompanionRoot(webServer, req, res);
 }
 
-const relationshipTool = (owner: CompanionHostController): ToolDefinition => defineTool({
-  name: "companion_update_relationship",
-  description: "Record one Companion relationship reaction for this Workspace. Supply mood, affinity, or both; at least one is required. When both change for the same conversational moment, include both so they persist atomically. Give each change its own concise factual reason, not hidden reasoning.",
-  parameters: {
-    mood: {
-      type: "object",
-      description: "Optional current-state change",
-      properties: {
-        value: { type: "string", required: true, enum: ["neutral", "serene", "bright", "playful", "tender", "pensive", "tired", "low"], description: "The new bounded current-state key" },
-        note: { type: "string", description: "Optional user-facing 状态短句, at most 40 Unicode code points" },
-        reason: { type: "string", required: true, description: "A concise factual reason for this mood change, at most 160 characters" },
-      },
-      additionalProperties: false,
-    },
-    affinity: {
-      type: "object",
-      description: "Optional affinity change; net movement per accepted user turn is bounded to ±10",
-      properties: {
-        delta: { type: "integer", required: true, description: "An integer from -10 through +10" },
-        reason: { type: "string", required: true, description: "A concise factual reason for this affinity change, at most 160 characters" },
-      },
-      additionalProperties: false,
-    },
-  },
-  output: {
-    schema: {
-      type: "object",
-      properties: { mood: { type: "string" }, note: { type: "string" }, delta: { type: "integer" }, affinity: { type: "integer", required: true }, stage: { type: "string", required: true }, message: { type: "string", required: true } },
-      additionalProperties: false,
-    },
-    render: (_args, value) => [{ type: "text", text: String(value.message) }],
-  },
-  async execute(args, exec) {
-    const workspace = owner.configuredWorkspace(undefined, currentCwd(exec))?.workspace;
-    if (!workspace) throw new CompanionValidationError("Companion 只能在已配置的 Workspace 中更新。");
-    const requested = canonicalizeRelationshipUpdate(args);
-    const result = await updateRelationshipForAcceptedTurn(owner.storeFor(workspace), args, exec);
-    const state = result.state;
-    const message = requested.mood !== undefined && requested.affinity !== undefined
-      ? `Companion 此刻状态已更新为 ${MOOD_LABELS[state.mood]}，亲近度现在是 ${state.affinity}（${affinityStage(state.affinity)}）。`
-      : requested.mood !== undefined
-        ? `Companion 此刻状态已更新为 ${MOOD_LABELS[state.mood]}。`
-        : `亲近度 ${(result.delta ?? 0) >= 0 ? "增加" : "减少"} ${Math.abs(result.delta ?? 0)}，现在是 ${state.affinity}（${affinityStage(state.affinity)}）。`;
-    return {
-      ...(requested.mood === undefined ? {} : { mood: state.mood, ...(state.note === undefined ? {} : { note: state.note }) }),
-      ...(requested.affinity === undefined ? {} : { delta: result.delta }),
-      affinity: state.affinity,
-      stage: affinityStage(state.affinity),
-      message,
-    };
-  },
-});
-
-const historyTool = (owner: CompanionHostController): ToolDefinition => defineTool({
-  name: "companion_read_history",
-  description: "Read a small recent slice of this Workspace's Companion relationship history when an earlier mood, note, affinity reason, or signature change is relevant. Records are newest first. This does not change current state; omit limit for 10 records, with a maximum of 20.",
-  parameters: {
-    limit: { type: "integer", description: "Optional number of newest records to return, from 1 through 20; defaults to 10" },
-  },
-  output: {
-    schema: {
-      type: "object",
-      properties: {
-        records: {
-          type: "array",
-          required: true,
-          items: {
-            type: "object",
-            properties: {
-              at: { type: "string", required: true },
-              changes: {
-                type: "object",
-                required: true,
-                properties: {
-                  seed: { type: "boolean" },
-                  mood: { type: "object", properties: { value: { type: "string", required: true }, note: { type: "string" }, reason: { type: "string" } }, additionalProperties: false },
-                  affinity: { type: "object", properties: { delta: { type: "integer", required: true }, value: { type: "integer", required: true }, reason: { type: "string" } }, additionalProperties: false },
-                  signature: { type: "object", properties: { value: { type: "string", required: true }, reason: { type: "string" } }, additionalProperties: false },
-                },
-                additionalProperties: false,
-              },
-              state: {
-                type: "object",
-                required: true,
-                properties: { mood: { type: "string", required: true }, note: { type: "string" }, affinity: { type: "integer", required: true }, signature: { type: "string", required: true } },
-                additionalProperties: false,
-              },
-            },
-            additionalProperties: false,
+const relationshipTool = (owner: CompanionHostController): ToolDefinition =>
+  defineTool({
+    name: "companion_update_relationship",
+    description:
+      "Record one Companion relationship reaction for this Workspace. Supply mood, affinity, or both; at least one is required. When both change for the same conversational moment, include both so they persist atomically. Give each change its own concise factual reason, not hidden reasoning.",
+    parameters: {
+      mood: {
+        type: "object",
+        description: "Optional current-state change",
+        properties: {
+          value: {
+            type: "string",
+            required: true,
+            enum: [
+              "neutral",
+              "serene",
+              "bright",
+              "playful",
+              "tender",
+              "pensive",
+              "tired",
+              "low",
+            ],
+            description: "The new bounded current-state key",
+          },
+          note: {
+            type: "string",
+            description:
+              "Optional user-facing 状态短句, at most 40 Unicode code points",
+          },
+          reason: {
+            type: "string",
+            required: true,
+            description:
+              "A concise factual reason for this mood change, at most 160 characters",
           },
         },
-        message: { type: "string", required: true },
+        additionalProperties: false,
       },
-      additionalProperties: false,
+      affinity: {
+        type: "object",
+        description:
+          "Optional affinity change; net movement per accepted user turn is bounded to ±10",
+        properties: {
+          delta: {
+            type: "integer",
+            required: true,
+            description: "An integer from -10 through +10",
+          },
+          reason: {
+            type: "string",
+            required: true,
+            description:
+              "A concise factual reason for this affinity change, at most 160 characters",
+          },
+        },
+        additionalProperties: false,
+      },
     },
-    render: (_args, value) => [{ type: "text", text: `${String(value.message)}\n${JSON.stringify(value.records, null, 2)}` }],
-  },
-  async execute(args, exec) {
-    const workspace = owner.configuredWorkspace(undefined, currentCwd(exec))?.workspace;
-    if (!workspace) throw new CompanionValidationError("Companion 只能在已配置的 Workspace 中读取关系历史。");
-    const limit = canonicalizeHistoryRead(args);
-    const records = await owner.storeFor(workspace).readHistory(limit, exec.signal);
-    return { records, message: `读取了最近 ${records.length} 条关系记录（由新到旧）。` };
-  },
-});
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          mood: { type: "string" },
+          note: { type: "string" },
+          delta: { type: "integer" },
+          affinity: { type: "integer", required: true },
+          stage: { type: "string", required: true },
+          message: { type: "string", required: true },
+        },
+        additionalProperties: false,
+      },
+      render: (_args, value) => [{ type: "text", text: String(value.message) }],
+    },
+    async execute(args, exec) {
+      const workspace = owner.configuredWorkspace(
+        undefined,
+        currentCwd(exec),
+      )?.workspace;
+      if (!workspace)
+        throw new CompanionValidationError(
+          "Companion 只能在已配置的 Workspace 中更新。",
+        );
+      const requested = canonicalizeRelationshipUpdate(args);
+      const result = await updateRelationshipForAcceptedTurn(
+        owner.storeFor(workspace),
+        args,
+        exec,
+      );
+      const state = result.state;
+      const message =
+        requested.mood !== undefined && requested.affinity !== undefined
+          ? `Companion 此刻状态已更新为 ${MOOD_LABELS[state.mood]}，亲近度现在是 ${state.affinity}（${affinityStage(state.affinity)}）。`
+          : requested.mood !== undefined
+            ? `Companion 此刻状态已更新为 ${MOOD_LABELS[state.mood]}。`
+            : `亲近度 ${(result.delta ?? 0) >= 0 ? "增加" : "减少"} ${Math.abs(result.delta ?? 0)}，现在是 ${state.affinity}（${affinityStage(state.affinity)}）。`;
+      return {
+        ...(requested.mood === undefined
+          ? {}
+          : {
+              mood: state.mood,
+              ...(state.note === undefined ? {} : { note: state.note }),
+            }),
+        ...(requested.affinity === undefined ? {} : { delta: result.delta }),
+        affinity: state.affinity,
+        stage: affinityStage(state.affinity),
+        message,
+      };
+    },
+  });
 
-const signatureTool = (owner: CompanionHostController): ToolDefinition => defineTool({
-  name: "companion_set_signature",
-  description: "Replace or clear the Companion's relatively durable personal signature for this Workspace, with a concise factual reason for the change.",
-  parameters: {
-    signature: { type: "string", required: true, description: "One plain Unicode line, at most 80 characters; an empty string clears it" },
-    reason: { type: "string", required: true, description: "A concise factual reason for this signature change, at most 160 characters" },
-  },
-  output: {
-    schema: { type: "object", properties: { signature: { type: "string", required: true }, message: { type: "string", required: true } }, additionalProperties: false },
-    render: (_args, value) => [{ type: "text", text: String(value.message) }],
-  },
-  async execute(args, exec) {
-    const workspace = owner.configuredWorkspace(undefined, currentCwd(exec))?.workspace;
-    if (!workspace) throw new CompanionValidationError("Companion 只能在已配置的 Workspace 中更新。");
-    const signature = canonicalizeSignature((args as { signature?: unknown }).signature);
-    const reason = canonicalizeChangeReason((args as { reason?: unknown }).reason);
-    const state = await owner.storeFor(workspace).setSignature(signature, reason, exec.signal);
-    return { signature: state.signature, message: state.signature ? "Companion 签名已更新。" : "Companion 签名已清除。" };
-  },
-});
+const historyTool = (owner: CompanionHostController): ToolDefinition =>
+  defineTool({
+    name: "companion_read_history",
+    description:
+      "Read a small recent slice of this Workspace's Companion relationship history when an earlier mood, note, affinity reason, or signature change is relevant. Records are newest first. This does not change current state; omit limit for 10 records, with a maximum of 20.",
+    parameters: {
+      limit: {
+        type: "integer",
+        description:
+          "Optional number of newest records to return, from 1 through 20; defaults to 10",
+      },
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          records: {
+            type: "array",
+            required: true,
+            items: {
+              type: "object",
+              properties: {
+                at: { type: "string", required: true },
+                changes: {
+                  type: "object",
+                  required: true,
+                  properties: {
+                    seed: { type: "boolean" },
+                    mood: {
+                      type: "object",
+                      properties: {
+                        value: { type: "string", required: true },
+                        note: { type: "string" },
+                        reason: { type: "string" },
+                      },
+                      additionalProperties: false,
+                    },
+                    affinity: {
+                      type: "object",
+                      properties: {
+                        delta: { type: "integer", required: true },
+                        value: { type: "integer", required: true },
+                        reason: { type: "string" },
+                      },
+                      additionalProperties: false,
+                    },
+                    signature: {
+                      type: "object",
+                      properties: {
+                        value: { type: "string", required: true },
+                        reason: { type: "string" },
+                      },
+                      additionalProperties: false,
+                    },
+                  },
+                  additionalProperties: false,
+                },
+                state: {
+                  type: "object",
+                  required: true,
+                  properties: {
+                    mood: { type: "string", required: true },
+                    note: { type: "string" },
+                    affinity: { type: "integer", required: true },
+                    signature: { type: "string", required: true },
+                  },
+                  additionalProperties: false,
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+          message: { type: "string", required: true },
+        },
+        additionalProperties: false,
+      },
+      render: (_args, value) => [
+        {
+          type: "text",
+          text: `${String(value.message)}\n${JSON.stringify(value.records, null, 2)}`,
+        },
+      ],
+    },
+    async execute(args, exec) {
+      const workspace = owner.configuredWorkspace(
+        undefined,
+        currentCwd(exec),
+      )?.workspace;
+      if (!workspace)
+        throw new CompanionValidationError(
+          "Companion 只能在已配置的 Workspace 中读取关系历史。",
+        );
+      const limit = canonicalizeHistoryRead(args);
+      const records = await owner
+        .storeFor(workspace)
+        .readHistory(limit, exec.signal);
+      return {
+        records,
+        message: `读取了最近 ${records.length} 条关系记录（由新到旧）。`,
+      };
+    },
+  });
+
+const signatureTool = (owner: CompanionHostController): ToolDefinition =>
+  defineTool({
+    name: "companion_set_signature",
+    description:
+      "Replace or clear the Companion's relatively durable personal signature for this Workspace, with a concise factual reason for the change.",
+    parameters: {
+      signature: {
+        type: "string",
+        required: true,
+        description:
+          "One plain Unicode line, at most 80 characters; an empty string clears it",
+      },
+      reason: {
+        type: "string",
+        required: true,
+        description:
+          "A concise factual reason for this signature change, at most 160 characters",
+      },
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          signature: { type: "string", required: true },
+          message: { type: "string", required: true },
+        },
+        additionalProperties: false,
+      },
+      render: (_args, value) => [{ type: "text", text: String(value.message) }],
+    },
+    async execute(args, exec) {
+      const workspace = owner.configuredWorkspace(
+        undefined,
+        currentCwd(exec),
+      )?.workspace;
+      if (!workspace)
+        throw new CompanionValidationError(
+          "Companion 只能在已配置的 Workspace 中更新。",
+        );
+      const signature = canonicalizeSignature(
+        (args as { signature?: unknown }).signature,
+      );
+      const reason = canonicalizeChangeReason(
+        (args as { reason?: unknown }).reason,
+      );
+      const state = await owner
+        .storeFor(workspace)
+        .setSignature(signature, reason, exec.signal);
+      return {
+        signature: state.signature,
+        message: state.signature
+          ? "Companion 签名已更新。"
+          : "Companion 签名已清除。",
+      };
+    },
+  });
 
 export class CompanionHostController {
   readonly stores = new Map<string, CompanionStateStore>();
@@ -725,21 +1121,36 @@ export class CompanionHostController {
   private readonly fs: CompanionFileSystem;
   private readonly disposers: Array<() => void | Promise<void>> = [];
 
-  constructor(readonly ctx: HostContextLike, settingsScope: SettingsScopeLike<CompanionSettings>) {
+  constructor(
+    readonly ctx: HostContextLike,
+    settingsScope: SettingsScopeLike<CompanionSettings>,
+  ) {
     this.settingsScope = settingsScope;
     this.fs = adaptFs(ctx.fs);
-    this.disposers.push(settingsScope.watch((next) => {
-      const defaultAffinity = asSettings(next).defaultAffinity;
-      for (const store of this.stores.values()) store.setDefaultAffinity(defaultAffinity);
-    }));
+    this.disposers.push(
+      settingsScope.watch((next) => {
+        const defaultAffinity = asSettings(next).defaultAffinity;
+        for (const store of this.stores.values())
+          store.setDefaultAffinity(defaultAffinity);
+      }),
+    );
   }
 
-  settings(): CompanionSettings { return asSettings(this.settingsScope.get()); }
+  settings(): CompanionSettings {
+    return asSettings(this.settingsScope.get());
+  }
 
   /** One authority check shared by tools, RPC, and prompt assembly. */
-  configuredWorkspace(requestedId?: string, cwd?: string): { settings: CompanionSettings; workspace: WorkspaceRecord } | undefined {
+  configuredWorkspace(
+    requestedId?: string,
+    cwd?: string,
+  ): { settings: CompanionSettings; workspace: WorkspaceRecord } | undefined {
     const settings = this.settings();
-    if (!settings.workspaceId || (requestedId !== undefined && requestedId !== settings.workspaceId)) return undefined;
+    if (
+      !settings.workspaceId ||
+      (requestedId !== undefined && requestedId !== settings.workspaceId)
+    )
+      return undefined;
     const workspace = workspaceFor(this.ctx.workspaceRegistry, settings, cwd);
     return workspace ? { settings, workspace } : undefined;
   }
@@ -748,7 +1159,11 @@ export class CompanionHostController {
     const existing = this.stores.get(workspace.id);
     if (existing) return existing;
     const identity = this.settings();
-    const store = new CompanionStateStore({ workspacePath: workspace.path, defaultAffinity: identity.defaultAffinity, fs: this.fs });
+    const store = new CompanionStateStore({
+      workspacePath: workspace.path,
+      defaultAffinity: identity.defaultAffinity,
+      fs: this.fs,
+    });
     this.stores.set(workspace.id, store);
     return store;
   }
@@ -759,10 +1174,24 @@ export class CompanionHostController {
     if (configured) await this.storeFor(configured.workspace).load();
   }
 
-  async relationship(workspaceId?: string, signal?: AbortSignal): Promise<RelationshipView> {
-    const requested = typeof workspaceId === "string" && workspaceId.trim() ? workspaceId.trim() : undefined;
+  async relationship(
+    workspaceId?: string,
+    signal?: AbortSignal,
+  ): Promise<RelationshipView> {
+    const requested =
+      typeof workspaceId === "string" && workspaceId.trim()
+        ? workspaceId.trim()
+        : undefined;
     const configured = this.configuredWorkspace(requested);
-    if (!configured) return { identity: undefined, state: undefined, workspacePresent: false, sandboxPosture: SANDBOX_POSTURE, escalationEnabled: false, revision: 0 };
+    if (!configured)
+      return {
+        identity: undefined,
+        state: undefined,
+        workspacePresent: false,
+        sandboxPosture: SANDBOX_POSTURE,
+        escalationEnabled: false,
+        revision: 0,
+      };
     const store = this.storeFor(configured.workspace);
     await store.load(signal);
     return {
@@ -779,18 +1208,39 @@ export class CompanionHostController {
     return optionalDshSpeech(this.ctx) !== undefined;
   }
 
-  private async transcribeVoice(request: CompanionVoiceRequest, signal: AbortSignal): Promise<RpcResult<CompanionVoiceTranscription>> {
+  private async transcribeVoice(
+    request: CompanionVoiceRequest,
+    signal: AbortSignal,
+  ): Promise<RpcResult<CompanionVoiceTranscription>> {
     const configured = this.configuredWorkspace(request.workspaceId);
-    if (!configured) return fail("找不到已配置的 Companion Workspace。", "workspace-not-found");
-    if (!workspaceOwnsSession(configured.workspace, request.sessionId)) return fail("所选对话不属于 Companion Workspace。", "session-not-found");
+    if (!configured)
+      return fail(
+        "找不到已配置的 Companion Workspace。",
+        "workspace-not-found",
+      );
+    if (!workspaceOwnsSession(configured.workspace, request.sessionId))
+      return fail("所选对话不属于 Companion Workspace。", "session-not-found");
     const service = optionalDshSpeech(this.ctx);
-    if (!service) return fail("语音转写尚未配置，请安装并配置 DSH Speech。", "transcription-unavailable");
+    if (!service)
+      return fail(
+        "语音转写尚未配置，请安装并配置 DSH Speech。",
+        "transcription-unavailable",
+      );
     if (signal.aborted) return fail("语音转写已取消。", "cancelled");
     try {
-      const raw = await service.transcribe({ sessionId: request.sessionId, mediaType: request.mediaType, data: request.data }, signal);
+      const raw = await service.transcribe(
+        {
+          sessionId: request.sessionId,
+          mediaType: request.mediaType,
+          data: request.data,
+        },
+        signal,
+      );
       if (signal.aborted) return fail("语音转写已取消。", "cancelled");
       const normalized = normalizeCompanionVoiceTranscription(raw);
-      return normalized ? ok(normalized) : fail("语音转写结果无效，请再试一次。", "transcription-failed");
+      return normalized
+        ? ok(normalized)
+        : fail("语音转写结果无效，请再试一次。", "transcription-failed");
     } catch {
       if (signal.aborted) return fail("语音转写已取消。", "cancelled");
       return fail("语音转写暂时不可用，请稍后重试。", "transcription-failed");
@@ -801,59 +1251,127 @@ export class CompanionHostController {
     this.ctx.tools.register(historyTool(this));
     this.ctx.tools.register(relationshipTool(this));
     this.ctx.tools.register(signatureTool(this));
-    this.disposers.push(this.ctx.on("llm/stream", (options, next) => {
-      const rewritten = rewriteCompanionCompactionRequest(options, this.configuredWorkspace()?.workspace.sessionIds);
-      if (rewritten !== options) options.messages = rewritten.messages;
-      return next();
-    }, { global: true }));
-    this.disposers.push(this.ctx.connection.rpc.handle(RPC_CHANNEL, async (endpoint, payload, signal) => {
-      const record = typeof payload === "object" && payload !== null ? payload as { workspaceId?: unknown; affinity?: unknown; revision?: unknown } : {};
-      const requested = typeof record.workspaceId === "string" ? record.workspaceId : undefined;
-      if (endpoint === VOICE_TRANSCRIBE_ENDPOINT) {
-        const request = parseCompanionVoiceRequest(payload);
-        if (!request) return fail("语音请求格式无效。", "invalid-input");
-        return this.transcribeVoice(request, signal);
-      }
-      const configured = this.configuredWorkspace(requested);
-      if (!configured) return fail("找不到已配置的 Companion Workspace。", "workspace-not-found");
-      if (endpoint === VOICE_CAPABILITY_ENDPOINT) return ok({ available: this.voiceCapability() });
-      const store = this.storeFor(configured.workspace);
-      if (endpoint === "relationship/reset") return ok({ state: await store.resetAffinity(signal) });
-      if (endpoint === "relationship/set-affinity") return ok({ state: await store.setAffinity(record.affinity, signal) });
-      if (endpoint === "relationship/clear-signature") return ok({ state: await store.clearSignature(signal) });
-      if (endpoint === "relationship/watch") {
-        if (typeof record.revision !== "number" || !Number.isSafeInteger(record.revision) || record.revision < 0) return fail("relationship revision 无效。");
-        const next = await store.waitForChange(record.revision, signal);
-        return ok({ ...(await this.relationship(requested, signal)), revision: next.revision, state: next.state });
-      }
-      if (endpoint === "relationship/get") return ok(await this.relationship(requested, signal));
-      return fail("未知的 Companion 请求。", "bad-request");
-    }));
-    this.disposers.push(this.ctx.systemPrompt.context({
-      name: RELATIONSHIP_CONTEXT_NAME,
-      order: 140,
-      text: (context) => {
-        const configured = this.configuredWorkspace(undefined, context.agent?.session?.header?.cwd);
-        if (!configured) return "";
-        const state = this.storeFor(configured.workspace).getLoadedSnapshot();
-        return state ? formatCompanionPrompt(state, checkedSettings(configured.settings)) : "";
-      },
-    }));
-    this.disposers.push(this.ctx.on("system-prompt/assemble", async (assembly, context, next) => {
-      const contribution = assembly.contexts.find((entry) => entry.name === RELATIONSHIP_CONTEXT_NAME);
-      if (!contribution) return next();
-      const configured = this.configuredWorkspace(undefined, context.agent?.session?.header?.cwd);
-      if (!configured) {
-        contribution.text = "";
+    this.disposers.push(
+      this.ctx.on(
+        "llm/stream",
+        (options, next) => {
+          const rewritten = rewriteCompanionCompactionRequest(
+            options,
+            this.configuredWorkspace()?.workspace.sessionIds,
+          );
+          if (rewritten !== options) options.messages = rewritten.messages;
+          return next();
+        },
+        { global: true },
+      ),
+    );
+    this.disposers.push(
+      this.ctx.connection.rpc.handle(
+        RPC_CHANNEL,
+        async (endpoint, payload, signal) => {
+          const record =
+            typeof payload === "object" && payload !== null
+              ? (payload as {
+                  workspaceId?: unknown;
+                  affinity?: unknown;
+                  revision?: unknown;
+                })
+              : {};
+          const requested =
+            typeof record.workspaceId === "string"
+              ? record.workspaceId
+              : undefined;
+          if (endpoint === VOICE_TRANSCRIBE_ENDPOINT) {
+            const request = parseCompanionVoiceRequest(payload);
+            if (!request) return fail("语音请求格式无效。", "invalid-input");
+            return this.transcribeVoice(request, signal);
+          }
+          const configured = this.configuredWorkspace(requested);
+          if (!configured)
+            return fail(
+              "找不到已配置的 Companion Workspace。",
+              "workspace-not-found",
+            );
+          if (endpoint === VOICE_CAPABILITY_ENDPOINT)
+            return ok({ available: this.voiceCapability() });
+          const store = this.storeFor(configured.workspace);
+          if (endpoint === "relationship/reset")
+            return ok({ state: await store.resetAffinity(signal) });
+          if (endpoint === "relationship/set-affinity")
+            return ok({
+              state: await store.setAffinity(record.affinity, signal),
+            });
+          if (endpoint === "relationship/clear-signature")
+            return ok({ state: await store.clearSignature(signal) });
+          if (endpoint === "relationship/watch") {
+            if (
+              typeof record.revision !== "number" ||
+              !Number.isSafeInteger(record.revision) ||
+              record.revision < 0
+            )
+              return fail("relationship revision 无效。");
+            const next = await store.waitForChange(record.revision, signal);
+            return ok({
+              ...(await this.relationship(requested, signal)),
+              revision: next.revision,
+              state: next.state,
+            });
+          }
+          if (endpoint === "relationship/get")
+            return ok(await this.relationship(requested, signal));
+          return fail("未知的 Companion 请求。", "bad-request");
+        },
+      ),
+    );
+    this.disposers.push(
+      this.ctx.systemPrompt.context({
+        name: RELATIONSHIP_CONTEXT_NAME,
+        order: 140,
+        text: (context) => {
+          const configured = this.configuredWorkspace(
+            undefined,
+            context.agent?.session?.header?.cwd,
+          );
+          if (!configured) return "";
+          const state = this.storeFor(configured.workspace).getLoadedSnapshot();
+          return state
+            ? formatCompanionPrompt(state, checkedSettings(configured.settings))
+            : "";
+        },
+      }),
+    );
+    this.disposers.push(
+      this.ctx.on("system-prompt/assemble", async (assembly, context, next) => {
+        const contribution = assembly.contexts.find(
+          (entry) => entry.name === RELATIONSHIP_CONTEXT_NAME,
+        );
+        if (!contribution) return next();
+        const configured = this.configuredWorkspace(
+          undefined,
+          context.agent?.session?.header?.cwd,
+        );
+        if (!configured) {
+          contribution.text = "";
+          return next();
+        }
+        const store = this.storeFor(configured.workspace);
+        const state =
+          store.getLoadedSnapshot() ?? (await store.load(context.signal));
+        contribution.text = formatCompanionPrompt(
+          state,
+          checkedSettings(configured.settings),
+        );
         return next();
-      }
-      const store = this.storeFor(configured.workspace);
-      const state = store.getLoadedSnapshot() ?? await store.load(context.signal);
-      contribution.text = formatCompanionPrompt(state, checkedSettings(configured.settings));
-      return next();
-    }));
+      }),
+    );
     const webServer = this.ctx.webServer;
-    this.disposers.push(webServer.register({ kind: "prefix", path: "/companion", handler: (req, res) => companionAliasHandler(webServer, req, res) }));
+    this.disposers.push(
+      webServer.register({
+        kind: "prefix",
+        path: "/companion",
+        handler: (req, res) => companionAliasHandler(webServer, req, res),
+      }),
+    );
   }
 
   async dispose(): Promise<void> {
@@ -863,16 +1381,38 @@ export class CompanionHostController {
 }
 
 export const name = "dsh-companion" as const;
-export const inject = ["fs", "settings", "systemPrompt", "tools", "connection", "workspaceRegistry", "llm", "webServer"] as const;
+export const inject = [
+  "fs",
+  "settings",
+  "systemPrompt",
+  "tools",
+  "connection",
+  "workspaceRegistry",
+  "llm",
+  "webServer",
+] as const;
 
-export async function* apply(ctx: HostContextLike): AsyncGenerator<() => Promise<void>> {
-  const settingsScope = ctx.settings.register<CompanionSettings>(SETTINGS_NAMESPACE, SettingsSchema, {
-    applies: "live",
-    validate: (value) => {
-      if (value.workspaceId.trim()) validateIdentitySettings(value);
-      else if (!Number.isInteger(value.defaultAffinity) || value.defaultAffinity < 0 || value.defaultAffinity > 100) throw new CompanionValidationError("默认亲近度必须是 0 到 100 的整数。");
+export async function* apply(
+  ctx: HostContextLike,
+): AsyncGenerator<() => Promise<void>> {
+  const settingsScope = ctx.settings.register<CompanionSettings>(
+    SETTINGS_NAMESPACE,
+    SettingsSchema,
+    {
+      applies: "live",
+      validate: (value) => {
+        if (value.workspaceId.trim()) validateIdentitySettings(value);
+        else if (
+          !Number.isInteger(value.defaultAffinity) ||
+          value.defaultAffinity < 0 ||
+          value.defaultAffinity > 100
+        )
+          throw new CompanionValidationError(
+            "默认亲近度必须是 0 到 100 的整数。",
+          );
+      },
     },
-  });
+  );
   const controller = new CompanionHostController(ctx, settingsScope);
   await controller.initialize();
   controller.register();

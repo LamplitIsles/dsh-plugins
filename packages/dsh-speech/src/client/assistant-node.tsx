@@ -7,17 +7,25 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore
+  useSyncExternalStore,
 } from "react";
-import type { MutableRefObject, ReactNode } from "react";
-import { DisclosureRow, IconThinkOutline14, JsonBlock, MarkdownText } from "@deepseek-ai/dsh-client-ui-primitives";
+import type { ReactNode, RefCallback } from "react";
+import {
+  DisclosureRow,
+  IconThinkOutline14,
+  JsonBlock,
+  MarkdownText,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 import type { MarkdownLabels } from "@deepseek-ai/dsh-client-ui-primitives";
-import type { AssistantBlock, RenderMessageImages } from "@deepseek-ai/dsh-client-ui-conversation/client";
+import type {
+  AssistantBlock,
+  RenderMessageImages,
+} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type { ChatNodeViewProps } from "@deepseek-ai/dsh-client-ui-chat/client";
 
 import { parseTaggedText, type TaggedTextSegment } from "../parser.js";
 import { SpeechAudioPlayer, type SpeechRpcClient } from "../player.js";
-import styles from "./speech.module.dshcss";
+import styles from "./speech.module.css";
 
 // The block-family presentation below adapts the MIT-licensed
 // AssistantMarkdown/ReasoningRow presentation from the DSH
@@ -33,7 +41,7 @@ export interface ProfileSource {
 
 const EMPTY_PROFILE_SOURCE: ProfileSource = {
   getSnapshot: () => undefined,
-  subscribe: () => () => undefined
+  subscribe: () => () => undefined,
 };
 
 type AssistantProps = ChatNodeViewProps<"assistant-step"> & {
@@ -43,10 +51,11 @@ type AssistantProps = ChatNodeViewProps<"assistant-step"> & {
 
 const DEFAULT_MARKDOWN_LABELS: MarkdownLabels = {
   code: { copyLabel: "Copy", copiedLabel: "Copied" },
-  footnotes: "Footnotes"
+  footnotes: "Footnotes",
 };
 
-const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function firstLine(text: string): string {
   const newline = text.indexOf("\n");
@@ -59,44 +68,72 @@ function latestLine(text: string): string {
   return newline === -1 ? visible : visible.slice(newline + 1);
 }
 
+function useMutableCell<T>(value: T): { get: () => T; set: (next: T) => void } {
+  const cell = useRef(value);
+  const get = useCallback(() => cell.current, []);
+  const set = useCallback((next: T) => {
+    cell.current = next;
+  }, []);
+  return useMemo(() => ({ get, set }), [get, set]);
+}
+
 /**
  * Adapted from DSH's frame-throttled visual alignment helper. The synchronous
  * fallback keeps this renderer safe in non-browser test environments.
  */
-function useThrottledVisualUpdate(update: () => void, intervalFrames = 3): () => void {
-  const updateRef = useRef(update);
-  updateRef.current = update;
-  const pendingFrameRef = useRef<number | null>(null);
-  useIsomorphicLayoutEffect(() => () => {
-    if (pendingFrameRef.current === null || typeof cancelAnimationFrame !== "function") return;
-    cancelAnimationFrame(pendingFrameRef.current);
-    pendingFrameRef.current = null;
-  }, []);
+function useThrottledVisualUpdate(
+  update: () => void,
+  intervalFrames = 3,
+): () => void {
+  const updateCell = useMutableCell(update);
+  const pendingFrameCell = useMutableCell<number | null>(null);
+  useEffect(() => {
+    updateCell.set(update);
+  }, [update, updateCell]);
+  useIsomorphicLayoutEffect(
+    () => () => {
+      const pendingFrame = pendingFrameCell.get();
+      if (pendingFrame === null || typeof cancelAnimationFrame !== "function")
+        return;
+      cancelAnimationFrame(pendingFrame);
+      pendingFrameCell.set(null);
+    },
+    [],
+  );
   return useCallback(() => {
-    if (pendingFrameRef.current !== null) return;
+    if (pendingFrameCell.get() !== null) return;
     if (typeof requestAnimationFrame !== "function") {
-      updateRef.current();
+      updateCell.get()();
       return;
     }
     let remainingFrames = intervalFrames;
     const advance = () => {
       remainingFrames -= 1;
       if (remainingFrames > 0) {
-        pendingFrameRef.current = requestAnimationFrame(advance);
+        pendingFrameCell.set(requestAnimationFrame(advance));
         return;
       }
-      pendingFrameRef.current = null;
-      updateRef.current();
+      pendingFrameCell.set(null);
+      updateCell.get()();
     };
-    pendingFrameRef.current = requestAnimationFrame(advance);
-  }, [intervalFrames]);
+    pendingFrameCell.set(requestAnimationFrame(advance));
+  }, [intervalFrames, pendingFrameCell, updateCell]);
 }
 
 /** Keep hidden reasoning searchable and reveal its owning Turn process on demand. */
-function useSearchableHidden(hidden: boolean, reveal: () => void): MutableRefObject<HTMLDivElement | null> {
-  const ref = useRef<HTMLDivElement | null>(null);
+function useSearchableHidden(
+  hidden: boolean,
+  reveal: () => void,
+): RefCallback<HTMLDivElement> {
+  const elementCell = useMutableCell<HTMLDivElement | null>(null);
+  const ref = useCallback<RefCallback<HTMLDivElement>>(
+    (element) => {
+      elementCell.set(element);
+    },
+    [elementCell],
+  );
   useIsomorphicLayoutEffect(() => {
-    const element = ref.current;
+    const element = elementCell.get();
     if (element === null) return;
     if (hidden && element.contains(element.ownerDocument.activeElement)) {
       reveal();
@@ -104,19 +141,31 @@ function useSearchableHidden(hidden: boolean, reveal: () => void): MutableRefObj
     }
     if (hidden) element.setAttribute("hidden", "until-found");
     else element.removeAttribute("hidden");
-  }, [hidden, reveal]);
+  }, [elementCell, hidden, reveal]);
   useEffect(() => {
-    const element = ref.current;
+    const element = elementCell.get();
     if (element === null) return;
     element.addEventListener("beforematch", reveal);
     return () => element.removeEventListener("beforematch", reveal);
-  }, [reveal]);
+  }, [elementCell, reveal]);
   return ref;
 }
 
-function ProcessReasoning({ hidden, reveal, children }: { hidden: boolean; reveal?: (() => void) | undefined; children?: ReactNode }): ReactNode {
+function ProcessReasoning({
+  hidden,
+  reveal,
+  children,
+}: {
+  hidden: boolean;
+  reveal?: (() => void) | undefined;
+  children?: ReactNode;
+}): ReactNode {
   const ref = useSearchableHidden(hidden, reveal ?? (() => undefined));
-  return createElement("div", { ref, "data-turn-process-inline": hidden || undefined }, children);
+  return createElement(
+    "div",
+    { ref, "data-turn-process-inline": hidden || undefined },
+    children,
+  );
 }
 
 interface ReasoningRowProps {
@@ -128,12 +177,20 @@ interface ReasoningRowProps {
 /** The pinned DSH Think disclosure, kept independent from tool presentation. */
 function ReasoningRow({ text, running, t }: ReasoningRowProps): ReactNode {
   const [expanded, setExpanded] = useState(false);
-  const summaryRef = useRef<HTMLSpanElement | null>(null);
+  const summaryCell = useMutableCell<HTMLSpanElement | null>(null);
+  const summaryRef = useCallback<RefCallback<HTMLSpanElement>>(
+    (element) => {
+      summaryCell.set(element);
+    },
+    [summaryCell],
+  );
   const summary = running ? latestLine(text) : firstLine(text);
   const scheduleSummaryScroll = useThrottledVisualUpdate(() => {
-    const element = summaryRef.current;
+    const element = summaryCell.get();
     if (element === null) return;
-    element.scrollLeft = running ? element.scrollWidth - element.clientWidth : 0;
+    element.scrollLeft = running
+      ? element.scrollWidth - element.clientWidth
+      : 0;
   });
   useEffect(() => {
     scheduleSummaryScroll();
@@ -143,36 +200,48 @@ function ReasoningRow({ text, running, t }: ReasoningRowProps): ReactNode {
     {
       className: styles.reasoningRoot,
       "data-variant": "think",
-      "data-state": running ? "running" : "ok"
+      "data-state": running ? "running" : "ok",
     },
-    running ? createElement("span", { className: styles.visuallyHidden }, t("row.running")) : null,
-    createElement(DisclosureRow, {
-      rowClassName: styles.reasoningRow,
-      leadingClassName: styles.reasoningLeading,
-      titleClassName: styles.reasoningTitle,
-      chevronClassName: styles.reasoningChevron,
-      icon: createElement(IconThinkOutline14, { size: 14 }),
-      title: "Think",
-      open: expanded,
-      expandable: true,
-      expandOnRowClick: true,
-      onToggle: () => setExpanded((value) => !value),
-      collapsedContent: createElement(
-        Fragment,
-        null,
-        createElement("span", { className: styles.reasoningSeparator, "aria-hidden": true }),
-        createElement(
+    running
+      ? createElement(
           "span",
-          {
-            ref: summaryRef,
-            className: styles.reasoningSummary,
-            "data-follow-end": running || undefined
-          },
-          summary
+          { className: styles.visuallyHidden },
+          t("row.running"),
         )
-      ),
-      children: createElement("div", { className: styles.reasoningBody }, text)
-    })
+      : null,
+    createElement(
+      DisclosureRow,
+      {
+        rowClassName: styles.reasoningRow,
+        leadingClassName: styles.reasoningLeading,
+        titleClassName: styles.reasoningTitle,
+        chevronClassName: styles.reasoningChevron,
+        icon: createElement(IconThinkOutline14, { size: 14 }),
+        title: "Think",
+        open: expanded,
+        expandable: true,
+        expandOnRowClick: true,
+        onToggle: () => setExpanded((value) => !value),
+        collapsedContent: createElement(
+          Fragment,
+          null,
+          createElement("span", {
+            className: styles.reasoningSeparator,
+            "aria-hidden": true,
+          }),
+          createElement(
+            "span",
+            {
+              ref: summaryRef,
+              className: styles.reasoningSummary,
+              "data-follow-end": running || undefined,
+            },
+            summary,
+          ),
+        ),
+      },
+      createElement("div", { className: styles.reasoningBody }, text),
+    ),
   );
 }
 
@@ -181,7 +250,7 @@ function normalText(
   key: string | number,
   streaming: boolean,
   mentions: unknown,
-  labels?: MarkdownLabels
+  labels?: MarkdownLabels,
 ): ReactNode {
   if (segment.kind === "speech") return null;
   return createElement(MarkdownText, {
@@ -189,7 +258,7 @@ function normalText(
     text: segment.text,
     streaming,
     fileMentions: mentions as never,
-    labels: labels ?? DEFAULT_MARKDOWN_LABELS
+    labels: labels ?? DEFAULT_MARKDOWN_LABELS,
   });
 }
 
@@ -197,7 +266,7 @@ export interface RenderAssistantBlocksOptions {
   streaming: boolean;
   interrupted: boolean;
   sessionId: string;
-  mentions?: unknown | undefined;
+  mentions?: unknown;
   t: (key: string, params?: Record<string, unknown>) => string;
   client?: SpeechRpcClient | undefined;
   profileKey?: string | undefined;
@@ -208,7 +277,10 @@ export interface RenderAssistantBlocksOptions {
 }
 
 /** Render the stock assistant block families, intercepting only final prose. */
-export function renderAssistantBlocks(blocks: readonly AssistantBlock[], options: RenderAssistantBlocksOptions): ReactNode[] {
+export function renderAssistantBlocks(
+  blocks: readonly AssistantBlock[],
+  options: RenderAssistantBlocksOptions,
+): ReactNode[] {
   const rendered: ReactNode[] = [];
   let claimed = false;
   const last = blocks.length - 1;
@@ -217,57 +289,80 @@ export function renderAssistantBlocks(blocks: readonly AssistantBlock[], options
     if (!block) continue;
     if (block.kind === "text") {
       const profileKey = options.profileKey;
-      if (!options.streaming && !options.interrupted && !claimed && options.client) {
+      if (
+        !options.streaming &&
+        !options.interrupted &&
+        !claimed &&
+        options.client
+      ) {
         const parsed = parseTaggedText(block.text);
         if (parsed.passage) {
           claimed = true;
           parsed.segments.forEach((segment, segmentIndex) => {
             if (segment.kind === "speech") {
-              rendered.push(createElement(SpeechAudioPlayer, {
-                key: `${index}-speech`,
-                text: segment.text,
-                transcript: segment.transcript,
-                profileKey,
-                sessionId: options.sessionId,
-                client: options.client!,
-                labels: {
-                  preparing: options.t("message.preparingAudio", { default: "Preparing audio…" }),
-                  audio: options.t("message.audio", { default: "Audio message" }),
-                  failed: options.t("message.audioUnavailable", { default: "Audio unavailable; transcript shown." })
-                }
-              }));
+              rendered.push(
+                createElement(SpeechAudioPlayer, {
+                  key: `${index}-speech`,
+                  text: segment.text,
+                  transcript: segment.transcript,
+                  profileKey,
+                  sessionId: options.sessionId,
+                  client: options.client!,
+                  labels: {
+                    preparing: options.t("message.preparingAudio", {
+                      default: "Preparing audio…",
+                    }),
+                    audio: options.t("message.audio", {
+                      default: "Audio message",
+                    }),
+                    failed: options.t("message.audioUnavailable", {
+                      default: "Audio unavailable; transcript shown.",
+                    }),
+                  },
+                }),
+              );
             } else {
-              rendered.push(normalText(
-                segment,
-                `${index}-${segmentIndex}`,
-                options.streaming,
-                options.mentions,
-                options.labels
-              ));
+              rendered.push(
+                normalText(
+                  segment,
+                  `${index}-${segmentIndex}`,
+                  options.streaming,
+                  options.mentions,
+                  options.labels,
+                ),
+              );
             }
           });
           continue;
         }
       }
-      rendered.push(createElement(MarkdownText, {
-        key: index,
-        text: block.text,
-        streaming: options.streaming,
-        fileMentions: options.mentions as never,
-        labels: options.labels ?? DEFAULT_MARKDOWN_LABELS
-      }));
+      rendered.push(
+        createElement(MarkdownText, {
+          key: index,
+          text: block.text,
+          streaming: options.streaming,
+          fileMentions: options.mentions as never,
+          labels: options.labels ?? DEFAULT_MARKDOWN_LABELS,
+        }),
+      );
       continue;
     }
     if (block.kind === "reasoning") {
-      rendered.push(createElement(ProcessReasoning, {
-        key: index,
-        hidden: options.reasoningHidden ?? false,
-        reveal: options.revealProcess
-      }, createElement(ReasoningRow, {
-        text: block.text,
-        running: options.streaming && index === last,
-        t: options.t
-      })));
+      rendered.push(
+        createElement(
+          ProcessReasoning,
+          {
+            key: index,
+            hidden: options.reasoningHidden ?? false,
+            reveal: options.revealProcess,
+          },
+          createElement(ReasoningRow, {
+            text: block.text,
+            running: options.streaming && index === last,
+            t: options.t,
+          }),
+        ),
+      );
       continue;
     }
     if (block.kind === "image") {
@@ -276,23 +371,41 @@ export function renderAssistantBlocks(blocks: readonly AssistantBlock[], options
       while (index + 1 < blocks.length && blocks[index + 1]?.kind === "image") {
         index += 1;
         const image = blocks[index];
-        if (image?.kind === "image") images.push({ attachment: image.attachment });
+        if (image?.kind === "image")
+          images.push({ attachment: image.attachment });
       }
       if (options.renderMessageImages) {
-        rendered.push(createElement(Fragment, { key: `${start}-images` }, options.renderMessageImages({ images, align: "start" })));
+        rendered.push(
+          createElement(
+            Fragment,
+            { key: `${start}-images` },
+            options.renderMessageImages({ images, align: "start" }),
+          ),
+        );
       }
       continue;
     }
     if (block.kind === "tool-call") continue;
-    rendered.push(createElement(JsonBlock, {
-      key: index,
-      label: options.t("message.unknownBlock", { default: "Unknown message block" }),
-      payload: block.block,
-      truncatedLabel: (total: number) => options.t("json.truncated", { total })
-    }));
+    rendered.push(
+      createElement(JsonBlock, {
+        key: index,
+        label: options.t("message.unknownBlock", {
+          default: "Unknown message block",
+        }),
+        payload: block.block,
+        truncatedLabel: (total: number) =>
+          options.t("json.truncated", { total }),
+      }),
+    );
   }
   if (options.interrupted) {
-    rendered.push(createElement("span", { className: styles.stopped, key: "stopped" }, options.t("message.stopped", { default: "Stopped" })));
+    rendered.push(
+      createElement(
+        "span",
+        { className: styles.stopped, key: "stopped" },
+        options.t("message.stopped", { default: "Stopped" }),
+      ),
+    );
   }
   return rendered;
 }
@@ -323,16 +436,26 @@ function AssistantMarkdown({
   profileKey,
   renderMessageImages,
   reasoningHidden,
-  revealProcess
+  revealProcess,
 }: AssistantMarkdownProps): ReactNode {
-  const labels = useMemo<MarkdownLabels>(() => ({
-    code: {
-      copyLabel: t("copy"),
-      copiedLabel: t("copied")
-    },
-    footnotes: t("markdown.footnotes")
-  }), [t]);
-  if (!(streaming || interrupted || blocks.some((block) => block.kind !== "tool-call"))) return null;
+  const labels = useMemo<MarkdownLabels>(
+    () => ({
+      code: {
+        copyLabel: t("copy"),
+        copiedLabel: t("copied"),
+      },
+      footnotes: t("markdown.footnotes"),
+    }),
+    [t],
+  );
+  if (
+    !(
+      streaming ||
+      interrupted ||
+      blocks.some((block) => block.kind !== "tool-call")
+    )
+  )
+    return null;
   return createElement(
     "div",
     { className: styles.assistant, "data-streaming": streaming || undefined },
@@ -350,21 +473,37 @@ function AssistantMarkdown({
         labels,
         renderMessageImages,
         reasoningHidden,
-        revealProcess
-      })
-    )
+        revealProcess,
+      }),
+    ),
   );
 }
 
 export function SpeechAssistantNodeView(props: AssistantProps) {
   const data = props.node.data;
   const source = props.profileSource ?? EMPTY_PROFILE_SOURCE;
-  const profileKey = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot);
+  const profileSubscribe = useMemo(
+    () => (listener: () => void) => source.subscribe(listener),
+    [source],
+  );
+  const profileSnapshot = useMemo(() => () => source.getSnapshot(), [source]);
+  const profileKey = useSyncExternalStore(
+    profileSubscribe,
+    profileSnapshot,
+    profileSnapshot,
+  );
   const blocks = data.blocks ?? [];
   const streaming = data.status === "running";
   const interrupted = data.status === "interrupted";
-  const location = (props.node as unknown as { location?: { kind?: string; turn?: { status?: string } } }).location;
-  const turn = location?.kind === "turn" || location?.kind === "step" ? location.turn : undefined;
+  const location = (
+    props.node as unknown as {
+      location?: { kind?: string; turn?: { status?: string } };
+    }
+  ).location;
+  const turn =
+    location?.kind === "turn" || location?.kind === "step"
+      ? location.turn
+      : undefined;
   const tail = props.useTurnData?.("turn-tail");
   const owner = useMemo(() => {
     const finalNode = data.finalNode;
@@ -372,24 +511,35 @@ export function SpeechAssistantNodeView(props: AssistantProps) {
     if (tail?.closing?.finalNode.seq !== finalNode.seq) return undefined;
     return { turn, seq: finalNode.seq, openFile: props.openFile };
   }, [data.finalNode, props.openFile, tail, turn]);
-  const mentions = useMemo(() => owner === undefined ? undefined : props.fileMentions(owner as never), [owner, props.fileMentions]);
-  const reasoningHidden = props.turnProcess !== undefined
-    && props.turnProcess.foldable
-    && props.turnProcess.spec.answerStep === data.step
-    && props.turnProcess.spec.inlineReasoning
-    && !props.turnProcess.open;
-  const revealProcess = useCallback(() => props.turnProcess?.setOpen(true), [props.turnProcess]);
+  const fileMentions = props.fileMentions;
+  const mentions = useMemo(
+    () => (owner === undefined ? undefined : fileMentions(owner as never)),
+    [owner, fileMentions],
+  );
+  const reasoningHidden =
+    props.turnProcess !== undefined &&
+    props.turnProcess.foldable &&
+    props.turnProcess.spec.answerStep === data.step &&
+    props.turnProcess.spec.inlineReasoning &&
+    !props.turnProcess.open;
+  const revealProcess = useCallback(
+    () => props.turnProcess?.setOpen(true),
+    [props.turnProcess],
+  );
   return createElement(AssistantMarkdown, {
     blocks,
     streaming,
     interrupted,
     sessionId: props.sessionId,
     mentions,
-    t: props.t as unknown as (key: string, params?: Record<string, unknown>) => string,
+    t: props.t as unknown as (
+      key: string,
+      params?: Record<string, unknown>,
+    ) => string,
     client: props.client,
     profileKey,
     renderMessageImages: props.renderMessageImages,
     reasoningHidden,
-    revealProcess
+    revealProcess,
   });
 }

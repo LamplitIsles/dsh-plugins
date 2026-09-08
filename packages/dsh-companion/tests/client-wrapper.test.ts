@@ -11,9 +11,18 @@ type ClientRegistration = {
 describe("classic DSH client wrapper", () => {
   it("preserves multiline JavaScript literal values", () => {
     let registration: ClientRegistration | undefined;
-    const classic = wrapClientBundle("fixture", "module.exports = `first\nsecond`;");
+    const classic = wrapClientBundle(
+      "fixture",
+      "module.exports = `first\nsecond`;",
+    );
     runInNewContext(classic, {
-      window: { __ModuleLoader__: { load: (value: ClientRegistration) => { registration = value; } } },
+      window: {
+        __ModuleLoader__: {
+          load: (value: ClientRegistration) => {
+            registration = value;
+          },
+        },
+      },
     });
 
     expect(registration?.id).toBe("fixture");

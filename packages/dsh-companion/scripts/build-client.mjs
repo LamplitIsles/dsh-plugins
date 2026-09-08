@@ -22,27 +22,44 @@ while (true) {
   const daisyStart = cjs.indexOf(daisyMarker, searchFrom);
   if (daisyStart < 0) break;
   const quote = cjs[daisyStart - 1];
-  if (quote !== "`" && quote !== '"' && quote !== "'") throw new Error("Could not scope the processed daisyUI stylesheet.");
+  if (quote !== "`" && quote !== '"' && quote !== "'")
+    throw new Error("Could not scope the processed daisyUI stylesheet.");
   let literalEnd = daisyStart;
   while (literalEnd < cjs.length) {
     if (cjs[literalEnd] === quote) {
       let slashes = 0;
-      for (let index = literalEnd - 1; index >= 0 && cjs[index] === "\\"; index -= 1) slashes += 1;
+      for (
+        let index = literalEnd - 1;
+        index >= 0 && cjs[index] === "\\";
+        index -= 1
+      )
+        slashes += 1;
       if (slashes % 2 === 0) break;
     }
     literalEnd += 1;
   }
-  if (literalEnd >= cjs.length) throw new Error("Could not scope the processed daisyUI stylesheet.");
-  const generatedStyles = cjs.slice(daisyStart, literalEnd)
-    .replace(/:root:has\(input\.theme-controller\[value=[^)]+\]:checked\),?/gu, "")
+  if (literalEnd >= cjs.length)
+    throw new Error("Could not scope the processed daisyUI stylesheet.");
+  const generatedStyles = cjs
+    .slice(daisyStart, literalEnd)
+    .replace(
+      /:root:has\(input\.theme-controller\[value=[^)]+\]:checked\),?/gu,
+      "",
+    )
     .replace(/:root\b/gu, ":scope")
-    .replace(/\[data-theme=["']?(sticker-messenger|night-voyage)["']?\]/gu, ":scope[data-theme=$1]");
+    .replace(
+      /\[data-theme=["']?(sticker-messenger|night-voyage)["']?\]/gu,
+      ":scope[data-theme=$1]",
+    );
   const scoped = `@scope (#dsh-companion){${generatedStyles}}`;
   cjs = `${cjs.slice(0, daisyStart)}${scoped}${cjs.slice(literalEnd)}`;
   searchFrom = daisyStart + scoped.length;
   scopedStyles += 1;
 }
-if (scopedStyles === 0) throw new Error("Expected the processed daisyUI stylesheet in the client bundle.");
+if (scopedStyles === 0)
+  throw new Error(
+    "Expected the processed daisyUI stylesheet in the client bundle.",
+  );
 cjs = cjs.replace(/^"use strict";\s*/u, "");
 const classic = wrapClientBundle(packageId, cjs);
 

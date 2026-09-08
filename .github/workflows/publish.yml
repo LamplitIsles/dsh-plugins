@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24'
+          node-version: "24.11.0"
           package-manager-cache: false
       - name: Detect package version changes across the mirrored push
         id: changes
@@ -34,6 +34,10 @@ jobs:
           corepack enable
           corepack pnpm install --frozen-lockfile
           corepack pnpm exec tsx scripts/release-changes.ts "$BEFORE_SHA" "$AFTER_SHA"
+      - name: Lint and format check
+        run: |
+          corepack pnpm run lint
+          corepack pnpm run format:check
 
   publish:
     needs: changes
@@ -60,7 +64,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24'
+          node-version: "24.11.0"
           package-manager-cache: false
       - name: Install toolchain and dependencies
         run: |

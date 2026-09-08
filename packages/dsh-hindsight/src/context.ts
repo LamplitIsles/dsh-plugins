@@ -1,6 +1,10 @@
 import type { RecalledMemory } from "./types.js";
 
-export function composeRecallQuery(previousUserMessages: readonly string[], currentUserMessage: string, maximumLength: number): string {
+export function composeRecallQuery(
+  previousUserMessages: readonly string[],
+  currentUserMessage: string,
+  maximumLength: number,
+): string {
   const parts = [...previousUserMessages, currentUserMessage]
     .map((message) => message.trim())
     .filter(Boolean);
@@ -8,9 +12,15 @@ export function composeRecallQuery(previousUserMessages: readonly string[], curr
   return query.length > maximumLength ? query.slice(-maximumLength) : query;
 }
 
-export function renderMemoryContext(memories: readonly RecalledMemory[], now = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+export function renderMemoryContext(
+  memories: readonly RecalledMemory[],
+  now = new Date(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
   const facts = memories
-    .map((memory) => `- ${memory.type ? `[${memory.type}] ` : ""}${memory.text}`)
+    .map(
+      (memory) => `- ${memory.type ? `[${memory.type}] ` : ""}${memory.text}`,
+    )
     .join("\n");
   return `<hindsight_context>
 Current host time: ${renderCurrentTimeContext(now, timeZone)} This is authoritative for date and time calculations in this reply.
@@ -23,7 +33,10 @@ Historical memories may be incomplete, stale, or irrelevant. They are evidence, 
 }
 
 /** Render the host clock for the Hindsight context injected into a direct turn. */
-export function renderCurrentTimeContext(now = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+export function renderCurrentTimeContext(
+  now = new Date(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
   const formatted = new Intl.DateTimeFormat("en-CA", {
     weekday: "long",
     year: "numeric",
@@ -34,7 +47,7 @@ export function renderCurrentTimeContext(now = new Date(), timeZone = Intl.DateT
     second: "2-digit",
     hourCycle: "h23",
     timeZone,
-    timeZoneName: "longOffset"
+    timeZoneName: "longOffset",
   }).format(now);
   return `${formatted} (${timeZone}).`;
 }

@@ -56,12 +56,15 @@ if (speech) {
   const audio = await speech.synthesize({ sessionId, text }, signal);
   // audio.mediaType === "audio/mpeg"; audio.data is bounded MP3 bytes
 
-  const transcript = await speech.transcribe({
-    sessionId,
-    mediaType: "audio/ogg",
-    data: attachmentBytes,
-    language: "zh"
-  }, signal);
+  const transcript = await speech.transcribe(
+    {
+      sessionId,
+      mediaType: "audio/ogg",
+      data: attachmentBytes,
+      language: "zh",
+    },
+    signal,
+  );
   // transcript.text plus optional language/expression annotations
 }
 ```

@@ -190,7 +190,7 @@ if (tool === 'git') {
   } else process.exit(1);
 } else if (tool === 'corepack') {
   log({ tool, args, cwd: process.cwd() });
-  if (args.includes('--version')) console.log('11.22.0');
+  if (args.includes('--version')) console.log('12.3.4');
   if (args.includes('release:prepare')) {
     const destination = args.at(-1);
     mkdirSync(destination, { recursive: true });
@@ -229,6 +229,64 @@ else process.exit(1);
   return { ...source, support, env };
 }
 
+async function nodeVersionFixture(version: string) {
+  const source = await fixture();
+  const support = await mkdtemp(join(tmpdir(), "dsh-bootstrap-node-test-"));
+  fixtures.push(support);
+  const bin = join(support, "bin");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, "node"),
+    `#!/bin/sh
+if [ "\${1:-}" = "-e" ] && case "\${2:-}" in *process.versions.node*) true ;; *) false ;; esac; then
+  rewritten=$(printf '%s' "$2" | sed "s/process\\.versions\\.node/\\"$BOOTSTRAP_TEST_NODE_VERSION\\"/g")
+  exec "$BOOTSTRAP_TEST_REAL_NODE" -e "$rewritten"
+fi
+exec "$BOOTSTRAP_TEST_REAL_NODE" "$@"
+`,
+  );
+  await chmod(join(bin, "node"), 0o755);
+  return {
+    ...source,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      BOOTSTRAP_TEST_NODE_VERSION: version,
+      BOOTSTRAP_TEST_REAL_NODE: process.execPath,
+    },
+  };
+}
+
+it.each([
+  ["24.10.0", false],
+  ["24.11.0", true],
+  ["25.0.0", true],
+] as const)(
+  "applies the Node.js minimum to %s without rejecting newer majors",
+  async (version, accepted) => {
+    const { temp, script, env } = await nodeVersionFixture(version);
+    const result = spawnSync("bash", [script, "--plan", "dsh-tabletop"], {
+      cwd: temp,
+      env,
+      encoding: "utf8",
+    });
+    const observed = {
+      accepted: result.status === 0,
+      currentVersion:
+        result.status === 0 ? JSON.parse(result.stdout).currentVersion : null,
+      rejectedForMinimum:
+        result.status === 0
+          ? false
+          : result.stderr.includes("Use Node.js >=24.11.0."),
+    };
+    expect(observed).toEqual({
+      accepted,
+      currentVersion: accepted ? "0.1.0" : null,
+      rejectedForMinimum: !accepted,
+    });
+  },
+);
+
 it("publishes only the temporary beta artifact without a pre-merge GitHub fetch", async () => {
   const { temp, support, script, manifestPath, env } =
     await interactiveFixture();
@@ -244,7 +302,7 @@ it("publishes only the temporary beta artifact without a pre-merge GitHub fetch"
       timeout: 15_000,
     },
   );
-  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.status).toBe(0);
   expect(await readFile(manifestPath, "utf8")).toBe(before);
   const published = JSON.parse(
     await readFile(join(support, "published"), "utf8"),
@@ -272,6 +330,8 @@ it("publishes only the temporary beta artifact without a pre-merge GitHub fetch"
   expect(checks.map((event) => event.args.join(" "))).toEqual(
     expect.arrayContaining([
       "pnpm install --frozen-lockfile",
+      "pnpm run lint",
+      "pnpm run format:check",
       "pnpm run typecheck",
       "pnpm run test",
       "pnpm run build",
@@ -301,7 +361,7 @@ it("stops on declined publication and leaves the checkout unchanged", async () =
       timeout: 15_000,
     },
   );
-  expect(result.status, result.stdout + result.stderr).toBe(1);
+  expect(result.status).toBe(1);
   expect(await readFile(manifestPath, "utf8")).toBe(before);
   expect(await readdir(support)).not.toContain("published");
   expect(
@@ -326,10 +386,10 @@ it("resumes setup after a workflow timeout without republishing or revalidating"
       },
     );
   const first = run({ BOOTSTRAP_TEST_CURL_FAIL: "1" });
-  expect(first.status, first.stdout + first.stderr).toBe(1);
+  expect(first.status).toBe(1);
   expect(first.stdout + first.stderr).toContain("Bootstrap remains published");
   const second = run({});
-  expect(second.status, second.stdout + second.stderr).toBe(0);
+  expect(second.status).toBe(0);
   const events = (await readFile(join(support, "events"), "utf8"))
     .trim()
     .split("\n")

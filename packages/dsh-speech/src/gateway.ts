@@ -1,5 +1,13 @@
-import { credentialRef, type CredentialProvider, type ResolvedCredential } from "@deepseek-ai/dsh-credentials";
-import type { HostConnectionRpc, ConnectionRpcHandler, ConnectionRpcResult } from "@deepseek-ai/dsh-client-connection";
+import {
+  credentialRef,
+  type CredentialProvider,
+  type ResolvedCredential,
+} from "@deepseek-ai/dsh-credentials";
+import type {
+  HostConnectionRpc,
+  ConnectionRpcHandler,
+  ConnectionRpcResult,
+} from "@deepseek-ai/dsh-client-connection";
 
 import {
   ALIBABA_CREDENTIAL_REF,
@@ -16,27 +24,20 @@ import {
   profileFromSettings,
   type QwenAsrExpression,
   type QwenAsrLanguage,
-  type SpeechProfile
+  type SpeechProfile,
 } from "./constants.js";
 import { normalizeSpeechText } from "./parser.js";
 import {
-  AUDIO_ROUTE_PATH,
   CACHE_FORMAT_VERSION,
   MAX_AUDIO_BYTES,
-  SPEECH_CACHE_DIRECTORY,
   audioArtifactPath,
-  audioCacheDirectory,
   audioUrl,
   cacheDigest,
   readAudioArtifact,
   readAudioArtifactMetadata,
-  registerSpeechAudioRoute,
   resolveSessionWorkspace,
-  serveSpeechAudio,
   writeAudioArtifactAtomic,
-  type AudioRouteRegistrar,
-  type AudioResponse,
-  type SessionResolver
+  type SessionResolver,
 } from "./audio-cache.js";
 import { RPC_CHANNEL, RPC_ENDPOINT, type BrowserAudioPayload } from "./rpc.js";
 
@@ -58,7 +59,12 @@ export interface SpeechFailureDiagnostic {
   responseContentType?: string;
   responseBytes?: number;
   requestId?: string;
-  responseIssue?: "read-failed" | "invalid-json" | "invalid-frame" | "no-data-frames" | "invalid-transcription";
+  responseIssue?:
+    | "read-failed"
+    | "invalid-json"
+    | "invalid-frame"
+    | "no-data-frames"
+    | "invalid-transcription";
 }
 
 /** Stable input accepted by the optional Host-facing `dshSpeech` service. */
@@ -93,8 +99,14 @@ export interface DshSpeechTranscription {
 
 /** Optional in-process Host capability offered while the DSH plugin is mounted. */
 export interface DshSpeechService {
-  synthesize(request: DshSpeechSynthesisRequest, signal?: AbortSignal): Promise<DshSpeechAudio>;
-  transcribe(request: DshSpeechTranscriptionRequest, signal?: AbortSignal): Promise<DshSpeechTranscription>;
+  synthesize(
+    request: DshSpeechSynthesisRequest,
+    signal?: AbortSignal,
+  ): Promise<DshSpeechAudio>;
+  transcribe(
+    request: DshSpeechTranscriptionRequest,
+    signal?: AbortSignal,
+  ): Promise<DshSpeechTranscription>;
 }
 
 /** Cordis key for the optional Host Speech capability. */
@@ -123,12 +135,18 @@ export {
   registerSpeechAudioRoute,
   resolveSessionWorkspace,
   serveSpeechAudio,
-  writeAudioArtifactAtomic
+  writeAudioArtifactAtomic,
 } from "./audio-cache.js";
-export type { AudioRouteRegistrar, AudioResponse, SessionResolver } from "./audio-cache.js";
+export type {
+  AudioRouteRegistrar,
+  AudioResponse,
+  SessionResolver,
+} from "./audio-cache.js";
 
 export interface CredentialResolver {
-  resolve(ref: ReturnType<typeof credentialRef>): Promise<ResolvedCredential | undefined>;
+  resolve(
+    ref: ReturnType<typeof credentialRef>,
+  ): Promise<ResolvedCredential | undefined>;
 }
 
 export interface SpeechGatewayOptions {
@@ -144,7 +162,10 @@ export class SpeechGatewayError extends Error {
   readonly category: SpeechFailureCategory;
   readonly diagnostic: Omit<SpeechFailureDiagnostic, "category">;
 
-  constructor(category: SpeechFailureCategory, diagnostic: Omit<SpeechFailureDiagnostic, "category"> = {}) {
+  constructor(
+    category: SpeechFailureCategory,
+    diagnostic: Omit<SpeechFailureDiagnostic, "category"> = {},
+  ) {
     super(category);
     this.name = "SpeechGatewayError";
     this.category = category;
@@ -152,8 +173,14 @@ export class SpeechGatewayError extends Error {
   }
 }
 
-function reportGatewayFailure(error: unknown, onFailure?: (failure: SpeechFailureDiagnostic) => void): SpeechGatewayError {
-  const typed = error instanceof SpeechGatewayError ? error : new SpeechGatewayError("internal");
+function reportGatewayFailure(
+  error: unknown,
+  onFailure?: (failure: SpeechFailureDiagnostic) => void,
+): SpeechGatewayError {
+  const typed =
+    error instanceof SpeechGatewayError
+      ? error
+      : new SpeechGatewayError("internal");
   if (typed.category !== "invalid-input" && typed.category !== "cancelled") {
     try {
       onFailure?.({ category: typed.category, ...typed.diagnostic });
@@ -167,33 +194,58 @@ function reportGatewayFailure(error: unknown, onFailure?: (failure: SpeechFailur
 function providerDiagnostic(
   profile: Pick<SpeechProfile, "provider" | "voice">,
   stage: NonNullable<SpeechFailureDiagnostic["stage"]>,
-  detail: Pick<SpeechFailureDiagnostic, "httpStatus" | "responseContentType" | "responseBytes" | "requestId" | "responseIssue"> = {}
+  detail: Pick<
+    SpeechFailureDiagnostic,
+    | "httpStatus"
+    | "responseContentType"
+    | "responseBytes"
+    | "requestId"
+    | "responseIssue"
+  > = {},
 ): Omit<SpeechFailureDiagnostic, "category"> {
   return { provider: profile.provider, voice: profile.voice, stage, ...detail };
 }
 
 function failure<T>(category: SpeechFailureCategory): ConnectionRpcResult<T> {
-  const code = category === "invalid-input" ? "bad-request" : category === "cancelled" ? "cancelled" : "internal";
+  const code =
+    category === "invalid-input"
+      ? "bad-request"
+      : category === "cancelled"
+        ? "cancelled"
+        : "internal";
   if (code === "bad-request") {
     return {
       ok: false,
-      error: { code, message: category, details: { issues: [] } }
+      error: { code, message: category, details: { issues: [] } },
     } as ConnectionRpcResult<T>;
   }
   if (code === "cancelled") {
-    return { ok: false, error: { code, message: category, details: {} } } as ConnectionRpcResult<T>;
+    return {
+      ok: false,
+      error: { code, message: category, details: {} },
+    } as ConnectionRpcResult<T>;
   }
-  return { ok: false, error: { code: "internal", message: category, details: {} } } as ConnectionRpcResult<T>;
+  return {
+    ok: false,
+    error: { code: "internal", message: category, details: {} },
+  } as ConnectionRpcResult<T>;
 }
 
 /** Leave enough room for JSON framing while bounding any provider response. */
 const MAX_PROVIDER_JSON_BYTES = Math.ceil(MAX_AUDIO_BYTES / 3) * 4 + 64 * 1024;
 
-async function readBoundedResponse(response: Response, maxBytes: number): Promise<Uint8Array> {
+async function readBoundedResponse(
+  response: Response,
+  maxBytes: number,
+): Promise<Uint8Array> {
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null) {
     const declared = Number(contentLength);
-    if (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBytes) {
+    if (
+      !Number.isSafeInteger(declared) ||
+      declared < 0 ||
+      declared > maxBytes
+    ) {
       throw new Error("response-too-large");
     }
   }
@@ -227,24 +279,32 @@ async function readBoundedResponse(response: Response, maxBytes: number): Promis
   return bytes;
 }
 
-function responseDiagnostic(response: Response, responseBytes?: number): Pick<SpeechFailureDiagnostic, "responseContentType" | "responseBytes" | "requestId"> {
-  const responseContentType = response.headers.get("content-type")?.slice(0, 128);
+function responseDiagnostic(
+  response: Response,
+  responseBytes?: number,
+): Pick<
+  SpeechFailureDiagnostic,
+  "responseContentType" | "responseBytes" | "requestId"
+> {
+  const responseContentType = response.headers
+    .get("content-type")
+    ?.slice(0, 128);
   const requestId = (
-    response.headers.get("x-tt-logid")
-    ?? response.headers.get("x-dashscope-request-id")
-    ?? response.headers.get("x-request-id")
-    ?? response.headers.get("x-api-request-id")
+    response.headers.get("x-tt-logid") ??
+    response.headers.get("x-dashscope-request-id") ??
+    response.headers.get("x-request-id") ??
+    response.headers.get("x-api-request-id")
   )?.slice(0, 256);
   return {
     ...(responseContentType ? { responseContentType } : {}),
     ...(responseBytes === undefined ? {} : { responseBytes }),
-    ...(requestId ? { requestId } : {})
+    ...(requestId ? { requestId } : {}),
   };
 }
 
 async function httpProviderRejection(
   response: Response,
-  profile: Pick<SpeechProfile, "provider" | "voice">
+  profile: Pick<SpeechProfile, "provider" | "voice">,
 ): Promise<SpeechGatewayError> {
   let responseBytes: number | undefined;
   try {
@@ -253,28 +313,38 @@ async function httpProviderRejection(
   } catch {
     // The HTTP status still provides a safe diagnostic when the body is absent or oversized.
   }
-  return new SpeechGatewayError("provider-rejected", providerDiagnostic(profile, "http", {
-    httpStatus: response.status,
-    ...responseDiagnostic(response, responseBytes)
-  }));
+  return new SpeechGatewayError(
+    "provider-rejected",
+    providerDiagnostic(profile, "http", {
+      httpStatus: response.status,
+      ...responseDiagnostic(response, responseBytes),
+    }),
+  );
 }
 
 /** Strict base64 decoding; Buffer.from alone silently accepts malformed input. */
 function base64ToBytes(value: string): Uint8Array | undefined {
   const dataUri = value.match(/^data:[^;,]+;base64,(.*)$/s);
   if (dataUri) value = dataUri[1]!;
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value) || value.length % 4 === 1) return undefined;
-  const padding = value.length % 4 === 0 ? "" : "=".repeat(4 - (value.length % 4));
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value) || value.length % 4 === 1)
+    return undefined;
+  const padding =
+    value.length % 4 === 0 ? "" : "=".repeat(4 - (value.length % 4));
   if (value.includes("=") && value.length % 4 !== 0) return undefined;
   const encoded = value + padding;
   try {
-    const buffer = (globalThis as { Buffer?: { from(value: string, encoding: string): Uint8Array } }).Buffer;
+    const buffer = (
+      globalThis as {
+        Buffer?: { from(value: string, encoding: string): Uint8Array };
+      }
+    ).Buffer;
     if (buffer) {
       return new Uint8Array(buffer.from(encoded, "base64"));
     }
     const decoded = atob(encoded);
     const bytes = new Uint8Array(decoded.length);
-    for (let i = 0; i < decoded.length; i += 1) bytes[i] = decoded.charCodeAt(i);
+    for (let i = 0; i < decoded.length; i += 1)
+      bytes[i] = decoded.charCodeAt(i);
     return bytes;
   } catch {
     return undefined;
@@ -283,14 +353,23 @@ function base64ToBytes(value: string): Uint8Array | undefined {
 
 /** Encode attachment bytes without building an argument list proportional to the file. */
 function bytesToBase64(bytes: Uint8Array): string {
-  const buffer = (globalThis as { Buffer?: { from(value: Uint8Array): { toString(encoding: string): string } } }).Buffer;
+  const buffer = (
+    globalThis as {
+      Buffer?: {
+        from(value: Uint8Array): { toString(encoding: string): string };
+      };
+    }
+  ).Buffer;
   if (buffer) return buffer.from(bytes).toString("base64");
   let encoded = "";
   // Keep every chunk on a three-byte boundary so concatenating the encoded
   // chunks is equivalent to encoding the complete byte sequence.
   const chunkSize = 0x7ffe;
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, Math.min(bytes.length, offset + chunkSize));
+    const chunk = bytes.subarray(
+      offset,
+      Math.min(bytes.length, offset + chunkSize),
+    );
     let binary = "";
     for (const byte of chunk) binary += String.fromCharCode(byte);
     encoded += btoa(binary);
@@ -309,18 +388,24 @@ interface ParsedTranscriptionRequest {
   language?: QwenAsrLanguage;
 }
 
-function transcriptionRequestFromPayload(payload: unknown): ParsedTranscriptionRequest {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+function transcriptionRequestFromPayload(
+  payload: unknown,
+): ParsedTranscriptionRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
     throw new SpeechGatewayError("invalid-input");
   }
   const record = payload as Record<string, unknown>;
   const keys = Object.keys(record);
   const allowed = new Set(["sessionId", "mediaType", "data", "language"]);
   if (
-    keys.some((key) => !allowed.has(key))
-    || !keys.includes("sessionId")
-    || !keys.includes("mediaType")
-    || !keys.includes("data")
+    keys.some((key) => !allowed.has(key)) ||
+    !keys.includes("sessionId") ||
+    !keys.includes("mediaType") ||
+    !keys.includes("data")
   ) {
     throw new SpeechGatewayError("invalid-input");
   }
@@ -337,30 +422,38 @@ function transcriptionRequestFromPayload(payload: unknown): ParsedTranscriptionR
   const mediaType = record.mediaType.trim().toLowerCase();
   const baseMediaType = mediaType.split(";", 1)[0]?.trim();
   if (
-    !baseMediaType
-    || !QWEN_ASR_MEDIA_TYPES.includes(baseMediaType as (typeof QWEN_ASR_MEDIA_TYPES)[number])
-    || !/^audio\/[a-z0-9][a-z0-9.+-]*$/u.test(baseMediaType)
-    || !/^audio\/[a-z0-9][a-z0-9.+-]*(?:\s*;\s*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*$/u.test(mediaType)
+    !baseMediaType ||
+    !QWEN_ASR_MEDIA_TYPES.includes(
+      baseMediaType as (typeof QWEN_ASR_MEDIA_TYPES)[number],
+    ) ||
+    !/^audio\/[a-z0-9][a-z0-9.+-]*$/u.test(baseMediaType) ||
+    !/^audio\/[a-z0-9][a-z0-9.+-]*(?:\s*;\s*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*$/u.test(
+      mediaType,
+    )
   ) {
     throw new SpeechGatewayError("invalid-input");
   }
-  if (dataUrlLength(mediaType, record.data.byteLength) > MAX_ASR_DATA_URL_BYTES) {
+  if (
+    dataUrlLength(mediaType, record.data.byteLength) > MAX_ASR_DATA_URL_BYTES
+  ) {
     throw new SpeechGatewayError("invalid-input");
   }
 
   const languageValue = record.language;
   let language: QwenAsrLanguage | undefined;
   if (languageValue !== undefined) {
-    if (typeof languageValue !== "string") throw new SpeechGatewayError("invalid-input");
+    if (typeof languageValue !== "string")
+      throw new SpeechGatewayError("invalid-input");
     const normalized = languageValue.trim().toLowerCase();
-    if (!QWEN_ASR_LANGUAGES.includes(normalized as QwenAsrLanguage)) throw new SpeechGatewayError("invalid-input");
+    if (!QWEN_ASR_LANGUAGES.includes(normalized as QwenAsrLanguage))
+      throw new SpeechGatewayError("invalid-input");
     language = normalized as QwenAsrLanguage;
   }
   return {
     sessionId: record.sessionId,
     mediaType,
     data: record.data,
-    ...(language === undefined ? {} : { language })
+    ...(language === undefined ? {} : { language }),
   };
 }
 
@@ -372,7 +465,7 @@ function languageValue(value: unknown): QwenAsrLanguage | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim().toLowerCase();
   return QWEN_ASR_LANGUAGES.includes(normalized as QwenAsrLanguage)
-    ? normalized as QwenAsrLanguage
+    ? (normalized as QwenAsrLanguage)
     : undefined;
 }
 
@@ -380,7 +473,7 @@ function expressionValue(value: unknown): QwenAsrExpression | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim().toLowerCase();
   return QWEN_ASR_EXPRESSIONS.includes(normalized as QwenAsrExpression)
-    ? normalized as QwenAsrExpression
+    ? (normalized as QwenAsrExpression)
     : undefined;
 }
 
@@ -394,7 +487,10 @@ function textFromContent(value: unknown): string | undefined {
   return parts.join("");
 }
 
-function syncAnnotations(value: unknown): { language?: QwenAsrLanguage; expression?: QwenAsrExpression } {
+function syncAnnotations(value: unknown): {
+  language?: QwenAsrLanguage;
+  expression?: QwenAsrExpression;
+} {
   if (!Array.isArray(value)) return {};
   let language: QwenAsrLanguage | undefined;
   let expression: QwenAsrExpression | undefined;
@@ -405,45 +501,68 @@ function syncAnnotations(value: unknown): { language?: QwenAsrLanguage; expressi
   }
   return {
     ...(language === undefined ? {} : { language }),
-    ...(expression === undefined ? {} : { expression })
+    ...(expression === undefined ? {} : { expression }),
   };
 }
 
 /** Normalize the bounded provider body and discard provider-specific fields. */
-export function normalizeQwenAsrResponse(body: unknown): DshSpeechTranscription {
+export function normalizeQwenAsrResponse(
+  body: unknown,
+): DshSpeechTranscription {
   if (!isRecord(body)) throw new Error("invalid-transcription");
   const output = isRecord(body.output) ? body.output : undefined;
-  const choices = output && Array.isArray(output.choices) ? output.choices : undefined;
+  const choices =
+    output && Array.isArray(output.choices) ? output.choices : undefined;
   const choice = choices?.[0];
-  const message = isRecord(choice) && isRecord(choice.message) ? choice.message : undefined;
+  const message =
+    isRecord(choice) && isRecord(choice.message) ? choice.message : undefined;
   const text = message ? textFromContent(message.content) : undefined;
   if (text === undefined) throw new Error("invalid-transcription");
   const annotations = syncAnnotations(message?.annotations);
   return {
     text,
-    ...(annotations.language === undefined ? {} : { language: annotations.language }),
-    ...(annotations.expression === undefined ? {} : { expression: annotations.expression })
+    ...(annotations.language === undefined
+      ? {}
+      : { language: annotations.language }),
+    ...(annotations.expression === undefined
+      ? {}
+      : { expression: annotations.expression }),
   };
 }
 
 function requestFromPayload(payload: unknown): DshSpeechSynthesisRequest {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
     throw new SpeechGatewayError("invalid-input");
   }
   const record = payload as { text?: unknown; sessionId?: unknown };
   const keys = Object.keys(payload);
-  if (keys.some((key) => key !== "text" && key !== "sessionId") || !keys.includes("text") || !keys.includes("sessionId")) {
+  if (
+    keys.some((key) => key !== "text" && key !== "sessionId") ||
+    !keys.includes("text") ||
+    !keys.includes("sessionId")
+  ) {
     throw new SpeechGatewayError("invalid-input");
   }
-  if (typeof record.text !== "string" || typeof record.sessionId !== "string" || !record.sessionId.trim()) {
+  if (
+    typeof record.text !== "string" ||
+    typeof record.sessionId !== "string" ||
+    !record.sessionId.trim()
+  ) {
     throw new SpeechGatewayError("invalid-input");
   }
   const text = normalizeSpeechText(record.text);
-  if (!text || Array.from(text).length > SPEECH_MAX_CHARS) throw new SpeechGatewayError("invalid-input");
+  if (!text || Array.from(text).length > SPEECH_MAX_CHARS)
+    throw new SpeechGatewayError("invalid-input");
   return { text, sessionId: record.sessionId };
 }
 
-function providerAudio(response: unknown): { data?: string; url?: string } | undefined {
+function providerAudio(
+  response: unknown,
+): { data?: string; url?: string } | undefined {
   if (typeof response !== "object" || response === null) return undefined;
   const output = (response as { output?: unknown }).output;
   if (typeof output !== "object" || output === null) return undefined;
@@ -453,7 +572,7 @@ function providerAudio(response: unknown): { data?: string; url?: string } | und
   const url = (audio as { url?: unknown }).url;
   return {
     ...(typeof data === "string" ? { data } : {}),
-    ...(typeof url === "string" ? { url } : {})
+    ...(typeof url === "string" ? { url } : {}),
   };
 }
 
@@ -461,7 +580,7 @@ async function alibabaBytes(
   fetchImpl: typeof fetch,
   credential: ResolvedCredential,
   text: string,
-  voice: string
+  voice: string,
 ): Promise<Uint8Array> {
   let response: Response;
   try {
@@ -469,48 +588,86 @@ async function alibabaBytes(
       method: "POST",
       headers: {
         authorization: `Bearer ${credential.value}`,
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         model: ALIBABA_MODEL,
         input: { text, voice, language_type: "Chinese" },
         parameters: { format: "mp3" },
-        stream: false
-      })
+        stream: false,
+      }),
     });
   } catch {
-    throw new SpeechGatewayError("provider-rejected", providerDiagnostic({ provider: "alibaba", voice }, "network"));
+    throw new SpeechGatewayError(
+      "provider-rejected",
+      providerDiagnostic({ provider: "alibaba", voice }, "network"),
+    );
   }
-  if (!response.ok) throw await httpProviderRejection(response, { provider: "alibaba", voice });
+  if (!response.ok)
+    throw await httpProviderRejection(response, { provider: "alibaba", voice });
 
   let body: unknown;
-  let responseMeta: ReturnType<typeof responseDiagnostic> = responseDiagnostic(response);
+  let responseMeta: ReturnType<typeof responseDiagnostic> =
+    responseDiagnostic(response);
   try {
-    const encoded = await readBoundedResponse(response, MAX_PROVIDER_JSON_BYTES);
+    const encoded = await readBoundedResponse(
+      response,
+      MAX_PROVIDER_JSON_BYTES,
+    );
     responseMeta = responseDiagnostic(response, encoded.byteLength);
     body = JSON.parse(new TextDecoder().decode(encoded));
   } catch {
-    throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic({ provider: "alibaba", voice }, "provider-response", responseMeta));
+    throw new SpeechGatewayError(
+      "provider-invalid-audio",
+      providerDiagnostic(
+        { provider: "alibaba", voice },
+        "provider-response",
+        responseMeta,
+      ),
+    );
   }
   const audio = providerAudio(body);
-  if (!audio) throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic({ provider: "alibaba", voice }, "provider-response", responseMeta));
+  if (!audio)
+    throw new SpeechGatewayError(
+      "provider-invalid-audio",
+      providerDiagnostic(
+        { provider: "alibaba", voice },
+        "provider-response",
+        responseMeta,
+      ),
+    );
   let bytes: Uint8Array | undefined;
   if (audio.data) bytes = base64ToBytes(audio.data);
   if ((!bytes || bytes.length === 0) && audio.url) {
     try {
       const url = new URL(audio.url);
-      if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("scheme");
+      if (url.protocol !== "https:" && url.protocol !== "http:")
+        throw new Error("scheme");
       const audioResponse = await fetchImpl(url.toString(), { method: "GET" });
       if (!audioResponse.ok) throw new Error("status");
-      const contentType = typeof audioResponse.headers?.get === "function" ? audioResponse.headers.get("content-type") : "";
-      if (contentType && !contentType.startsWith("audio/") && contentType !== "application/octet-stream") throw new Error("content-type");
+      const contentType =
+        typeof audioResponse.headers?.get === "function"
+          ? audioResponse.headers.get("content-type")
+          : "";
+      if (
+        contentType &&
+        !contentType.startsWith("audio/") &&
+        contentType !== "application/octet-stream"
+      )
+        throw new Error("content-type");
       bytes = await readBoundedResponse(audioResponse, MAX_AUDIO_BYTES);
     } catch {
-      throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic({ provider: "alibaba", voice }, "provider-response"));
+      throw new SpeechGatewayError(
+        "provider-invalid-audio",
+        providerDiagnostic({ provider: "alibaba", voice }, "provider-response"),
+      );
     }
   }
   if (!bytes || bytes.length === 0 || bytes.length > MAX_AUDIO_BYTES) {
-    throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic({ provider: "alibaba", voice }, "provider-response"));
+    throw new SpeechGatewayError(
+      "provider-invalid-audio",
+      providerDiagnostic({ provider: "alibaba", voice }, "provider-response"),
+    );
   }
   return bytes;
 }
@@ -520,23 +677,42 @@ interface ByteDanceFrame {
   data?: string;
 }
 
-type ByteDanceResponseIssue = NonNullable<SpeechFailureDiagnostic["responseIssue"]>;
+type ByteDanceResponseIssue = NonNullable<
+  SpeechFailureDiagnostic["responseIssue"]
+>;
 type ByteDanceFrameResult =
   | { ok: true; frames: ByteDanceFrame[] }
   | { ok: false; issue: Exclude<ByteDanceResponseIssue, "read-failed"> };
 
 function asFrame(value: unknown): ByteDanceFrame | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return undefined;
   const record = value as Record<string, unknown>;
-  const header = typeof record.header === "object" && record.header !== null && !Array.isArray(record.header)
-    ? record.header as Record<string, unknown>
-    : undefined;
+  const header =
+    typeof record.header === "object" &&
+    record.header !== null &&
+    !Array.isArray(record.header)
+      ? (record.header as Record<string, unknown>)
+      : undefined;
   if ("code" in record && typeof record.code !== "number") return undefined;
-  if ("data" in record && record.data !== null && typeof record.data !== "string") return undefined;
-  if ("message" in record && typeof record.message !== "string") return undefined;
-  if (header && "code" in header && typeof header.code !== "number") return undefined;
-  if (header && "message" in header && typeof header.message !== "string") return undefined;
-  const code = typeof record.code === "number" ? record.code : typeof header?.code === "number" ? header.code : undefined;
+  if (
+    "data" in record &&
+    record.data !== null &&
+    typeof record.data !== "string"
+  )
+    return undefined;
+  if ("message" in record && typeof record.message !== "string")
+    return undefined;
+  if (header && "code" in header && typeof header.code !== "number")
+    return undefined;
+  if (header && "message" in header && typeof header.message !== "string")
+    return undefined;
+  const code =
+    typeof record.code === "number"
+      ? record.code
+      : typeof header?.code === "number"
+        ? header.code
+        : undefined;
   const data = typeof record.data === "string" ? record.data : undefined;
   if (code === undefined) return undefined;
   return { code, ...(data === undefined ? {} : { data }) };
@@ -549,7 +725,13 @@ function parseByteDanceFrames(text: string): ByteDanceFrameResult {
   for (const line of text.split(/\r?\n/)) {
     const item = line.trim();
     if (!item) continue;
-    if (item.startsWith(":") || item.startsWith("event:") || item.startsWith("id:") || item.startsWith("retry:")) continue;
+    if (
+      item.startsWith(":") ||
+      item.startsWith("event:") ||
+      item.startsWith("id:") ||
+      item.startsWith("retry:")
+    )
+      continue;
     if (!item.startsWith("data:")) return { ok: false, issue: "invalid-frame" };
     const json = item.slice("data:".length).trim();
     if (!json || json === "[DONE]") continue;
@@ -571,7 +753,7 @@ async function bytedanceBytes(
   fetchImpl: typeof fetch,
   credential: ResolvedCredential,
   text: string,
-  voice: string
+  voice: string,
 ): Promise<Uint8Array> {
   let response: Response;
   try {
@@ -581,36 +763,51 @@ async function bytedanceBytes(
         accept: "text/event-stream",
         "content-type": "application/json",
         "X-Api-Key": credential.value,
-        "X-Api-Resource-Id": BYTEDANCE_RESOURCE_ID
+        "X-Api-Resource-Id": BYTEDANCE_RESOURCE_ID,
       },
       body: JSON.stringify({
         user: { uid: "dsh-speech" },
         req_params: {
           text,
           speaker: voice,
-          audio_params: { format: "mp3", sample_rate: 24_000 }
-        }
-      })
+          audio_params: { format: "mp3", sample_rate: 24_000 },
+        },
+      }),
     });
   } catch {
-    throw new SpeechGatewayError("provider-rejected", providerDiagnostic({ provider: "bytedance", voice }, "network"));
+    throw new SpeechGatewayError(
+      "provider-rejected",
+      providerDiagnostic({ provider: "bytedance", voice }, "network"),
+    );
   }
-  if (!response.ok) throw await httpProviderRejection(response, { provider: "bytedance", voice });
+  if (!response.ok)
+    throw await httpProviderRejection(response, {
+      provider: "bytedance",
+      voice,
+    });
 
   let parsed: ByteDanceFrameResult | { ok: false; issue: "read-failed" };
-  let responseMeta: ReturnType<typeof responseDiagnostic> = responseDiagnostic(response);
+  let responseMeta: ReturnType<typeof responseDiagnostic> =
+    responseDiagnostic(response);
   try {
-    const encoded = await readBoundedResponse(response, MAX_PROVIDER_JSON_BYTES);
+    const encoded = await readBoundedResponse(
+      response,
+      MAX_PROVIDER_JSON_BYTES,
+    );
     responseMeta = responseDiagnostic(response, encoded.byteLength);
     parsed = parseByteDanceFrames(new TextDecoder().decode(encoded));
   } catch {
     parsed = { ok: false, issue: "read-failed" };
   }
-  if (!parsed.ok) throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic(
-    { provider: "bytedance", voice },
-    "provider-response",
-    { ...responseMeta, responseIssue: parsed.issue }
-  ));
+  if (!parsed.ok)
+    throw new SpeechGatewayError(
+      "provider-invalid-audio",
+      providerDiagnostic(
+        { provider: "bytedance", voice },
+        "provider-response",
+        { ...responseMeta, responseIssue: parsed.issue },
+      ),
+    );
 
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -619,7 +816,14 @@ async function bytedanceBytes(
       if (frame.data !== undefined) {
         const bytes = base64ToBytes(frame.data);
         if (!bytes || total + bytes.length > MAX_AUDIO_BYTES) {
-          throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic({ provider: "bytedance", voice }, "provider-response", responseMeta));
+          throw new SpeechGatewayError(
+            "provider-invalid-audio",
+            providerDiagnostic(
+              { provider: "bytedance", voice },
+              "provider-response",
+              responseMeta,
+            ),
+          );
         }
         if (bytes.length > 0) {
           chunks.push(bytes);
@@ -629,13 +833,24 @@ async function bytedanceBytes(
       continue;
     }
     if (frame.code === 20_000_000) continue;
-    throw new SpeechGatewayError("provider-rejected", providerDiagnostic(
-      { provider: "bytedance", voice },
-      "provider-response",
-      responseMeta
-    ));
+    throw new SpeechGatewayError(
+      "provider-rejected",
+      providerDiagnostic(
+        { provider: "bytedance", voice },
+        "provider-response",
+        responseMeta,
+      ),
+    );
   }
-  if (total === 0) throw new SpeechGatewayError("provider-invalid-audio", providerDiagnostic({ provider: "bytedance", voice }, "provider-response", responseMeta));
+  if (total === 0)
+    throw new SpeechGatewayError(
+      "provider-invalid-audio",
+      providerDiagnostic(
+        { provider: "bytedance", voice },
+        "provider-response",
+        responseMeta,
+      ),
+    );
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
@@ -649,18 +864,28 @@ async function providerBytes(
   fetchImpl: typeof fetch,
   credential: ResolvedCredential,
   text: string,
-  profile: SpeechProfile
+  profile: SpeechProfile,
 ): Promise<Uint8Array> {
   return profile.provider === "bytedance"
     ? bytedanceBytes(fetchImpl, credential, text, profile.voice)
     : alibabaBytes(fetchImpl, credential, text, profile.voice);
 }
 
-const ASR_DIAGNOSTIC_PROFILE = { provider: "alibaba" as const, voice: QWEN_ASR_MODEL };
+const ASR_DIAGNOSTIC_PROFILE = {
+  provider: "alibaba" as const,
+  voice: QWEN_ASR_MODEL,
+};
 
 function asrDiagnostic(
   stage: NonNullable<SpeechFailureDiagnostic["stage"]>,
-  detail: Pick<SpeechFailureDiagnostic, "httpStatus" | "responseContentType" | "responseBytes" | "requestId" | "responseIssue"> = {}
+  detail: Pick<
+    SpeechFailureDiagnostic,
+    | "httpStatus"
+    | "responseContentType"
+    | "responseBytes"
+    | "requestId"
+    | "responseIssue"
+  > = {},
 ): Omit<SpeechFailureDiagnostic, "category"> {
   return providerDiagnostic(ASR_DIAGNOSTIC_PROFILE, stage, detail);
 }
@@ -669,15 +894,16 @@ async function qwenAsrTranscription(
   fetchImpl: typeof fetch,
   credential: ResolvedCredential,
   request: ParsedTranscriptionRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<DshSpeechTranscription> {
   if (signal?.aborted) throw new SpeechGatewayError("cancelled");
   const encoded = bytesToBase64(request.data);
   const dataUrl = `data:${request.mediaType};base64,${encoded}`;
-  if (dataUrl.length > MAX_ASR_DATA_URL_BYTES) throw new SpeechGatewayError("invalid-input");
+  if (dataUrl.length > MAX_ASR_DATA_URL_BYTES)
+    throw new SpeechGatewayError("invalid-input");
   const asrOptions = {
     enable_itn: true,
-    ...(request.language === undefined ? {} : { language: request.language })
+    ...(request.language === undefined ? {} : { language: request.language }),
   };
   let response: Response;
   try {
@@ -685,61 +911,80 @@ async function qwenAsrTranscription(
       method: "POST",
       headers: {
         authorization: `Bearer ${credential.value}`,
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         model: QWEN_ASR_MODEL,
         input: {
-          messages: [{
-            role: "user",
-            content: [{ audio: dataUrl }]
-          }]
+          messages: [
+            {
+              role: "user",
+              content: [{ audio: dataUrl }],
+            },
+          ],
         },
         parameters: { asr_options: asrOptions },
-        stream: false
+        stream: false,
       }),
-      ...(signal === undefined ? {} : { signal })
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch (error) {
-    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+    if (
+      signal?.aborted ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
       throw new SpeechGatewayError("cancelled");
     }
     throw new SpeechGatewayError("provider-rejected", asrDiagnostic("network"));
   }
   if (signal?.aborted) throw new SpeechGatewayError("cancelled");
-  if (!response.ok) throw await httpProviderRejection(response, ASR_DIAGNOSTIC_PROFILE);
+  if (!response.ok)
+    throw await httpProviderRejection(response, ASR_DIAGNOSTIC_PROFILE);
 
   let encodedResponse: Uint8Array;
-  let responseMeta: ReturnType<typeof responseDiagnostic> = responseDiagnostic(response);
+  let responseMeta: ReturnType<typeof responseDiagnostic> =
+    responseDiagnostic(response);
   try {
-    encodedResponse = await readBoundedResponse(response, MAX_PROVIDER_JSON_BYTES);
+    encodedResponse = await readBoundedResponse(
+      response,
+      MAX_PROVIDER_JSON_BYTES,
+    );
     if (signal?.aborted) throw new SpeechGatewayError("cancelled");
     responseMeta = responseDiagnostic(response, encodedResponse.byteLength);
   } catch (error) {
     if (error instanceof SpeechGatewayError) throw error;
     if (signal?.aborted) throw new SpeechGatewayError("cancelled");
-    throw new SpeechGatewayError("provider-invalid-transcription", asrDiagnostic("provider-response", {
-      ...responseMeta,
-      responseIssue: "read-failed"
-    }));
+    throw new SpeechGatewayError(
+      "provider-invalid-transcription",
+      asrDiagnostic("provider-response", {
+        ...responseMeta,
+        responseIssue: "read-failed",
+      }),
+    );
   }
 
   let body: unknown;
   try {
     body = JSON.parse(new TextDecoder().decode(encodedResponse));
   } catch {
-    throw new SpeechGatewayError("provider-invalid-transcription", asrDiagnostic("provider-response", {
-      ...responseMeta,
-      responseIssue: "invalid-json"
-    }));
+    throw new SpeechGatewayError(
+      "provider-invalid-transcription",
+      asrDiagnostic("provider-response", {
+        ...responseMeta,
+        responseIssue: "invalid-json",
+      }),
+    );
   }
   try {
     return normalizeQwenAsrResponse(body);
   } catch {
-    throw new SpeechGatewayError("provider-invalid-transcription", asrDiagnostic("provider-response", {
-      ...responseMeta,
-      responseIssue: "invalid-transcription"
-    }));
+    throw new SpeechGatewayError(
+      "provider-invalid-transcription",
+      asrDiagnostic("provider-response", {
+        ...responseMeta,
+        responseIssue: "invalid-transcription",
+      }),
+    );
   }
 }
 
@@ -753,19 +998,38 @@ export class SpeechGateway {
     this.fetchImpl = options.fetch ?? fetch;
   }
 
-  private async generateAndCache(path: string, text: string, profile: SpeechProfile): Promise<number> {
+  private async generateAndCache(
+    path: string,
+    text: string,
+    profile: SpeechProfile,
+  ): Promise<number> {
     // This disk check wins a race with another process that published the same
     // deterministic artifact while this request was being scheduled.
     const existing = await readAudioArtifactMetadata(path, MAX_AUDIO_BYTES);
     if (existing) return existing.size;
-    const credential = await this.options.credentials.resolve(credentialRef(profile.credentialRef));
-    if (!credential?.value) throw new SpeechGatewayError("unavailable", providerDiagnostic(profile, "credential"));
-    const bytes = await providerBytes(this.fetchImpl, credential, text, profile);
+    const credential = await this.options.credentials.resolve(
+      credentialRef(profile.credentialRef),
+    );
+    if (!credential?.value)
+      throw new SpeechGatewayError(
+        "unavailable",
+        providerDiagnostic(profile, "credential"),
+      );
+    const bytes = await providerBytes(
+      this.fetchImpl,
+      credential,
+      text,
+      profile,
+    );
     await writeAudioArtifactAtomic(path, bytes, MAX_AUDIO_BYTES);
     return bytes.byteLength;
   }
 
-  private async artifact(path: string, text: string, profile: SpeechProfile): Promise<number> {
+  private async artifact(
+    path: string,
+    text: string,
+    profile: SpeechProfile,
+  ): Promise<number> {
     const pending = inFlight.get(path);
     if (pending) return pending;
     // Keep the in-flight entry from the initial disk lookup onward. This
@@ -779,12 +1043,15 @@ export class SpeechGateway {
       },
       () => {
         if (inFlight.get(path) === generation) inFlight.delete(path);
-      }
+      },
     );
     return generation;
   }
 
-  private async resolveArtifact(payload: unknown, signal?: AbortSignal): Promise<{
+  private async resolveArtifact(
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<{
     request: DshSpeechSynthesisRequest;
     digest: string;
     path: string;
@@ -794,8 +1061,15 @@ export class SpeechGateway {
     const request = requestFromPayload(payload);
     const settings = this.options.getSettings();
     const profile = profileFromSettings(settings);
-    const workspace = resolveSessionWorkspace(this.options.sessions, request.sessionId);
-    if (!workspace) throw new SpeechGatewayError("unavailable", providerDiagnostic(profile, "session"));
+    const workspace = resolveSessionWorkspace(
+      this.options.sessions,
+      request.sessionId,
+    );
+    if (!workspace)
+      throw new SpeechGatewayError(
+        "unavailable",
+        providerDiagnostic(profile, "session"),
+      );
     const digest = cacheDigest(request.text, settings, CACHE_FORMAT_VERSION);
     const path = audioArtifactPath(workspace, digest);
     // The provider request intentionally does not receive the caller signal:
@@ -804,12 +1078,18 @@ export class SpeechGateway {
     return { request, digest, path, size };
   }
 
-  async synthesize(payload: unknown, signal?: AbortSignal): Promise<BrowserAudioPayload> {
-    const { request, digest, size } = await this.resolveArtifact(payload, signal);
+  async synthesize(
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<BrowserAudioPayload> {
+    const { request, digest, size } = await this.resolveArtifact(
+      payload,
+      signal,
+    );
     return {
       mediaType: "audio/mpeg",
       url: audioUrl(request.sessionId, digest),
-      bytes: size
+      bytes: size,
     };
   }
 
@@ -818,7 +1098,10 @@ export class SpeechGateway {
    * value deliberately contains bytes only; browser URLs and cache paths stay
    * behind the DSH-owned browser and filesystem seams.
    */
-  async synthesizeBytes(payload: unknown, signal?: AbortSignal): Promise<DshSpeechAudio> {
+  async synthesizeBytes(
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<DshSpeechAudio> {
     try {
       const { path } = await this.resolveArtifact(payload, signal);
       const data = await readAudioArtifact(path, MAX_AUDIO_BYTES);
@@ -835,47 +1118,76 @@ export class SpeechGateway {
    * operation deliberately bypasses speech provider selection: DashScope is the
    * sole ASR provider and always uses the shared Alibaba credential.
    */
-  async transcribe(payload: unknown, signal?: AbortSignal): Promise<DshSpeechTranscription> {
+  async transcribe(
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<DshSpeechTranscription> {
     try {
       if (signal?.aborted) throw new SpeechGatewayError("cancelled");
       const request = transcriptionRequestFromPayload(payload);
-      const workspace = resolveSessionWorkspace(this.options.sessions, request.sessionId);
-      if (!workspace) throw new SpeechGatewayError("unavailable", asrDiagnostic("session"));
+      const workspace = resolveSessionWorkspace(
+        this.options.sessions,
+        request.sessionId,
+      );
+      if (!workspace)
+        throw new SpeechGatewayError("unavailable", asrDiagnostic("session"));
       // Resolve this for every admitted call; credentials are intentionally not
       // cached and the selected speech provider never changes this reference.
-      const credential = await this.options.credentials.resolve(credentialRef(ALIBABA_CREDENTIAL_REF));
-      if (!credential?.value) throw new SpeechGatewayError("unavailable", asrDiagnostic("credential"));
-      return await qwenAsrTranscription(this.fetchImpl, credential, request, signal);
+      const credential = await this.options.credentials.resolve(
+        credentialRef(ALIBABA_CREDENTIAL_REF),
+      );
+      if (!credential?.value)
+        throw new SpeechGatewayError(
+          "unavailable",
+          asrDiagnostic("credential"),
+        );
+      return await qwenAsrTranscription(
+        this.fetchImpl,
+        credential,
+        request,
+        signal,
+      );
     } catch (error) {
       throw reportGatewayFailure(error, this.options.onFailure);
     }
   }
 
-  async handle(endpoint: string, payload: unknown, signal: AbortSignal): Promise<ConnectionRpcResult<BrowserAudioPayload>> {
+  async handle(
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+  ): Promise<ConnectionRpcResult<BrowserAudioPayload>> {
     if (endpoint !== RPC_ENDPOINT) return failure("invalid-input");
     try {
       return { ok: true, value: await this.synthesize(payload, signal) };
     } catch (error) {
-      return failure(reportGatewayFailure(error, this.options.onFailure).category);
+      return failure(
+        reportGatewayFailure(error, this.options.onFailure).category,
+      );
     }
   }
 }
 
-export function createSpeechRpcHandler(gateway: SpeechGateway): ConnectionRpcHandler {
-  return (endpoint, payload, signal) => gateway.handle(endpoint, payload, signal);
+export function createSpeechRpcHandler(
+  gateway: SpeechGateway,
+): ConnectionRpcHandler {
+  return (endpoint, payload, signal) =>
+    gateway.handle(endpoint, payload, signal);
 }
 
 /** Build the optional Cordis Host service from the shared gateway. */
-export function createDshSpeechService(gateway: SpeechGateway): DshSpeechService {
+export function createDshSpeechService(
+  gateway: SpeechGateway,
+): DshSpeechService {
   return {
     synthesize: (request, signal) => gateway.synthesizeBytes(request, signal),
-    transcribe: (request, signal) => gateway.transcribe(request, signal)
+    transcribe: (request, signal) => gateway.transcribe(request, signal),
   };
 }
 
 export function registerSpeechRpc(
   connection: Pick<HostConnectionRpc, "handle">,
-  gateway: SpeechGateway
+  gateway: SpeechGateway,
 ): () => Promise<void> {
   return connection.handle(RPC_CHANNEL, createSpeechRpcHandler(gateway));
 }

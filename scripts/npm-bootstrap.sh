@@ -205,8 +205,8 @@ if [[ $PLAN_ONLY == false && ! -t 0 ]]; then
   printf 'This wizard requires interactive stdin. Run it directly in a terminal.\n' >&2
   exit 2
 fi
-command -v node >/dev/null || die 'Install Node.js 24 first.'
-[[ $(node -p 'process.versions.node.split(".")[0]') == 24 ]] || die 'Use Node.js 24.'
+command -v node >/dev/null || die 'Install Node.js >=24.11.0 first.'
+node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 24 || (major === 24 && minor >= 11) ? 0 : 1)' || die 'Use Node.js >=24.11.0.'
 
 # release-shared.ts uses only Node built-ins; Node 24 can strip its types without
 # installing workspace dependencies just to inspect a package's release plan.
@@ -244,7 +244,7 @@ for executable in npm corepack pnpm git tar curl; do
   command -v "$executable" >/dev/null || die "Install $executable first."
 done
 cd "$ROOT_DIR"
-[[ $(corepack pnpm --version) == 11.22.0 ]] || die 'Use Corepack pnpm 11.22.0.'
+[[ $(corepack pnpm --version) == 12.3.4 ]] || die 'Use Corepack pnpm 12.3.4.'
 TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/dsh-npm-bootstrap.XXXXXXXX")
 cleanup() { rm -rf -- "$TEMP_ROOT"; }
 trap cleanup EXIT
@@ -359,6 +359,8 @@ NODE
   (
     cd "$BUILD_ROOT"
     corepack pnpm install --frozen-lockfile
+    corepack pnpm run lint
+    corepack pnpm run format:check
     corepack pnpm run typecheck
     corepack pnpm run test
     corepack pnpm run build

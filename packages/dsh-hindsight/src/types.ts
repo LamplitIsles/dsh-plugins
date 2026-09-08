@@ -43,7 +43,7 @@ export interface ResolvedCompanionConfig {
 export interface RecalledMemory {
   id?: string;
   text: string;
-  type?: MemoryType | string;
+  type?: MemoryType | (string & {});
   score?: number;
   [key: string]: unknown;
 }

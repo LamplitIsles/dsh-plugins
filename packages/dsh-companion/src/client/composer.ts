@@ -18,10 +18,20 @@ export function resolveComposerHeight(
   minHeight = COMPOSER_MIN_HEIGHT,
   maxHeight = COMPOSER_MAX_HEIGHT,
 ): { height: number; scrollable: boolean } {
-  const minimum = Number.isFinite(minHeight) && minHeight > 0 ? minHeight : COMPOSER_MIN_HEIGHT;
-  const maximum = Number.isFinite(maxHeight) && maxHeight >= minimum ? maxHeight : COMPOSER_MAX_HEIGHT;
-  const measured = Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : minimum;
-  return { height: Math.min(maximum, Math.max(minimum, measured)), scrollable: measured > maximum };
+  const minimum =
+    Number.isFinite(minHeight) && minHeight > 0
+      ? minHeight
+      : COMPOSER_MIN_HEIGHT;
+  const maximum =
+    Number.isFinite(maxHeight) && maxHeight >= minimum
+      ? maxHeight
+      : COMPOSER_MAX_HEIGHT;
+  const measured =
+    Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : minimum;
+  return {
+    height: Math.min(maximum, Math.max(minimum, measured)),
+    scrollable: measured > maximum,
+  };
 }
 
 export interface ComposerCommand {
@@ -31,7 +41,11 @@ export interface ComposerCommand {
 }
 
 export const COMPOSER_COMMANDS: readonly ComposerCommand[] = [
-  { command: "/compact", label: "整理当前对话", description: "整理记忆，让下一段对话自然接续" },
+  {
+    command: "/compact",
+    label: "整理当前对话",
+    description: "整理记忆，让下一段对话自然接续",
+  },
 ];
 
 export type ComposerEvent =
@@ -45,7 +59,10 @@ export function createComposerState(draft = ""): ComposerState {
 }
 
 /** Pure IME-aware state transition used by the Svelte composer. */
-export function reduceComposer(state: ComposerState, event: ComposerEvent): ComposerState {
+export function reduceComposer(
+  state: ComposerState,
+  event: ComposerEvent,
+): ComposerState {
   switch (event.type) {
     case "input":
       return { ...state, draft: event.value };
@@ -59,12 +76,19 @@ export function reduceComposer(state: ComposerState, event: ComposerEvent): Comp
   }
 }
 
-export function shouldSubmitEnter(event: { key: string; shiftKey?: boolean; isComposing?: boolean }, composing: boolean): boolean {
-  return event.key === "Enter" && !event.shiftKey && !event.isComposing && !composing;
+export function shouldSubmitEnter(
+  event: { key: string; shiftKey?: boolean; isComposing?: boolean },
+  composing: boolean,
+): boolean {
+  return (
+    event.key === "Enter" && !event.shiftKey && !event.isComposing && !composing
+  );
 }
 
 /** Return the one Companion command that can complete the slash prefix being typed. */
-export function findComposerCommand(draft: string): ComposerCommand | undefined {
+export function findComposerCommand(
+  draft: string,
+): ComposerCommand | undefined {
   if (!draft.startsWith("/") || /\s/u.test(draft)) return undefined;
   return COMPOSER_COMMANDS.find((command) => command.command.startsWith(draft));
 }

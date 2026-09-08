@@ -30,19 +30,19 @@ than recalling raw dialogue on every message.
 
 The companion adapter makes the opposite choices where the domain requires it:
 
-| Dimension | Coding-agent design | Companion design |
-| --- | --- | --- |
-| Continuity boundary | Repository or worktree | One explicit relationship bank |
-| Typical source material | Code, Git history, documents, coding sessions, decisions | Direct dialogue, preferences, plans, relationship episodes, exact phrases |
-| Automatic retrieval cadence | Coding lifecycle and project-goal oriented | Every eligible direct user turn |
-| Automatic retrieval method | Project synthesis and knowledge guidance | Raw Hindsight recall; no Reflect LLM on the automatic path |
-| Client-side result suppression | Coding workflow controls synthesis cadence | None: a still-relevant memory may be injected on consecutive turns |
-| Session storage | Coding-session/project knowledge | One stable JSONL dialogue document per DSH session |
-| Synthesis | Useful automatically for project orientation | Explicit `hindsight_reflect`, reserved for pattern or retrospective questions |
-| Model-facing tools | Broad project knowledge surface | One read-only Reflect tool |
-| Bank routing | Derived from project/workspace context | Chosen explicitly in DSH Settings and unaffected by workspace |
-| Subagents | Part of supported coding workflows | Excluded so delegated work cannot become relationship memory |
-| Memory policy | Coding missions, strategies, and page rules ship with the integration | Bank-owned missions and extraction rules; the plugin never overwrites them |
+| Dimension                      | Coding-agent design                                                   | Companion design                                                              |
+| ------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Continuity boundary            | Repository or worktree                                                | One explicit relationship bank                                                |
+| Typical source material        | Code, Git history, documents, coding sessions, decisions              | Direct dialogue, preferences, plans, relationship episodes, exact phrases     |
+| Automatic retrieval cadence    | Coding lifecycle and project-goal oriented                            | Every eligible direct user turn                                               |
+| Automatic retrieval method     | Project synthesis and knowledge guidance                              | Raw Hindsight recall; no Reflect LLM on the automatic path                    |
+| Client-side result suppression | Coding workflow controls synthesis cadence                            | None: a still-relevant memory may be injected on consecutive turns            |
+| Session storage                | Coding-session/project knowledge                                      | One stable JSONL dialogue document per DSH session                            |
+| Synthesis                      | Useful automatically for project orientation                          | Explicit `hindsight_reflect`, reserved for pattern or retrospective questions |
+| Model-facing tools             | Broad project knowledge surface                                       | One read-only Reflect tool                                                    |
+| Bank routing                   | Derived from project/workspace context                                | Chosen explicitly in DSH Settings and unaffected by workspace                 |
+| Subagents                      | Part of supported coding workflows                                    | Excluded so delegated work cannot become relationship memory                  |
+| Memory policy                  | Coding missions, strategies, and page rules ship with the integration | Bank-owned missions and extraction rules; the plugin never overwrites them    |
 
 This is not a claim that companion memory is universally better. It is a
 narrower contract for a different durable entity.

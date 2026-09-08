@@ -19,7 +19,7 @@ the DSH tool card also provides a preview and PNG download.
 
 ## Development and packed verification
 
-Run the package from the workspace root with Node.js 24 and pnpm 11.22.0:
+Run the package from the workspace root with Node.js `>=24.11.0` and pnpm 12.3.4:
 
 ```sh
 corepack pnpm install --frozen-lockfile

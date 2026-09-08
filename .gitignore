@@ -9,3 +9,4 @@ playwright-report/
 .release-artifacts/
 .cache/
 .pnpm-store/
+scripts/release-shared.d.ts*

@@ -9,13 +9,17 @@ import vm from "node:vm";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const DSH_RC_VERSION = "0.1.2-rc.1";
 
-if (!existsSync(join(root, "dist", "index.js")) || !existsSync(join(root, "dist", "client.js"))) {
+if (
+  !existsSync(join(root, "dist", "index.js")) ||
+  !existsSync(join(root, "dist", "client.js"))
+) {
   throw new Error("DSH link smoke requires a fresh `pnpm run build`");
 }
 
 function resolveDshCli() {
   const cli = process.env.DSH_CLI;
-  if (!cli || !existsSync(cli)) throw new Error("set DSH_CLI to the fixed local DSH rc.1 executable");
+  if (!cli || !existsSync(cli))
+    throw new Error("set DSH_CLI to the fixed local DSH rc.1 executable");
   return cli;
 }
 
@@ -36,9 +40,19 @@ function assertClientRegistration() {
   const source = readFileSync(join(root, "dist", "client.js"), "utf8");
   let registration;
   vm.runInNewContext(source, {
-    window: { __ModuleLoader__: { load(spec) { registration = spec; } } },
+    window: {
+      __ModuleLoader__: {
+        load(spec) {
+          registration = spec;
+        },
+      },
+    },
   });
-  requireCondition(registration?.id === "@lamplitisles/dsh-companion" && typeof registration.factory === "function", "built Companion client did not register with the DSH module loader");
+  requireCondition(
+    registration?.id === "@lamplitisles/dsh-companion" &&
+      typeof registration.factory === "function",
+    "built Companion client did not register with the DSH module loader",
+  );
 }
 
 const cli = resolveDshCli();
@@ -61,13 +75,28 @@ try {
   };
   const profile = "companion-link-smoke";
 
-  requireCondition(run(cli, ["--version"], workspace, env).trim() === DSH_RC_VERSION, `expected fixed DSH ${DSH_RC_VERSION}`);
-  run(cli, ["plugin", "--profile", profile, "add", pathToFileURL(root).href], workspace, env);
-  const dump = run(cli, ["--profile", profile, "--dump-config"], workspace, env);
+  requireCondition(
+    run(cli, ["--version"], workspace, env).trim() === DSH_RC_VERSION,
+    `expected fixed DSH ${DSH_RC_VERSION}`,
+  );
+  run(
+    cli,
+    ["plugin", "--profile", profile, "add", pathToFileURL(root).href],
+    workspace,
+    env,
+  );
+  const dump = run(
+    cli,
+    ["--profile", profile, "--dump-config"],
+    workspace,
+    env,
+  );
   requireCondition(
     dump.includes("# == @lamplitisles/dsh-companion") &&
       dump.includes("name: '@lamplitisles/dsh-companion'") &&
-      dump.includes("inject:\n    - fs\n    - settings\n    - systemPrompt\n    - tools\n    - connection\n    - workspaceRegistry\n    - llm\n    - webServer"),
+      dump.includes(
+        "inject:\n    - fs\n    - settings\n    - systemPrompt\n    - tools\n    - connection\n    - workspaceRegistry\n    - llm\n    - webServer",
+      ),
     "fixed DSH CLI did not compose the linked Companion bundle",
   );
   assertClientRegistration();

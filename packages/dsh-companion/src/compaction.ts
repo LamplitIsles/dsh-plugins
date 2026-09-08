@@ -1,4 +1,8 @@
-import { createUserMessage, type GenerateOptions, type Message } from "@deepseek-ai/dsh-llm";
+import {
+  createUserMessage,
+  type GenerateOptions,
+  type Message,
+} from "@deepseek-ai/dsh-llm";
 
 const BASIC_COMPACTION_PLUGIN = "dsh-compaction-basic";
 const COMPANION_PLUGIN = "dsh-companion";
@@ -49,23 +53,46 @@ export const COMPANION_COMPACTION_INSTRUCTION = [
 ].join("\n");
 
 function hasBasicCompactionTail(message: Message | undefined): boolean {
-  if (!message || message.role !== "user" || message.source.kind !== "plugin" || message.source.plugin !== BASIC_COMPACTION_PLUGIN) return false;
-  return message.content.length === 1 && message.content[0]?.type === "text" && message.content[0].text.trim().length > 0;
+  if (
+    !message ||
+    message.role !== "user" ||
+    message.source.kind !== "plugin" ||
+    message.source.plugin !== BASIC_COMPACTION_PLUGIN
+  )
+    return false;
+  return (
+    message.content.length === 1 &&
+    message.content[0]?.type === "text" &&
+    message.content[0].text.trim().length > 0
+  );
 }
 
 /**
  * Replace only the known basic-compaction tail for an authoritative companion
  * Workspace Session. Unqualified requests are returned by reference.
  */
-export function rewriteCompanionCompactionRequest(options: GenerateOptions, sessionIds: readonly string[] | undefined): GenerateOptions {
-  if (options.purpose !== "compaction" || !options.sessionId || !sessionIds?.includes(String(options.sessionId))) return options;
+export function rewriteCompanionCompactionRequest(
+  options: GenerateOptions,
+  sessionIds: readonly string[] | undefined,
+): GenerateOptions {
+  if (
+    options.purpose !== "compaction" ||
+    !options.sessionId ||
+    !sessionIds?.includes(String(options.sessionId))
+  )
+    return options;
   const tail = options.messages.at(-1);
   if (!hasBasicCompactionTail(tail)) {
-    throw new CompanionCompactionIntegrationError("dsh-companion expected a final dsh-compaction-basic user instruction with one non-empty text block.");
+    throw new CompanionCompactionIntegrationError(
+      "dsh-companion expected a final dsh-compaction-basic user instruction with one non-empty text block.",
+    );
   }
   const instruction = createUserMessage({
     content: [{ type: "text", text: COMPANION_COMPACTION_INSTRUCTION }],
     source: { kind: "plugin", plugin: COMPANION_PLUGIN },
   });
-  return { ...options, messages: [...options.messages.slice(0, -1), instruction] };
+  return {
+    ...options,
+    messages: [...options.messages.slice(0, -1), instruction],
+  };
 }

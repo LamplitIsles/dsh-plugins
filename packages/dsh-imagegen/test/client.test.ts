@@ -151,15 +151,22 @@ describe("DSH durable image preview", () => {
   });
 
   it("constructs a preview from the alpha session attachment and revokes it on unmount", async () => {
-    const readAttachment = vi.fn(async () => ({
-      ok: true as const,
+    const readAttachment = vi.fn<
+      () => Promise<{
+        ok: true;
+        value: { attachment: typeof imageAttachment; data: Uint8Array };
+      }>
+    >(async () => ({
+      ok: true,
       value: {
         attachment: imageAttachment,
         data: new Uint8Array([1, 2, 3]),
       },
     }));
     const sessions = {
-      binding: vi.fn(() => ({ session: { readAttachment } })),
+      binding: vi.fn<
+        () => { session: { readAttachment: typeof readAttachment } }
+      >(() => ({ session: { readAttachment } })),
     } as unknown as Pick<ISessions, "binding">;
     const createdBlobs: Blob[] = [];
     const createUrl = vi
@@ -194,7 +201,9 @@ describe("DSH durable image preview", () => {
   });
 
   it("shows the preview failure when the alpha attachment read is rejected", async () => {
-    const readAttachment = vi.fn(() => Promise.reject(new Error("offline")));
+    const readAttachment = vi.fn<() => Promise<never>>(() =>
+      Promise.reject(new Error("offline")),
+    );
     const sessions = {
       binding: () => ({ session: { readAttachment } }),
     } as unknown as Pick<ISessions, "binding">;

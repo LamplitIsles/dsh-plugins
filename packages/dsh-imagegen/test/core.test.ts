@@ -18,6 +18,17 @@ function response(imageUrl = pngUrl): Response {
   return new Response(JSON.stringify({ image_url: imageUrl }), { status: 200 });
 }
 
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
+function requestBody(init: RequestInit | undefined): string {
+  if (typeof init?.body !== "string")
+    throw new Error("test request body was not a string");
+  return init.body;
+}
+
 describe("Kepos bridge core", () => {
   it("normalizes the default service address", () => {
     expect(normalizeBridgeUrl(DEFAULT_BRIDGE_URL)).toBe(DEFAULT_BRIDGE_URL);
@@ -43,7 +54,7 @@ describe("Kepos bridge core", () => {
     const controller = new AbortController();
     let call: { url: string; init: RequestInit | undefined } | undefined;
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      call = { url: String(url), init };
+      call = { url: requestUrl(url), init };
       return response();
     }) as typeof globalThis.fetch;
 
@@ -74,7 +85,7 @@ describe("Kepos bridge core", () => {
       "image/jpeg",
     );
     const fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-      body = String(init?.body);
+      body = requestBody(init);
       return response();
     }) as typeof globalThis.fetch;
 

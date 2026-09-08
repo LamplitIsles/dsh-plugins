@@ -3,7 +3,7 @@ import {
   MAX_PROMPT_CHARS,
   MAX_PROVENANCE_CHARS,
   PACKAGE_NAME,
-  type MatrixSettings
+  type MatrixSettings,
 } from "./constants.js";
 
 export interface MatrixEventLike {
@@ -20,13 +20,13 @@ export interface MatrixEventLike {
 }
 
 export interface MatrixTimelineData {
-  timeline?: "live" | "back-paginate" | "forward-paginate" | string;
+  timeline?: "live" | "back-paginate" | "forward-paginate" | (string & {});
   liveEvent?: boolean;
   [key: string]: unknown;
 }
 
 export interface MatrixRoomLike {
-  getMember?: (userId: string) => unknown | null | undefined;
+  getMember?: (userId: string) => unknown;
   getTimeline?: () => readonly unknown[];
   timeline?: readonly unknown[];
   getLiveTimeline?: () => { getEvents?: () => readonly unknown[] };
@@ -39,21 +39,43 @@ export interface MatrixClientLike {
   stopClient?: () => void | Promise<void>;
   on?: (event: string, listener: (...args: any[]) => void) => unknown;
   off?: (event: string, listener: (...args: any[]) => void) => unknown;
-  removeListener?: (event: string, listener: (...args: any[]) => void) => unknown;
-  sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
-  sendEvent?: (roomId: string, type: string, content: Record<string, unknown>) => Promise<unknown>;
-  uploadContent?: (data: Uint8Array, options?: {
-    name?: string;
-    type?: string;
-    abortController?: AbortController;
-  }) => Promise<{ content_uri?: unknown }>;
+  removeListener?: (
+    event: string,
+    listener: (...args: any[]) => void,
+  ) => unknown;
+  sendMessage?: (
+    roomId: string,
+    content: Record<string, unknown>,
+  ) => Promise<unknown>;
+  sendEvent?: (
+    roomId: string,
+    type: string,
+    content: Record<string, unknown>,
+  ) => Promise<unknown>;
+  uploadContent?: (
+    data: Uint8Array,
+    options?: {
+      name?: string;
+      type?: string;
+      abortController?: AbortController;
+    },
+  ) => Promise<{ content_uri?: unknown }>;
   getRoom?: (roomId: string) => MatrixRoomLike | null | undefined;
   /** Matrix /messages, used only by the bounded recent-message tool. */
-  createMessagesRequest?: (roomId: string, fromToken: string | null, limit: number, direction: "b") => Promise<{
+  createMessagesRequest?: (
+    roomId: string,
+    fromToken: string | null,
+    limit: number,
+    direction: "b",
+  ) => Promise<{
     chunk: readonly MatrixEventLike[];
     end?: string;
   }>;
-  fetchRoomEvent?: (roomId: string, eventId: string, signal?: AbortSignal) => Promise<MatrixEventLike>;
+  fetchRoomEvent?: (
+    roomId: string,
+    eventId: string,
+    signal?: AbortSignal,
+  ) => Promise<MatrixEventLike>;
   getUserId?: () => string | undefined;
 }
 
@@ -96,7 +118,11 @@ export interface MatrixProvenance {
   replyToEventId?: string;
 }
 
-function call<T>(event: MatrixEventLike, method: keyof MatrixEventLike, fallback: T): T {
+function call<T>(
+  event: MatrixEventLike,
+  method: keyof MatrixEventLike,
+  fallback: T,
+): T {
   const value = event[method];
   if (typeof value === "function") {
     try {
@@ -110,69 +136,144 @@ function call<T>(event: MatrixEventLike, method: keyof MatrixEventLike, fallback
 }
 
 export function matrixEventType(event: MatrixEventLike): string | undefined {
-  return call(event, "getType", (event.event?.type as string | undefined) ?? (event.type as string | undefined));
+  return call(
+    event,
+    "getType",
+    (event.event?.type as string | undefined) ??
+      (event.type as string | undefined),
+  );
 }
 
 export function matrixEventRoomId(event: MatrixEventLike): string | undefined {
-  return call(event, "getRoomId", (event.event?.room_id as string | undefined) ?? (event.roomId as string | undefined) ?? (event.room_id as string | undefined));
+  return call(
+    event,
+    "getRoomId",
+    (event.event?.room_id as string | undefined) ??
+      (event.roomId as string | undefined) ??
+      (event.room_id as string | undefined),
+  );
 }
 
 export function matrixEventSender(event: MatrixEventLike): string | undefined {
-  return call(event, "getSender", (event.event?.sender as string | undefined) ?? (event.sender as string | undefined));
+  return call(
+    event,
+    "getSender",
+    (event.event?.sender as string | undefined) ??
+      (event.sender as string | undefined),
+  );
 }
 
 export function matrixEventId(event: MatrixEventLike): string | undefined {
-  return call(event, "getId", (event.event?.event_id as string | undefined) ?? (event.eventId as string | undefined) ?? (event.event_id as string | undefined));
+  return call(
+    event,
+    "getId",
+    (event.event?.event_id as string | undefined) ??
+      (event.eventId as string | undefined) ??
+      (event.event_id as string | undefined),
+  );
 }
 
-export function matrixEventContent(event: MatrixEventLike): Record<string, unknown> {
-  const content = call(event, "getContent", undefined as Record<string, unknown> | undefined);
+export function matrixEventContent(
+  event: MatrixEventLike,
+): Record<string, unknown> {
+  const content = call(
+    event,
+    "getContent",
+    undefined as Record<string, unknown> | undefined,
+  );
   if (content && typeof content === "object") return content;
-  const original = call(event, "getOriginalContent", undefined as Record<string, unknown> | undefined);
+  const original = call(
+    event,
+    "getOriginalContent",
+    undefined as Record<string, unknown> | undefined,
+  );
   if (original && typeof original === "object") return original;
-  const wire = call(event, "getWireContent", undefined as Record<string, unknown> | undefined);
+  const wire = call(
+    event,
+    "getWireContent",
+    undefined as Record<string, unknown> | undefined,
+  );
   if (wire && typeof wire === "object") return wire;
   const fallback = event.event?.content;
-  if (fallback && typeof fallback === "object") return fallback as Record<string, unknown>;
+  if (fallback && typeof fallback === "object")
+    return fallback as Record<string, unknown>;
   const wireFallback = event.content;
-  return wireFallback && typeof wireFallback === "object" ? wireFallback as Record<string, unknown> : {};
+  return wireFallback && typeof wireFallback === "object"
+    ? (wireFallback as Record<string, unknown>)
+    : {};
 }
 
-function boundedMemberLabel(value: unknown, userId: string): string | undefined {
+function boundedMemberLabel(
+  value: unknown,
+  userId: string,
+): string | undefined {
   if (typeof value !== "string") return undefined;
   const label = value.trim();
   // Matrix SDK `name` is already disambiguated, but falls back to the ID when
   // no display name is known. That fallback is useful for records, not a
   // separate label trigger.
-  return label && label !== userId.trim() ? label.slice(0, MAX_PROVENANCE_CHARS).trim() || undefined : undefined;
+  return label && label !== userId.trim()
+    ? label.slice(0, MAX_PROVENANCE_CHARS).trim() || undefined
+    : undefined;
 }
 
 /** Read one current display label from already-loaded local room state. */
-export function matrixMemberDisplayName(member: unknown, userId: string): string | undefined {
+export function matrixMemberDisplayName(
+  member: unknown,
+  userId: string,
+): string | undefined {
   if (!member || typeof member !== "object") return undefined;
-  const value = member as { name?: unknown; displayName?: unknown; rawDisplayName?: unknown };
-  return boundedMemberLabel(value.name, userId)
-    ?? boundedMemberLabel(value.displayName, userId)
-    ?? boundedMemberLabel(value.rawDisplayName, userId);
+  const value = member as {
+    name?: unknown;
+    displayName?: unknown;
+    rawDisplayName?: unknown;
+  };
+  return (
+    boundedMemberLabel(value.name, userId) ??
+    boundedMemberLabel(value.displayName, userId) ??
+    boundedMemberLabel(value.rawDisplayName, userId)
+  );
 }
 
-function localRoomMember(client: MatrixClientLike, roomId: string, userId: string): unknown {
+function localRoomMember(
+  client: MatrixClientLike,
+  roomId: string,
+  userId: string,
+): unknown {
   let room: MatrixRoomLike | null | undefined;
-  try { room = client.getRoom?.(roomId); } catch { return undefined; }
+  try {
+    room = client.getRoom?.(roomId);
+  } catch {
+    return undefined;
+  }
   if (!room) return undefined;
   try {
     const direct = room.getMember?.(userId);
     if (direct) return direct;
-  } catch { /* use other local member accessors */ }
+  } catch {
+    /* use other local member accessors */
+  }
   for (const accessor of [room.getJoinedMembers, room.getMembers]) {
     let members: readonly unknown[] | undefined;
-    try { members = accessor?.call(room); } catch { continue; }
+    try {
+      members = accessor?.call(room);
+    } catch {
+      continue;
+    }
     if (!Array.isArray(members)) continue;
     const member = members.find((candidate) => {
       if (!candidate || typeof candidate !== "object") return false;
-      const value = candidate as { userId?: unknown; user_id?: unknown; getUserId?: () => unknown };
+      const value = candidate as {
+        userId?: unknown;
+        user_id?: unknown;
+        getUserId?: () => unknown;
+      };
       let memberId: unknown = value.userId ?? value.user_id;
-      try { memberId = value.getUserId?.() ?? memberId; } catch { /* use fields */ }
+      try {
+        memberId = value.getUserId?.() ?? memberId;
+      } catch {
+        /* use fields */
+      }
       return memberId === userId;
     });
     if (member) return member;
@@ -184,18 +285,27 @@ function localRoomMember(client: MatrixClientLike, roomId: string, userId: strin
 export function readLocalRoomDisplayName(
   client: MatrixClientLike | undefined,
   roomId: string,
-  userId: string
+  userId: string,
 ): string | undefined {
   if (!client?.getRoom || !roomId.trim() || !userId.trim()) return undefined;
-  return matrixMemberDisplayName(localRoomMember(client, roomId, userId), userId);
+  return matrixMemberDisplayName(
+    localRoomMember(client, roomId, userId),
+    userId,
+  );
 }
 
-function relatesTo(content: Record<string, unknown>): Record<string, unknown> | undefined {
+function relatesTo(
+  content: Record<string, unknown>,
+): Record<string, unknown> | undefined {
   const value = content["m.relates_to"];
-  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
-function isReplyRelation(relation: Record<string, unknown> | undefined): string | undefined {
+function isReplyRelation(
+  relation: Record<string, unknown> | undefined,
+): string | undefined {
   const reply = relation?.["m.in_reply_to"];
   if (!reply || typeof reply !== "object") return undefined;
   const eventId = (reply as { event_id?: unknown }).event_id;
@@ -206,7 +316,9 @@ function hasMention(content: Record<string, unknown>, userId: string): boolean {
   const mentions = content["m.mentions"];
   if (!mentions || typeof mentions !== "object") return false;
   const userIds = (mentions as { user_ids?: unknown }).user_ids;
-  return Array.isArray(userIds) && userIds.some((candidate) => candidate === userId);
+  return (
+    Array.isArray(userIds) && userIds.some((candidate) => candidate === userId)
+  );
 }
 
 function relationIsUnsupported(content: Record<string, unknown>): boolean {
@@ -217,7 +329,10 @@ function relationIsUnsupported(content: Record<string, unknown>): boolean {
   // Only a bare in-reply-to relation is supported by the bridge. References,
   // annotations, and unknown relation forms are not conversational triggers.
   if (relationType !== undefined && relationType !== "") return true;
-  return Object.hasOwn(relation, "event_id") && !Object.hasOwn(relation, "m.in_reply_to");
+  return (
+    Object.hasOwn(relation, "event_id") &&
+    !Object.hasOwn(relation, "m.in_reply_to")
+  );
 }
 
 function stripReplyFallback(text: string): string {
@@ -246,14 +361,32 @@ function escapeEnvelopeAttribute(value: string): string {
 /** Remove reply fallback markup and the configured bot mention while retaining human text. */
 export function cleanMatrixPrompt(text: string, userId: string): string {
   let result = stripReplyFallback(text).trim();
-  const localpart = userId.startsWith("@") ? userId.slice(1).split(":", 1)[0] : userId.split(":", 1)[0];
-  const mentionForms = [userId, userId.startsWith("@") ? userId.slice(1) : `@${userId}`, `@${localpart}`]
-    .filter((value, index, values) => value.length > 0 && values.indexOf(value) === index)
+  const localpart = userId.startsWith("@")
+    ? userId.slice(1).split(":", 1)[0]
+    : userId.split(":", 1)[0];
+  const mentionForms = [
+    userId,
+    userId.startsWith("@") ? userId.slice(1) : `@${userId}`,
+    `@${localpart}`,
+  ]
+    .filter(
+      (value, index, values) =>
+        value.length > 0 && values.indexOf(value) === index,
+    )
     .map(escapeRegExp);
   if (mentionForms.length > 0) {
-    result = result.replace(new RegExp(`(?:^|[\\s])(?:${mentionForms.join("|")})(?=$|[\\s,:;.!?])`, "gi"), " ");
+    result = result.replace(
+      new RegExp(
+        `(?:^|[\\s])(?:${mentionForms.join("|")})(?=$|[\\s,:;.!?])`,
+        "gi",
+      ),
+      " ",
+    );
   }
-  result = result.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").trim();
+  result = result
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
   return result.slice(0, MAX_PROMPT_CHARS).trim();
 }
 
@@ -264,7 +397,7 @@ export function cleanMatrixPrompt(text: string, userId: string): string {
  */
 export function renderMatrixContextPrompt(
   records: readonly MatrixContextRecord[],
-  triggerEventId: string
+  triggerEventId: string,
 ): string {
   const lines = [
     "[dsh-matrix room context]",
@@ -274,8 +407,12 @@ export function renderMatrixContextPrompt(
     const trigger = record.eventId === triggerEventId ? " trigger=true" : "";
     const eventId = escapeEnvelopeAttribute(record.eventId);
     const sender = escapeEnvelopeAttribute(record.sender);
-    const displayName = escapeEnvelopeAttribute(record.displayName.slice(0, MAX_PROVENANCE_CHARS));
-    lines.push(`<record index="${index + 1}" event_id="${eventId}" sender="${sender}"${trigger} display_name="${displayName}">`);
+    const displayName = escapeEnvelopeAttribute(
+      record.displayName.slice(0, MAX_PROVENANCE_CHARS),
+    );
+    lines.push(
+      `<record index="${index + 1}" event_id="${eventId}" sender="${sender}"${trigger} display_name="${displayName}">`,
+    );
     lines.push(`Speaker: ${displayName} (${sender})`);
     lines.push(record.text);
     lines.push("</record>");
@@ -284,7 +421,9 @@ export function renderMatrixContextPrompt(
   return lines.join("\n");
 }
 
-function roomTimelineEvents(room: MatrixRoomLike | null | undefined): readonly unknown[] {
+function roomTimelineEvents(
+  room: MatrixRoomLike | null | undefined,
+): readonly unknown[] {
   if (!room) return [];
   try {
     const timeline = room.getTimeline?.();
@@ -307,7 +446,7 @@ async function replyAuthorIsBot(
   roomId: string,
   eventId: string,
   userId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<boolean> {
   if (signal?.aborted) return false;
   let local: readonly unknown[] = [];
@@ -336,7 +475,9 @@ export class EventDeduper {
   private readonly limit: number;
 
   constructor(limit = DEDUPE_LIMIT) {
-    this.limit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : DEDUPE_LIMIT;
+    this.limit = Number.isFinite(limit)
+      ? Math.max(0, Math.floor(limit))
+      : DEDUPE_LIMIT;
   }
 
   has(id: string): boolean {
@@ -346,7 +487,8 @@ export class EventDeduper {
   add(id: string): void {
     this.ids.delete(id);
     this.ids.add(id);
-    while (this.ids.size > this.limit) this.ids.delete(this.ids.values().next().value as string);
+    while (this.ids.size > this.limit)
+      this.ids.delete(this.ids.values().next().value as string);
   }
 
   clear(): void {
@@ -369,10 +511,16 @@ export async function captureMatrixEvent(
   client: MatrixClientLike,
   toStartOfTimeline = false,
   data?: MatrixTimelineData,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<AdmittedMatrixMessage | undefined> {
   if (signal?.aborted) return undefined;
-  if (toStartOfTimeline || data?.timeline === "back-paginate" || data?.timeline === "forward-paginate" || data?.liveEvent === false) return undefined;
+  if (
+    toStartOfTimeline ||
+    data?.timeline === "back-paginate" ||
+    data?.timeline === "forward-paginate" ||
+    data?.liveEvent === false
+  )
+    return undefined;
   if (matrixEventType(event) !== "m.room.message") return undefined;
   const roomId = matrixEventRoomId(event);
   if (!roomId || roomId !== settings.roomId) return undefined;
@@ -380,7 +528,11 @@ export async function captureMatrixEvent(
   const eventId = matrixEventId(event);
   if (!sender || !eventId) return undefined;
   const clientUserId = client.getUserId?.();
-  if (sender === settings.userId || (typeof clientUserId === "string" && sender === clientUserId)) return undefined;
+  if (
+    sender === settings.userId ||
+    (typeof clientUserId === "string" && sender === clientUserId)
+  )
+    return undefined;
   const content = matrixEventContent(event);
   const msgtype = content.msgtype;
   if (msgtype !== "m.text") return undefined;
@@ -392,13 +544,22 @@ export async function captureMatrixEvent(
   // Both speaker attribution and the optional display-label trigger read only
   // the current local member state. A missing label falls back to the sender
   // ID for records, but never becomes a label-trigger itself.
-  const displayName = readLocalRoomDisplayName(client, roomId, sender) ?? sender.slice(0, MAX_PROVENANCE_CHARS);
-  const botDisplayName = settings.respondToAll ? undefined : readLocalRoomDisplayName(client, roomId, settings.userId);
+  const displayName =
+    readLocalRoomDisplayName(client, roomId, sender) ??
+    sender.slice(0, MAX_PROVENANCE_CHARS);
+  const botDisplayName = settings.respondToAll
+    ? undefined
+    : readLocalRoomDisplayName(client, roomId, settings.userId);
   const replyId = isReplyRelation(relatesTo(content));
   let trigger = settings.respondToAll;
   if (!trigger) {
-    const reply = replyId ? await replyAuthorIsBot(client, roomId, replyId, settings.userId, signal) : false;
-    trigger = hasMention(content, settings.userId) || reply || Boolean(botDisplayName && text.includes(botDisplayName));
+    const reply = replyId
+      ? await replyAuthorIsBot(client, roomId, replyId, settings.userId, signal)
+      : false;
+    trigger =
+      hasMention(content, settings.userId) ||
+      reply ||
+      Boolean(botDisplayName && text.includes(botDisplayName));
   }
   const source: MatrixProvenance = {
     kind: "plugin",
@@ -406,7 +567,9 @@ export async function captureMatrixEvent(
     roomId: roomId.slice(0, MAX_PROVENANCE_CHARS),
     sender: sender.slice(0, MAX_PROVENANCE_CHARS),
     eventId: eventId.slice(0, MAX_PROVENANCE_CHARS),
-    ...(replyId ? { replyToEventId: replyId.slice(0, MAX_PROVENANCE_CHARS) } : {})
+    ...(replyId
+      ? { replyToEventId: replyId.slice(0, MAX_PROVENANCE_CHARS) }
+      : {}),
   };
   return {
     eventId,
@@ -416,18 +579,24 @@ export async function captureMatrixEvent(
     text,
     source,
     trigger,
-    ...(replyId ? { replyToEventId: replyId.slice(0, MAX_PROVENANCE_CHARS) } : {})
+    ...(replyId
+      ? { replyToEventId: replyId.slice(0, MAX_PROVENANCE_CHARS) }
+      : {}),
   };
 }
 
 /** Build the optional relation/mention metadata shared by every outbound message type. */
 function matrixOptionalMessageMetadata(
   replyToEventId?: string,
-  mentionUserIds?: readonly string[]
+  mentionUserIds?: readonly string[],
 ): Record<string, unknown> {
   return {
-    ...(replyToEventId ? { "m.relates_to": { "m.in_reply_to": { event_id: replyToEventId } } } : {}),
-    ...(mentionUserIds && mentionUserIds.length > 0 ? { "m.mentions": { user_ids: [...mentionUserIds] } } : {})
+    ...(replyToEventId
+      ? { "m.relates_to": { "m.in_reply_to": { event_id: replyToEventId } } }
+      : {}),
+    ...(mentionUserIds && mentionUserIds.length > 0
+      ? { "m.mentions": { user_ids: [...mentionUserIds] } }
+      : {}),
   };
 }
 
@@ -436,13 +605,13 @@ export function matrixTextMessage(
   roomId: string,
   body: string,
   replyToEventId?: string,
-  mentionUserIds?: readonly string[]
+  mentionUserIds?: readonly string[],
 ): Record<string, unknown> {
   void roomId;
   return {
     msgtype: "m.text",
     body,
-    ...matrixOptionalMessageMetadata(replyToEventId, mentionUserIds)
+    ...matrixOptionalMessageMetadata(replyToEventId, mentionUserIds),
   };
 }
 
@@ -457,7 +626,7 @@ export function matrixMediaMessage(
     filename?: string | undefined;
     replyToEventId?: string | undefined;
     mentionUserIds?: readonly string[] | undefined;
-  } = {}
+  } = {},
 ): Record<string, unknown> {
   return {
     msgtype,
@@ -465,6 +634,9 @@ export function matrixMediaMessage(
     url,
     ...(options.filename ? { filename: options.filename } : {}),
     info: { mimetype: mimeType, size },
-    ...matrixOptionalMessageMetadata(options.replyToEventId, options.mentionUserIds)
+    ...matrixOptionalMessageMetadata(
+      options.replyToEventId,
+      options.mentionUserIds,
+    ),
   };
 }

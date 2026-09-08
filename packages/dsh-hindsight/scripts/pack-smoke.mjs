@@ -14,16 +14,32 @@ import vm from "node:vm";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_NAME = "@lamplitisles/dsh-hindsight";
-const PACKAGE_VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const PACKAGE_VERSION = JSON.parse(
+  readFileSync(join(root, "package.json"), "utf8"),
+).version;
 const DSH_VERSION = "0.1.2-rc.1";
 
-if (!existsSync(join(root, "dist", "dsh.js")) || !existsSync(join(root, "dist", "client.js"))) {
+if (
+  !existsSync(join(root, "dist", "dsh.js")) ||
+  !existsSync(join(root, "dist", "client.js"))
+) {
   throw new Error("pack-smoke requires a fresh `pnpm build`");
 }
 
 function isolatedEnvironment(temp, dshHome) {
   const env = {};
-  for (const name of ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "COMSPEC", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL"]) {
+  for (const name of [
+    "PATH",
+    "SystemRoot",
+    "WINDIR",
+    "PATHEXT",
+    "COMSPEC",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+  ]) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
   }
   const testHome = join(temp, "home");
@@ -44,24 +60,46 @@ function isolatedEnvironment(temp, dshHome) {
 
 function dshEntry(env) {
   const configured = process.env.DSH_CLI;
-  if (!configured || !existsSync(configured)) throw new Error(`pack-smoke requires DSH_CLI set to the official DSH ${DSH_VERSION} executable`);
+  if (!configured || !existsSync(configured))
+    throw new Error(
+      `pack-smoke requires DSH_CLI set to the official DSH ${DSH_VERSION} executable`,
+    );
   const entry = configured;
-  const version = execFileSync(dshInvocation(entry).command, [...dshInvocation(entry).args, "--version"], { cwd: root, encoding: "utf8", env }).trim();
-  if (version !== DSH_VERSION) throw new Error(`pack-smoke requires dsh ${DSH_VERSION}, got ${version}`);
+  const version = execFileSync(
+    dshInvocation(entry).command,
+    [...dshInvocation(entry).args, "--version"],
+    { cwd: root, encoding: "utf8", env },
+  ).trim();
+  if (version !== DSH_VERSION)
+    throw new Error(`pack-smoke requires dsh ${DSH_VERSION}, got ${version}`);
   return entry;
 }
 
 function dshInvocation(entry) {
   const suffix = "/@deepseek-ai/dsh/lib/bin.js";
-  if (entry.endsWith(suffix)) return { command: process.execPath, args: ["--expose-internals", entry] };
-  const candidate = resolve(dirname(entry), "..", "@deepseek-ai/dsh/lib/bin.js");
-  if (existsSync(candidate)) return { command: process.execPath, args: ["--expose-internals", candidate] };
+  if (entry.endsWith(suffix))
+    return { command: process.execPath, args: ["--expose-internals", entry] };
+  const candidate = resolve(
+    dirname(entry),
+    "..",
+    "@deepseek-ai/dsh/lib/bin.js",
+  );
+  if (existsSync(candidate))
+    return {
+      command: process.execPath,
+      args: ["--expose-internals", candidate],
+    };
   return { command: entry, args: [] };
 }
 
 function runDsh(entry, args, cwd, env) {
   const invocation = dshInvocation(entry);
-  return execFileSync(invocation.command, [...invocation.args, ...args], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return execFileSync(invocation.command, [...invocation.args, ...args], {
+    cwd,
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 function packedManifest(packed) {
@@ -72,11 +110,24 @@ function packedManifest(packed) {
 
 function startRuntime(entry, env, cwd) {
   const invocation = dshInvocation(entry);
-  const child = spawn(invocation.command, [...invocation.args, "--profile", "web", "--host", "127.0.0.1", "--port", "0", "--no-open"], {
-    cwd,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child = spawn(
+    invocation.command,
+    [
+      ...invocation.args,
+      "--profile",
+      "web",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--no-open",
+    ],
+    {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   let output = "";
   let settled = false;
   let timer;
@@ -90,14 +141,21 @@ function startRuntime(entry, env, cwd) {
     };
     const readOutput = (chunk) => {
       output += chunk.toString();
-      const match = output.match(/dsh web:\s+(https?:\/\/127\.0\.0\.1:\d+\/?\?token=[^\s]+)/);
+      const match = output.match(
+        /dsh web:\s+(https?:\/\/127\.0\.0\.1:\d+\/?\?token=[^\s]+)/,
+      );
       if (match?.[1]) finish(undefined, match[1]);
     };
     child.stdout?.on("data", readOutput);
     child.stderr?.on("data", readOutput);
     child.once("error", (error) => finish(error));
     child.once("exit", (code, signal) => {
-      if (!settled) finish(new Error(`DSH Web runtime exited before ready (${code ?? "?"}/${signal ?? "?"}): ${output}`));
+      if (!settled)
+        finish(
+          new Error(
+            `DSH Web runtime exited before ready (${code ?? "?"}/${signal ?? "?"}): ${output}`,
+          ),
+        );
     });
     timer = setTimeout(() => {
       child.kill("SIGTERM");
@@ -148,7 +206,9 @@ async function jsonRequest(baseUrl, path, body, cookie) {
   try {
     value = JSON.parse(text);
   } catch {
-    throw new Error(`DSH returned non-JSON from ${path}: ${text.slice(0, 200)}`);
+    throw new Error(
+      `DSH returned non-JSON from ${path}: ${text.slice(0, 200)}`,
+    );
   }
   return { response, value };
 }
@@ -162,22 +222,52 @@ try {
   const env = isolatedEnvironment(temp, home);
   const entry = dshEntry(env);
   await linkDshDependencies(temp, entry);
-  const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--pack-destination", temp], { cwd: root, encoding: "utf8" }));
+  const packed = JSON.parse(
+    execFileSync(
+      "corepack",
+      ["pnpm", "pack", "--json", "--pack-destination", temp],
+      { cwd: root, encoding: "utf8" },
+    ),
+  );
   const filename = packedManifest(packed)?.filename;
-  if (typeof filename !== "string") throw new Error("pnpm pack did not return a tarball name");
+  if (typeof filename !== "string")
+    throw new Error("pnpm pack did not return a tarball name");
   const tarball = filename.startsWith("/") ? filename : join(temp, filename);
 
-  runDsh(entry, ["plugin", "--profile", "web", "add", tarball, "--ignore-scripts"], runtimeCwd, env);
+  runDsh(
+    entry,
+    ["plugin", "--profile", "web", "add", tarball, "--ignore-scripts"],
+    runtimeCwd,
+    env,
+  );
 
   const install = join(home, "profiles", "web");
-  const packageDir = join(install, "node_modules", "@lamplitisles", "dsh-hindsight");
-  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-  if (manifest.name !== PACKAGE_NAME || manifest.version !== PACKAGE_VERSION || manifest.dsh?.client?.platform !== "web") {
+  const packageDir = join(
+    install,
+    "node_modules",
+    "@lamplitisles",
+    "dsh-hindsight",
+  );
+  const manifest = JSON.parse(
+    readFileSync(join(packageDir, "package.json"), "utf8"),
+  );
+  if (
+    manifest.name !== PACKAGE_NAME ||
+    manifest.version !== PACKAGE_VERSION ||
+    manifest.dsh?.client?.platform !== "web"
+  ) {
     throw new Error("installed manifest does not describe the DSH Web bundle");
   }
-  const dshPeers = Object.entries(manifest.peerDependencies ?? {}).filter(([name]) => name.startsWith("@deepseek-ai/dsh-"));
-  if (dshPeers.some(([, version]) => version !== DSH_VERSION) || dshPeers.some(([name]) => name === "@deepseek-ai/dsh-client-runtime")) {
-    throw new Error("installed manifest contains a retired or non-rc.1 DSH peer");
+  const dshPeers = Object.entries(manifest.peerDependencies ?? {}).filter(
+    ([name]) => name.startsWith("@deepseek-ai/dsh-"),
+  );
+  if (
+    dshPeers.some(([, version]) => version !== DSH_VERSION) ||
+    dshPeers.some(([name]) => name === "@deepseek-ai/dsh-client-runtime")
+  ) {
+    throw new Error(
+      "installed manifest contains a retired or non-rc.1 DSH peer",
+    );
   }
   const expectedInject = [
     "@deepseek-ai/dsh-api-remotes",
@@ -189,37 +279,68 @@ try {
     "@deepseek-ai/dsh-client-ui-settings-plugins",
     "@deepseek-ai/dsh-client-ui-slots",
   ];
-  if (JSON.stringify(manifest.dsh?.client?.inject) !== JSON.stringify(expectedInject)) {
-    throw new Error("installed manifest has an unexpected rc.1 client provider graph");
+  if (
+    JSON.stringify(manifest.dsh?.client?.inject) !==
+    JSON.stringify(expectedInject)
+  ) {
+    throw new Error(
+      "installed manifest has an unexpected rc.1 client provider graph",
+    );
   }
   const patch = readFileSync(join(packageDir, "cordis.patch.yml"), "utf8");
-  for (const required of ["dsh-hindsight", PACKAGE_NAME, "agents", "settings", "systemPrompt", "tools"]) {
-    if (!patch.includes(required)) throw new Error(`Cordis patch is missing ${required}`);
+  for (const required of [
+    "dsh-hindsight",
+    PACKAGE_NAME,
+    "agents",
+    "settings",
+    "systemPrompt",
+    "tools",
+  ]) {
+    if (!patch.includes(required))
+      throw new Error(`Cordis patch is missing ${required}`);
   }
   for (const path of ["dist/dsh.js", "dist/client.js", "cordis.patch.yml"]) {
-    if (!existsSync(join(packageDir, path))) throw new Error(`packed plugin is missing ${path}`);
+    if (!existsSync(join(packageDir, path)))
+      throw new Error(`packed plugin is missing ${path}`);
   }
 
   runtime = await startRuntime(entry, env, runtimeCwd);
   const { page, cookie } = await fetchPageWithSession(runtime.baseUrl);
-  if (!page.ok) throw new Error(`installed DSH Web runtime returned ${page.status} for /`);
+  if (!page.ok)
+    throw new Error(`installed DSH Web runtime returned ${page.status} for /`);
   const html = await page.text();
   const bootStart = html.indexOf('globalThis["__DSH_BOOT__"]');
   const bootEnd = bootStart < 0 ? -1 : html.indexOf("</script>", bootStart);
-  const bootSource = bootStart < 0 || bootEnd < 0 ? "" : html.slice(bootStart, bootEnd);
+  const bootSource =
+    bootStart < 0 || bootEnd < 0 ? "" : html.slice(bootStart, bootEnd);
   const jsonStart = bootSource.indexOf("{");
   const jsonEnd = bootSource.lastIndexOf("}");
-  if (jsonStart < 0 || jsonEnd < jsonStart) throw new Error("DSH Web bootstrap did not expose __DSH_BOOT__");
+  if (jsonStart < 0 || jsonEnd < jsonStart)
+    throw new Error("DSH Web bootstrap did not expose __DSH_BOOT__");
   const boot = JSON.parse(bootSource.slice(jsonStart, jsonEnd + 1));
-  const pluginEntry = boot.entries?.find((candidate) => candidate.id === PACKAGE_NAME);
-  if (!pluginEntry?.url) throw new Error("installed plugin is absent from the DSH Web bootstrap entries");
+  const pluginEntry = boot.entries?.find(
+    (candidate) => candidate.id === PACKAGE_NAME,
+  );
+  if (!pluginEntry?.url)
+    throw new Error(
+      "installed plugin is absent from the DSH Web bootstrap entries",
+    );
 
   const clientResponse = await fetch(new URL(pluginEntry.url, runtime.baseUrl));
-  if (!clientResponse.ok) throw new Error(`installed DSH client bundle returned ${clientResponse.status}`);
+  if (!clientResponse.ok)
+    throw new Error(
+      `installed DSH client bundle returned ${clientResponse.status}`,
+    );
   const clientCode = await clientResponse.text();
   let loaded;
   vm.runInNewContext(clientCode, {
-    window: { __ModuleLoader__: { load(spec) { loaded = spec; } } },
+    window: {
+      __ModuleLoader__: {
+        load(spec) {
+          loaded = spec;
+        },
+      },
+    },
   });
   if (
     loaded?.id !== PACKAGE_NAME ||
@@ -228,17 +349,26 @@ try {
     clientCode.includes("dsh-client-runtime") ||
     clientCode.includes("createObjectURL")
   ) {
-    throw new Error("served client loader or external rc.1 contract is missing");
+    throw new Error(
+      "served client loader or external rc.1 contract is missing",
+    );
   }
 
-  const settings = await jsonRequest(runtime.baseUrl, "/api/settings/describe", {
-    type: "client-request",
-    rpcId: "pack-smoke-settings",
-    method: "settings/describe",
-    payload: { args: {} },
-  }, cookie);
+  const settings = await jsonRequest(
+    runtime.baseUrl,
+    "/api/settings/describe",
+    {
+      type: "client-request",
+      rpcId: "pack-smoke-settings",
+      method: "settings/describe",
+      payload: { args: {} },
+    },
+    cookie,
+  );
   const settingsEnvelope = settings.value;
-  const namespace = settingsEnvelope.result?.value?.namespaces?.find((candidate) => candidate.ns === "dsh-hindsight");
+  const namespace = settingsEnvelope.result?.value?.namespaces?.find(
+    (candidate) => candidate.ns === "dsh-hindsight",
+  );
   if (
     !settings.response.ok ||
     settingsEnvelope.type !== "server-response" ||
@@ -246,10 +376,14 @@ try {
     settingsEnvelope.result?.ok !== true ||
     namespace?.value?.bankId !== "yuki-memory"
   ) {
-    throw new Error(`installed Host Settings registration did not activate: ${JSON.stringify(settings.value)}`);
+    throw new Error(
+      `installed Host Settings registration did not activate: ${JSON.stringify(settings.value)}`,
+    );
   }
 
-  console.log(`pack-smoke: installed ${PACKAGE_NAME}; rc.1 Host Settings, Web bootstrap, and client Loader verified`);
+  console.log(
+    `pack-smoke: installed ${PACKAGE_NAME}; rc.1 Host Settings, Web bootstrap, and client Loader verified`,
+  );
 } finally {
   if (runtime) await stopRuntime(runtime.child);
   rmSync(temp, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -230,7 +230,7 @@ try {
       if (name.startsWith("@deepseek-ai/dsh-")) {
         requireCondition(
           version === DSH_RC_VERSION,
-          `Imagegen artifact has a non-rc.1 ${section}: ${name}@${version}.`,
+          `Imagegen artifact has a non-rc.1 ${section}: ${name}@${typeof version === "string" ? version : "<invalid>"}.`,
         );
       }
     }

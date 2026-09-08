@@ -15,13 +15,13 @@ After the workflow is merged and appears on GitHub `main`:
 2. In each existing npm package's Settings → Trusted publishing, add a GitHub
    Actions connection with these exact values:
 
-   | Field | Value |
-   |---|---|
-   | Organization or user | `LamplitIsles` |
-   | Repository | `dsh-plugins` |
-   | Workflow filename | `publish.yml` |
-   | Environment name | `npm` |
-   | Allowed actions | Enable direct `npm publish` |
+   | Field                | Value                       |
+   | -------------------- | --------------------------- |
+   | Organization or user | `LamplitIsles`              |
+   | Repository           | `dsh-plugins`               |
+   | Workflow filename    | `publish.yml`               |
+   | Environment name     | `npm`                       |
+   | Allowed actions      | Enable direct `npm publish` |
 
 3. Existing connections have fixed identity fields: add the new connection
    instead of attempting to edit the old repository identity. Retire old
@@ -51,7 +51,7 @@ bash scripts/npm-bootstrap.sh @lamplitisles/dsh-tabletop
 It accepts a full public package name or its directory from the shared package
 inventory. The private workspace root and unknown packages are rejected.
 `--plan` prints proposed versions without network access or changes. Interactive
-execution requires Node.js 24, Corepack pnpm 11.22.0, curl, and an existing
+execution requires Node.js `>=24.11.0`, Corepack pnpm 12.3.4, curl, and an existing
 official DSH `0.1.2-rc.1` executable on PATH or in `DSH_CLI`.
 
 The wizard exports the local commit into a temporary workspace. For a stable

@@ -4,24 +4,29 @@
 
 ```sh
 corepack pnpm install --frozen-lockfile
-corepack pnpm run typecheck && corepack pnpm run test && corepack pnpm run build
+corepack pnpm run lint
+corepack pnpm run format:check
+corepack pnpm run typecheck
+corepack pnpm run test
+corepack pnpm run build
+corepack pnpm run pack:check
 ```
 
-The workspace targets Node.js 24, pnpm 11.22.0, and the DSH `0.1.2-rc.1`
-contract family (Cordis `4.0.2`, Schemastery `3.18.2`). The public package
-identities and versions remain independent.
+The workspace targets Node.js `>=24.11.0`, Corepack pnpm `12.3.4`, and the DSH
+`0.1.2-rc.1` contract family (Cordis `4.0.2`, Schemastery `3.18.2`). The
+public package identities and versions remain independent.
 
 ## Packages
 
-| Package | Purpose |
-|---|---|
+| Package                       | Purpose                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | `@lamplitisles/dsh-companion` | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior. |
-| `@lamplitisles/dsh-mail` | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth. |
-| `@lamplitisles/dsh-matrix` | Matrix room reading, search, and explicit message delivery through DSH tools. |
-| `@lamplitisles/dsh-speech` | Tagged TTS playback and optional Qwen ASR through an isolated Host service. |
-| `@lamplitisles/dsh-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection. |
-| `@lamplitisles/dsh-imagegen` | DSH image generation and editing under the active workspace. |
-| `@lamplitisles/dsh-tabletop` | Host-only `roll_dice` with structured inputs and unbiased dice rolls. |
+| `@lamplitisles/dsh-mail`      | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.     |
+| `@lamplitisles/dsh-matrix`    | Matrix room reading, search, and explicit message delivery through DSH tools.                   |
+| `@lamplitisles/dsh-speech`    | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                     |
+| `@lamplitisles/dsh-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection.                      |
+| `@lamplitisles/dsh-imagegen`  | DSH image generation and editing under the active workspace.                                    |
+| `@lamplitisles/dsh-tabletop`  | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                           |
 
 Imagegen keeps its provider and workspace-boundary core as ordinary internal
 modules in the public package; there is no separate private workspace package.
@@ -34,14 +39,22 @@ Install once from the repository root:
 corepack pnpm install --frozen-lockfile
 ```
 
-Run the complete local checks:
+Run the complete local checks in this order:
 
 ```sh
+corepack pnpm run lint
+corepack pnpm run format:check
 corepack pnpm run typecheck
 corepack pnpm run test
 corepack pnpm run build
 corepack pnpm run pack:check
 ```
+
+`lint` uses Oxlint's correctness and type-aware rules across the authored
+workspace; `format:check` uses Oxfmt for TypeScript, JavaScript, Svelte, CSS
+Modules, configuration, and documentation. Neither command launches a browser
+or a DSH profile, so use the opt-in Companion browser suite for runtime UI
+coverage.
 
 Run one package from the same workspace:
 

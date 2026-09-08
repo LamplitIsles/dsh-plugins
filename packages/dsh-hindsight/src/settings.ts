@@ -6,7 +6,7 @@ export interface CompanionSettings {
 }
 
 export const DEFAULT_COMPANION_SETTINGS: CompanionSettings = {
-  bankId: DEFAULT_BANK_ID
+  bankId: DEFAULT_BANK_ID,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -16,10 +16,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Accept only the explicit, non-secret companion bank selection. */
 export function normalizeCompanionSettings(value: unknown): CompanionSettings {
   const raw = isRecord(value) ? value : {};
-  const bankId = typeof raw.bankId === "string" && raw.bankId.trim()
-    ? raw.bankId.trim()
-    : DEFAULT_BANK_ID;
+  const bankId =
+    typeof raw.bankId === "string" && raw.bankId.trim()
+      ? raw.bankId.trim()
+      : DEFAULT_BANK_ID;
   return {
-    bankId
+    bankId,
   };
 }

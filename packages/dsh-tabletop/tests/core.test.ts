@@ -3,7 +3,7 @@ import { rollDice } from "../src/core.js";
 
 describe("rollDice", () => {
   it("defaults count and modifier and omits an absent label", () => {
-    const draw = vi.fn(() => 6);
+    const draw = vi.fn<() => number>(() => 6);
     expect(rollDice({ sides: 6 }, draw)).toEqual({
       count: 1,
       sides: 6,
@@ -18,7 +18,7 @@ describe("rollDice", () => {
     "adds modifier %s once and preserves the label",
     (modifier) => {
       const draw = vi
-        .fn()
+        .fn<() => number>()
         .mockReturnValueOnce(1)
         .mockReturnValueOnce(20)
         .mockReturnValueOnce(7);
@@ -44,7 +44,9 @@ describe("rollDice", () => {
   );
 
   it("accepts the upper bounds and keeps the total a safe integer", () => {
-    const draw = vi.fn((_min: number, max: number) => max - 1);
+    const draw = vi.fn<(_min: number, max: number) => number>(
+      (_min, max) => max - 1,
+    );
     const result = rollDice(
       {
         count: 100,
@@ -97,8 +99,8 @@ describe("rollDice", () => {
     ...[-1_000_001, 1_000_001].map((modifier) => ({ sides: 6, modifier })),
     ...[null, 1, {}, "x".repeat(201)].map((label) => ({ sides: 6, label })),
   ])("rejects invalid input before drawing: %j", (input) => {
-    const draw = vi.fn(() => 1);
-    expect(() => rollDice(input, draw)).toThrow();
+    const draw = vi.fn<() => number>(() => 1);
+    expect(() => rollDice(input, draw)).toThrow(/must be|Only count|Provide/);
     expect(draw).not.toHaveBeenCalled();
   });
 });

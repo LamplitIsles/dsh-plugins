@@ -14,18 +14,35 @@ import {
   registerSpeechAudioRoute,
   registerSpeechRpc,
   type DshSpeechService,
-  type SessionResolver
+  type SessionResolver,
 } from "./gateway.js";
 import { registerSpeechPrompt } from "./prompt.js";
 
 export const name = "dsh-speech";
-export const inject = ["connection", "credentials", "settings", "systemPrompt", "sessions", "webServer"] as const;
+export const inject = [
+  "connection",
+  "credentials",
+  "settings",
+  "systemPrompt",
+  "sessions",
+  "webServer",
+] as const;
 
 type HostContext = Context & {
   connection: { rpc: Parameters<typeof registerSpeechRpc>[0] };
-  credentials: { resolve: (ref: ReturnType<typeof import("@deepseek-ai/dsh-credentials").credentialRef>) => Promise<{ value: string; source: string } | undefined> };
+  credentials: {
+    resolve: (
+      ref: ReturnType<
+        typeof import("@deepseek-ai/dsh-credentials").credentialRef
+      >,
+    ) => Promise<{ value: string; source: string } | undefined>;
+  };
   settings: {
-    register: (namespace: unknown, schema: unknown, options?: unknown) => { get(): unknown };
+    register: (
+      namespace: unknown,
+      schema: unknown,
+      options?: unknown,
+    ) => { get(): unknown };
   };
   systemPrompt: { section: (section: unknown) => () => void };
   sessions: SessionResolver;
@@ -43,20 +60,27 @@ export function apply(ctx: HostContext): void {
       base: {
         provider: DEFAULT_PROVIDER,
         alibabaVoice: DEFAULT_ALIBABA_VOICE,
-        bytedanceVoice: DEFAULT_BYTEDANCE_VOICE
+        bytedanceVoice: DEFAULT_BYTEDANCE_VOICE,
       },
-      applies: "live"
-    }
+      applies: "live",
+    },
   );
   const gateway = new SpeechGateway({
     credentials: ctx.credentials,
     sessions: ctx.sessions,
     getSettings: () => settings.get(),
-    onFailure: (failure) => console.error("[dsh-speech] synthesis failed", failure)
+    onFailure: (failure) =>
+      console.error("[dsh-speech] synthesis failed", failure),
   });
   registerSpeechRpc(ctx.connection.rpc, gateway);
-  ctx.provide(DSH_SPEECH_SERVICE, createDshSpeechService(gateway) satisfies DshSpeechService);
-  ctx.effect(() => registerSpeechAudioRoute(ctx.webServer, ctx.sessions), "dsh-speech: audio route");
+  ctx.provide(
+    DSH_SPEECH_SERVICE,
+    createDshSpeechService(gateway) satisfies DshSpeechService,
+  );
+  ctx.effect(
+    () => registerSpeechAudioRoute(ctx.webServer, ctx.sessions),
+    "dsh-speech: audio route",
+  );
   registerSpeechPrompt(ctx);
 }
 
@@ -73,7 +97,7 @@ export {
   type DshSpeechService,
   type DshSpeechSynthesisRequest,
   type DshSpeechTranscription,
-  type DshSpeechTranscriptionRequest
+  type DshSpeechTranscriptionRequest,
 } from "./gateway.js";
 export * from "./core.js";
 

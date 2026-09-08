@@ -54,7 +54,9 @@ it("registers one tool, returns and renders canonical rolls, and unregisters on 
       { sides: 6, extra: true },
       { sides: 6, label: "x".repeat(201) },
     ]) {
-      await expect(tool.execute(invalid, exec)).rejects.toThrow();
+      await expect(tool.execute(invalid, exec)).rejects.toThrow(
+        /must be|Only count|Provide/,
+      );
     }
     const controller = new AbortController();
     controller.abort();
@@ -62,7 +64,7 @@ it("registers one tool, returns and renders canonical rolls, and unregisters on 
       tool.execute({ sides: 6 }, {
         signal: controller.signal,
       } as ToolRunContext),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/aborted/i);
     await fiber.dispose();
     expect(root.tools.schemas()).toEqual([]);
   } finally {

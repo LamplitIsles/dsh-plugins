@@ -14,7 +14,9 @@ const root = resolve(import.meta.dirname, "..");
 function dshCli(): string {
   const configured = process.env.DSH_CLI;
   if (configured && existsSync(configured)) return configured;
-  throw new Error(`DSH_CLI must point to the official DSH ${DSH_RC_VERSION} executable.`);
+  throw new Error(
+    `DSH_CLI must point to the official DSH ${DSH_RC_VERSION} executable.`,
+  );
 }
 
 function selectedPackage(selector: string | undefined): PublicPackage[] {
@@ -28,21 +30,36 @@ const entries = selectedPackage(process.argv[2]);
 const configuredCli = dshCli();
 const invocation = dshInvocation(configuredCli);
 // Exercise the same resolved entry that the npm bootstrap wizard passes.
-const env = { ...process.env, DSH_CLI: invocation.args.at(-1) ?? configuredCli };
-const version = execFileSync(invocation.command, [...invocation.args, "--version"], {
-  encoding: "utf8",
-  env,
-}).trim();
+const env = {
+  ...process.env,
+  DSH_CLI: invocation.args.at(-1) ?? configuredCli,
+};
+const version = execFileSync(
+  invocation.command,
+  [...invocation.args, "--version"],
+  {
+    encoding: "utf8",
+    env,
+  },
+).trim();
 if (version !== DSH_RC_VERSION) {
-  throw new Error(`Expected DSH ${DSH_RC_VERSION}, got ${version || "unknown"}.`);
+  throw new Error(
+    `Expected DSH ${DSH_RC_VERSION}, got ${version || "unknown"}.`,
+  );
 }
 
 for (const entry of entries) {
   console.log(`\n== ${entry.name}: packed Host/Loader smoke ==`);
-  execFileSync("pnpm", ["--filter", entry.name, "run", "pack-smoke"], {
-    cwd: root,
-    env,
-    stdio: "inherit",
-  });
+  execFileSync(
+    "corepack",
+    ["pnpm", "--filter", entry.name, "run", "pack-smoke"],
+    {
+      cwd: root,
+      env,
+      stdio: "inherit",
+    },
+  );
 }
-console.log(`\nPacked artifact smoke passed for ${entries.length} package${entries.length === 1 ? "" : "s"}.`);
+console.log(
+  `\nPacked artifact smoke passed for ${entries.length} package${entries.length === 1 ? "" : "s"}.`,
+);

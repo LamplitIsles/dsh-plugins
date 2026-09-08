@@ -17,22 +17,65 @@ import { RPC_CHANNEL, RPC_ENDPOINT, type BrowserAudioPayload } from "./rpc.js";
 import {
   SETTINGS_NAMESPACE,
   providerProfileKey,
-  type SpeechSettings
+  type SpeechSettings,
 } from "./constants.js";
-import { SpeechAssistantNodeView, type ProfileSource } from "./client/assistant-node.js";
-import { SpeechSettingsCard, decodeSettings, type ClientSettingsScope, type CredentialApi } from "./client/settings-card.js";
+import {
+  SpeechAssistantNodeView,
+  type ProfileSource,
+} from "./client/assistant-node.js";
+import {
+  SpeechSettingsCard,
+  decodeSettings,
+  type ClientSettingsScope,
+  type CredentialApi,
+} from "./client/settings-card.js";
 import type { SpeechRpcClient } from "./player.js";
 
-export const inject = ["connection", "locale", "remote", "remote.credentials", "settingsScope", "slots"] as const;
+export const inject = [
+  "connection",
+  "locale",
+  "remote",
+  "remote.credentials",
+  "settingsScope",
+  "slots",
+] as const;
 
 export type SpeechLocaleKey =
-  | "title" | "description" | "provider" | "providerHint" | "voice" | "voiceHint" | "apiKey" | "apiKeyHint"
-  | "dashscopeApiKey" | "dashscopeApiKeyHint" | "volcengineApiKey" | "volcengineApiKeyHint"
-  | "configured" | "notConfigured" | "expand" | "collapse" | "unsaved" | "save"
-  | "saving" | "discard" | "saveFailed" | "readOnly" | "voiceRequired" | "voiceTooLong" | "message.reasoning"
-  | "copy" | "copied" | "markdown.footnotes"
-  | "message.unknownBlock" | "message.stopped" | "message.preparingAudio" | "message.audio"
-  | "message.audioUnavailable" | "json.truncated" | "row.running";
+  | "title"
+  | "description"
+  | "provider"
+  | "providerHint"
+  | "voice"
+  | "voiceHint"
+  | "apiKey"
+  | "apiKeyHint"
+  | "dashscopeApiKey"
+  | "dashscopeApiKeyHint"
+  | "volcengineApiKey"
+  | "volcengineApiKeyHint"
+  | "configured"
+  | "notConfigured"
+  | "expand"
+  | "collapse"
+  | "unsaved"
+  | "save"
+  | "saving"
+  | "discard"
+  | "saveFailed"
+  | "readOnly"
+  | "voiceRequired"
+  | "voiceTooLong"
+  | "message.reasoning"
+  | "copy"
+  | "copied"
+  | "markdown.footnotes"
+  | "message.unknownBlock"
+  | "message.stopped"
+  | "message.preparingAudio"
+  | "message.audio"
+  | "message.audioUnavailable"
+  | "json.truncated"
+  | "row.running";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -42,15 +85,18 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 
 const en: Record<SpeechLocaleKey, string> = {
   title: "DSH Speech",
-  description: "Choose the provider and voice for tagged speech synthesis and short-audio recognition.",
+  description:
+    "Choose the provider and voice for tagged speech synthesis and short-audio recognition.",
   provider: "Provider",
   providerHint: "New passages use this provider after you save.",
   voice: "Voice ID",
   voiceHint: "Enter a provider-supported Voice ID (up to 128 characters).",
   apiKey: "API key",
-  apiKeyHint: "Enter a new key to replace the configured key. Leave blank to keep it.",
+  apiKeyHint:
+    "Enter a new key to replace the configured key. Leave blank to keep it.",
   dashscopeApiKey: "DashScope API key (Alibaba TTS + Qwen speech recognition)",
-  dashscopeApiKeyHint: "Shared by Alibaba TTS and Qwen speech recognition. Leave blank to keep it.",
+  dashscopeApiKeyHint:
+    "Shared by Alibaba TTS and Qwen speech recognition. Leave blank to keep it.",
   volcengineApiKey: "Volcengine API key (ByteDance TTS)",
   volcengineApiKeyHint: "Used only for ByteDance TTS. Leave blank to keep it.",
   configured: "Configured",
@@ -61,7 +107,8 @@ const en: Record<SpeechLocaleKey, string> = {
   save: "Save",
   saving: "Saving…",
   discard: "Discard",
-  saveFailed: "The deployment did not accept these values; they were left for you to correct.",
+  saveFailed:
+    "The deployment did not accept these values; they were left for you to correct.",
   readOnly: "This deployment is read-only.",
   voiceRequired: "Voice ID is required.",
   voiceTooLong: "Voice ID must be 128 characters or fewer.",
@@ -75,7 +122,7 @@ const en: Record<SpeechLocaleKey, string> = {
   "message.audio": "Audio message",
   "message.audioUnavailable": "Audio unavailable; transcript shown.",
   "json.truncated": "Showing {total} items",
-  "row.running": "Running"
+  "row.running": "Running",
 };
 
 const zh: Record<SpeechLocaleKey, string> = {
@@ -88,7 +135,8 @@ const zh: Record<SpeechLocaleKey, string> = {
   apiKey: "API 密钥",
   apiKeyHint: "输入新密钥以替换现有密钥。留空则保留现有密钥。",
   dashscopeApiKey: "DashScope API 密钥（供阿里云 TTS 和通义千问语音识别共享）",
-  dashscopeApiKeyHint: "供阿里云 TTS 和通义千问语音识别共享。留空则保留现有密钥。",
+  dashscopeApiKeyHint:
+    "供阿里云 TTS 和通义千问语音识别共享。留空则保留现有密钥。",
   volcengineApiKey: "Volcengine API 密钥（仅 ByteDance TTS）",
   volcengineApiKeyHint: "仅用于 ByteDance TTS。留空则保留现有密钥。",
   configured: "已配置",
@@ -113,23 +161,41 @@ const zh: Record<SpeechLocaleKey, string> = {
   "message.audio": "语音消息",
   "message.audioUnavailable": "音频不可用；已显示文字。",
   "json.truncated": "显示 {total} 项",
-  "row.running": "运行中"
+  "row.running": "运行中",
 };
 
-export function createSpeechRpcClient(connection: Pick<ConnectionHandle, "rpc">): SpeechRpcClient {
+export function createSpeechRpcClient(
+  connection: Pick<ConnectionHandle, "rpc">,
+): SpeechRpcClient {
   return {
-    async synthesize(text: string, sessionId: string, signal?: AbortSignal): Promise<BrowserAudioPayload> {
-      const result = await connection.rpc.call(RPC_CHANNEL, RPC_ENDPOINT, { text, sessionId }, signal);
+    async synthesize(
+      text: string,
+      sessionId: string,
+      signal?: AbortSignal,
+    ): Promise<BrowserAudioPayload> {
+      const result = await connection.rpc.call(
+        RPC_CHANNEL,
+        RPC_ENDPOINT,
+        { text, sessionId },
+        signal,
+      );
       if (!result.ok) throw new Error(result.error.message);
       return result.value as BrowserAudioPayload;
-    }
+    },
   };
 }
 
-export function createProfileSource(scope: Pick<SettingsScope<Partial<SpeechSettings>>, "getSnapshot" | "subscribe">): ProfileSource & { dispose(): void } {
+export function createProfileSource(
+  scope: Pick<
+    SettingsScope<Partial<SpeechSettings>>,
+    "getSnapshot" | "subscribe"
+  >,
+): ProfileSource & { dispose(): void } {
   const profileFromSnapshot = () => {
     const snapshot = scope.getSnapshot();
-    return snapshot.status === "ready" && snapshot.mode === "host" && snapshot.value !== undefined
+    return snapshot.status === "ready" &&
+      snapshot.mode === "host" &&
+      snapshot.value !== undefined
       ? providerProfileKey(snapshot.value)
       : undefined;
   };
@@ -150,57 +216,81 @@ export function createProfileSource(scope: Pick<SettingsScope<Partial<SpeechSett
     dispose() {
       unsubscribe();
       listeners.clear();
-    }
+    },
   };
 }
 
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(SETTINGS_NAMESPACE, { en, zh }), "dsh-speech: dictionaries");
+  ctx.effect(
+    () => ctx.locale.register(SETTINGS_NAMESPACE, { en, zh }),
+    "dsh-speech: dictionaries",
+  );
 
   const scope = ctx.settingsScope.bind<Partial<SpeechSettings>>({
     namespace: SETTINGS_NAMESPACE,
-    decode: decodeSettings
+    decode: decodeSettings,
   }) as ClientSettingsScope;
-  const clientContext = ctx as unknown as ClientContext & { connection: ConnectionHandle; remote: { credentials: CredentialApi["credentials"] } };
+  const clientContext = ctx as unknown as ClientContext & {
+    connection: ConnectionHandle;
+    remote: { credentials: CredentialApi["credentials"] };
+  };
   const connection = clientContext.connection;
   const api: CredentialApi = { credentials: clientContext.remote.credentials };
   const profileSource = createProfileSource(scope);
-  ctx.effect(() => () => profileSource.dispose(), "dsh-speech: profile settings observer");
+  ctx.effect(
+    () => () => profileSource.dispose(),
+    "dsh-speech: profile settings observer",
+  );
   const client = createSpeechRpcClient(connection);
 
-  ctx.slots.inject("settings.plugin.item", () => ctx.slots.register(
-    {
-      name: "settings.plugin.item",
-      key: SETTINGS_NAMESPACE,
-      priority: 0,
-      inject: () => ({}),
-      locale: SETTINGS_NAMESPACE
-    } as never,
-    ((props: Record<string, unknown>) => createElement(SpeechSettingsCard, {
-      ...props,
-      scope,
-      api,
-      localOnly: connection.isLoopback
-    } as never)) as never
-  ));
+  ctx.slots.inject("settings.plugin.item", () =>
+    ctx.slots.register(
+      {
+        name: "settings.plugin.item",
+        key: SETTINGS_NAMESPACE,
+        priority: 0,
+        inject: () => ({}),
+        locale: SETTINGS_NAMESPACE,
+      } as never,
+      ((props: Record<string, unknown>) =>
+        createElement(SpeechSettingsCard, {
+          ...props,
+          scope,
+          api,
+          localOnly: connection.isLoopback,
+        } as never)) as never,
+    ),
+  );
 
-  ctx.slots.inject("conversation.chat.node", () => ctx.slots.register(
-    {
-      name: "conversation.chat.node",
-      key: "assistant-step",
-      priority: -1,
-      locale: SETTINGS_NAMESPACE
-    } as never,
-    ((props: Record<string, unknown>) => createElement(SpeechAssistantNodeView, {
-      ...props,
-      client,
-      profileSource
-    } as never)) as never
-  ));
+  ctx.slots.inject("conversation.chat.node", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.chat.node",
+        key: "assistant-step",
+        priority: -1,
+        locale: SETTINGS_NAMESPACE,
+      } as never,
+      ((props: Record<string, unknown>) =>
+        createElement(SpeechAssistantNodeView, {
+          ...props,
+          client,
+          profileSource,
+        } as never)) as never,
+    ),
+  );
 }
 
 export { SpeechAudioPlayer, SpeechPlayer } from "./player.js";
-export { SpeechSettingsCard, decodeSettings, describeCredential, saveCredential } from "./client/settings-card.js";
-export { SpeechAssistantNodeView, renderAssistantBlocks, type ProfileSource } from "./client/assistant-node.js";
+export {
+  SpeechSettingsCard,
+  decodeSettings,
+  describeCredential,
+  saveCredential,
+} from "./client/settings-card.js";
+export {
+  SpeechAssistantNodeView,
+  renderAssistantBlocks,
+  type ProfileSource,
+} from "./client/assistant-node.js";
 
 export default { inject, apply };

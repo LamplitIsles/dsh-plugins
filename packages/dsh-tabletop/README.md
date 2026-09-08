@@ -11,12 +11,19 @@ Call `roll_dice` with structured arguments:
 One possible result:
 
 ```json
-{ "count": 2, "sides": 6, "rolls": [2, 5], "modifier": 3, "total": 10, "label": "damage" }
+{
+  "count": 2,
+  "sides": 6,
+  "rolls": [2, 5],
+  "modifier": 3,
+  "total": 10,
+  "label": "damage"
+}
 ```
 
 ## Install
 
-Requires Node.js 24+ and DSH `0.1.2-rc.1`. From a built checkout, use DSH's
+Requires Node.js `>=24.11.0` and DSH `0.1.2-rc.1`. From a built checkout, use DSH's
 package manager, then restart the selected profile:
 
 ```sh
@@ -29,12 +36,12 @@ It has no client bundle or settings to configure.
 
 ## Tool contract
 
-| Input | Contract |
-|---|---|
-| `count` | Optional integer from 1 to 100; defaults to 1. |
-| `sides` | Required integer from 2 to 1,000,000. |
-| `modifier` | Optional integer from −1,000,000 to 1,000,000; defaults to 0; added once to the sum. |
-| `label` | Optional string of at most 200 JavaScript string code units, preserved verbatim, including an empty string. |
+| Input      | Contract                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `count`    | Optional integer from 1 to 100; defaults to 1.                                                              |
+| `sides`    | Required integer from 2 to 1,000,000.                                                                       |
+| `modifier` | Optional integer from −1,000,000 to 1,000,000; defaults to 0; added once to the sum.                        |
+| `label`    | Optional string of at most 200 JavaScript string code units, preserved verbatim, including an empty string. |
 
 Unknown fields, dice notation, numeric strings, fractions, nonfinite numbers,
 and out-of-range values are rejected before any dice are generated. Defaults

@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y", "vitest"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "svelte": true
+  },
+  "settings": {
+    "react": {
+      "version": "18.3.1"
+    },
+    "vitest": {
+      "typecheck": true
+    }
+  },
+  "categories": {
+    "correctness": "error"
+  },
+  "options": {
+    "typeAware": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/preserve-manual-memoization": "off",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/unbound-method": "error"
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "coverage/**",
+    "test-results/**",
+    "playwright-report/**",
+    ".cache/**",
+    ".pnpm-store/**",
+    ".release-artifacts/**",
+    ".scratch/**",
+    "pnpm-lock.yaml"
+  ]
+}

@@ -6,14 +6,14 @@ copied from the pinned source snapshots below. The source checkouts were read
 only; their histories, remotes, services, credentials, and installed files were
 not changed.
 
-| Workspace package | Source snapshot | Delivered identity |
-|---|---|---|
-| `packages/dsh-companion` | `dsh-companion` at `4cdbecb0e975d3136554fd3b8bc1e8c70a48f1d0` | `@lamplitisles/dsh-companion` |
-| `packages/dsh-mail` | `dsh-mail` at `2acd4948ec405129d9273e6bb030dff8b0511285` | `@lamplitisles/dsh-mail` |
-| `packages/dsh-matrix` | `dsh-matrix` at `02e98f757f4352a34726a5d42e9aac240ee16270` | `@lamplitisles/dsh-matrix` |
-| `packages/dsh-speech` (renamed from the imported directory) | `kepos-speech` at `06f596067289eb0ffea0bab1f5fa399a11a32d34` | `@lamplitisles/dsh-speech` |
+| Workspace package                                              | Source snapshot                                                 | Delivered identity            |
+| -------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------- |
+| `packages/dsh-companion`                                       | `dsh-companion` at `4cdbecb0e975d3136554fd3b8bc1e8c70a48f1d0`   | `@lamplitisles/dsh-companion` |
+| `packages/dsh-mail`                                            | `dsh-mail` at `2acd4948ec405129d9273e6bb030dff8b0511285`        | `@lamplitisles/dsh-mail`      |
+| `packages/dsh-matrix`                                          | `dsh-matrix` at `02e98f757f4352a34726a5d42e9aac240ee16270`      | `@lamplitisles/dsh-matrix`    |
+| `packages/dsh-speech` (renamed from the imported directory)    | `kepos-speech` at `06f596067289eb0ffea0bab1f5fa399a11a32d34`    | `@lamplitisles/dsh-speech`    |
 | `packages/dsh-hindsight` (renamed from the imported directory) | `kepos-hindsight` at `06e8ed39eb7725da2ebf514e2e6b883249c66e40` | `@lamplitisles/dsh-hindsight` |
-| `packages/dsh-imagegen` (core inlined into this package) | `kepos-imagegen` at `f1fc9f85a6969df5b6796e1df411f8ebfa1f3e2a` | `@lamplitisles/dsh-imagegen` |
+| `packages/dsh-imagegen` (core inlined into this package)       | `kepos-imagegen` at `f1fc9f85a6969df5b6796e1df411f8ebfa1f3e2a`  | `@lamplitisles/dsh-imagegen`  |
 
 The mechanical import was committed as `b2b78d732591bde1ad162a02b71b970066913785`.
 The target repository's initial fixed point was

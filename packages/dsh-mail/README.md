@@ -41,14 +41,14 @@ policy.
 
 The model sees only these fixed tools:
 
-| Tool | Capability |
-| --- | --- |
-| `mail_list` | List messages in the Agent mailbox |
-| `mail_search` | Search the Agent mailbox |
-| `mail_read` | Read one email by provider email ID |
-| `mail_read_thread` | Read one thread by provider thread ID |
-| `mail_send` | Send a new HTML email from the Agent mailbox |
-| `mail_reply` | Send an HTML reply from the Agent mailbox |
+| Tool               | Capability                                   |
+| ------------------ | -------------------------------------------- |
+| `mail_list`        | List messages in the Agent mailbox           |
+| `mail_search`      | Search the Agent mailbox                     |
+| `mail_read`        | Read one email by provider email ID          |
+| `mail_read_thread` | Read one thread by provider thread ID        |
+| `mail_send`        | Send a new HTML email from the Agent mailbox |
+| `mail_reply`       | Send an HTML reply from the Agent mailbox    |
 
 No model-facing schema contains `mailboxId`, there is no mailbox selector or
 enumeration tool, and the upstream MCP's discovered tool set is never mounted
@@ -104,8 +104,8 @@ authentication fallback.
 
 ## Development and packed verification
 
-Run these commands from the workspace root. They use Node.js 24 and the pinned
-pnpm toolchain; all tests use fakes and test-owned state:
+Run these commands from the workspace root. They use Node.js `>=24.11.0` and
+pnpm 12.3.4; all tests use fakes and test-owned state:
 
 ```sh
 corepack pnpm install --frozen-lockfile

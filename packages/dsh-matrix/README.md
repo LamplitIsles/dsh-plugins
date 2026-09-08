@@ -8,7 +8,7 @@ selected after startup.
 ## Requirements and installation
 
 - DSH `0.1.2-rc.1` with the native web settings surface
-- Node.js 24 and pnpm 11.22.0 for workspace development
+- Node.js `>=24.11.0` and pnpm 12.3.4 for workspace development
 - A Matrix account that has already joined the allowed room
 - The DSH Speech plugin is optional; voice sends require its Host `dshSpeech`
   service, while text and workspace-file sends do not.
@@ -236,8 +236,8 @@ cleanup of an uploaded-but-unsent object.
 
 ## Development and packed verification
 
-Run the package checks from the workspace root. They use Node.js 24 and the
-pinned pnpm toolchain:
+Run the package checks from the workspace root. They use Node.js `>=24.11.0`
+and the pinned pnpm 12.3.4 toolchain:
 
 ```sh
 corepack pnpm install --frozen-lockfile

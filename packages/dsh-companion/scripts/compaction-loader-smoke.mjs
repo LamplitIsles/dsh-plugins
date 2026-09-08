@@ -1,9 +1,18 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
@@ -20,7 +29,8 @@ import {
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const require = createRequire(import.meta.url);
 
-if (!existsSync(join(root, "dist", "index.js"))) throw new Error("compaction Loader smoke requires a fresh `pnpm run build`");
+if (!existsSync(join(root, "dist", "index.js")))
+  throw new Error("compaction Loader smoke requires a fresh `pnpm run build`");
 
 function resolvedDshPackages(roots) {
   const packages = [];
@@ -55,8 +65,15 @@ function resolvedDshPackages(roots) {
       if (entry.name === "package.json") {
         try {
           const manifest = JSON.parse(readFileSync(child, "utf8"));
-          if (typeof manifest.name === "string" && manifest.name.startsWith("@deepseek-ai/dsh-")) {
-            packages.push({ name: manifest.name, version: manifest.version, path: child });
+          if (
+            typeof manifest.name === "string" &&
+            manifest.name.startsWith("@deepseek-ai/dsh-")
+          ) {
+            packages.push({
+              name: manifest.name,
+              version: manifest.version,
+              path: child,
+            });
           }
         } catch {
           // Ignore non-package JSON while walking the disposable installation.
@@ -73,10 +90,15 @@ function resolvedDshPackages(roots) {
 
 function assertResolvedDshGraph(roots) {
   const packages = resolvedDshPackages(roots);
-  if (!packages.length) throw new Error("installed graph resolved no first-party DSH packages");
-  const mismatches = packages.filter(({ version }) => version !== DSH_RC_VERSION);
+  if (!packages.length)
+    throw new Error("installed graph resolved no first-party DSH packages");
+  const mismatches = packages.filter(
+    ({ version }) => version !== DSH_RC_VERSION,
+  );
   if (mismatches.length) {
-    throw new Error(`installed graph resolved non-rc.1 DSH packages: ${mismatches.map(({ name, version }) => `${name}@${version}`).join(", ")}`);
+    throw new Error(
+      `installed graph resolved non-rc.1 DSH packages: ${mismatches.map(({ name, version }) => `${name}@${version}`).join(", ")}`,
+    );
   }
 }
 
@@ -201,59 +223,149 @@ console.log("compaction-loader: packed plugin activated through real Loader and 
 
 const temp = mkdtempSync(join(tmpdir(), "dsh-companion-compaction-"));
 try {
-  const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--pack-destination", temp], { cwd: root, encoding: "utf8" }));
+  const packed = JSON.parse(
+    execFileSync(
+      "corepack",
+      ["pnpm", "pack", "--json", "--pack-destination", temp],
+      { cwd: root, encoding: "utf8" },
+    ),
+  );
   const packedEntry = Array.isArray(packed)
     ? packed[0]
-    : ("files" in packed || "filename" in packed ? packed : Object.values(packed)[0]);
+    : "files" in packed || "filename" in packed
+      ? packed
+      : Object.values(packed)[0];
   const filename = packedEntry?.filename;
-  if (typeof filename !== "string") throw new Error("pnpm pack did not return a tarball name");
+  if (typeof filename !== "string")
+    throw new Error("pnpm pack did not return a tarball name");
   const tarball = filename.startsWith("/") ? filename : join(temp, filename);
   const dshHome = join(temp, "dsh-home");
   const env = isolatedEnvironment(temp, dshHome);
   const entry = process.env.DSH_CLI;
-  if (!entry || !existsSync(entry)) throw new Error(`DSH_CLI is required: set it to the official DSH ${DSH_RC_VERSION} executable`);
+  if (!entry || !existsSync(entry))
+    throw new Error(
+      `DSH_CLI is required: set it to the official DSH ${DSH_RC_VERSION} executable`,
+    );
   const invocation = dshInvocation(entry);
-  const cliVersion = execFileSync(invocation.command, [...invocation.args, "--version"], { encoding: "utf8", env }).trim();
-  if (cliVersion !== DSH_RC_VERSION) throw new Error(`expected official DSH ${DSH_RC_VERSION}, got ${cliVersion}`);
+  const cliVersion = execFileSync(
+    invocation.command,
+    [...invocation.args, "--version"],
+    { encoding: "utf8", env },
+  ).trim();
+  if (cliVersion !== DSH_RC_VERSION)
+    throw new Error(
+      `expected official DSH ${DSH_RC_VERSION}, got ${cliVersion}`,
+    );
   await linkDshDependencies(temp, entry, invocation);
-  execFileSync(invocation.command, [...invocation.args, "plugin", "--profile", "web", "add", tarball, "--ignore-scripts"], { cwd: temp, env, stdio: "pipe" });
+  execFileSync(
+    invocation.command,
+    [
+      ...invocation.args,
+      "plugin",
+      "--profile",
+      "web",
+      "add",
+      tarball,
+      "--ignore-scripts",
+    ],
+    { cwd: temp, env, stdio: "pipe" },
+  );
 
-  const config = execFileSync(invocation.command, [...invocation.args, "--profile", "web", "--dump-config"], { cwd: temp, env, encoding: "utf8" });
-  for (const expected of ["dsh-companion", "workspaceRegistry", "llm", "webServer"]) if (!config.includes(expected)) throw new Error(`composed disposable profile is missing ${expected}`);
+  const config = execFileSync(
+    invocation.command,
+    [...invocation.args, "--profile", "web", "--dump-config"],
+    { cwd: temp, env, encoding: "utf8" },
+  );
+  for (const expected of [
+    "dsh-companion",
+    "workspaceRegistry",
+    "llm",
+    "webServer",
+  ])
+    if (!config.includes(expected))
+      throw new Error(`composed disposable profile is missing ${expected}`);
 
-  const packageDir = join(dshHome, "profiles", "web", "node_modules", "@lamplitisles", "dsh-companion");
-  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-  assertResolvedDshGraph([join(temp, "node_modules"), join(dshHome, "profiles", "web", "node_modules")]);
-  if (manifest.name !== "@lamplitisles/dsh-companion" || manifest.dsh?.bundle?.patch !== "./cordis.patch.yml") throw new Error("packed manifest lost the existing single DSH bundle identity");
+  const packageDir = join(
+    dshHome,
+    "profiles",
+    "web",
+    "node_modules",
+    "@lamplitisles",
+    "dsh-companion",
+  );
+  const manifest = JSON.parse(
+    readFileSync(join(packageDir, "package.json"), "utf8"),
+  );
+  assertResolvedDshGraph([
+    join(temp, "node_modules"),
+    join(dshHome, "profiles", "web", "node_modules"),
+  ]);
+  if (
+    manifest.name !== "@lamplitisles/dsh-companion" ||
+    manifest.dsh?.bundle?.patch !== "./cordis.patch.yml"
+  )
+    throw new Error(
+      "packed manifest lost the existing single DSH bundle identity",
+    );
   for (const dependencySection of ["peerDependencies", "devDependencies"]) {
-    for (const [name, version] of Object.entries(manifest[dependencySection] ?? {})) {
-      if (name.startsWith("@deepseek-ai/dsh-") && version !== DSH_RC_VERSION) throw new Error(`packed manifest mixes DSH contract versions in ${dependencySection}: ${name}@${version}`);
+    for (const [name, version] of Object.entries(
+      manifest[dependencySection] ?? {},
+    )) {
+      if (name.startsWith("@deepseek-ai/dsh-") && version !== DSH_RC_VERSION)
+        throw new Error(
+          `packed manifest mixes DSH contract versions in ${dependencySection}: ${name}@${version}`,
+        );
     }
   }
-  const bundledDshDependencies = Object.keys(manifest.dependencies ?? {}).filter((name) => name.startsWith("@deepseek-ai/dsh-"));
-  if (bundledDshDependencies.length) throw new Error(`packed manifest bundles DSH runtime dependencies: ${bundledDshDependencies.join(", ")}`);
+  const bundledDshDependencies = Object.keys(
+    manifest.dependencies ?? {},
+  ).filter((name) => name.startsWith("@deepseek-ai/dsh-"));
+  if (bundledDshDependencies.length)
+    throw new Error(
+      `packed manifest bundles DSH runtime dependencies: ${bundledDshDependencies.join(", ")}`,
+    );
   for (const dependencySection of ["peerDependencies", "devDependencies"]) {
-    if (manifest[dependencySection]?.["@deepseek-ai/dsh-llm"] !== DSH_RC_VERSION) throw new Error(`packed manifest lacks the exact rc.1 LLM ${dependencySection} pin`);
+    if (
+      manifest[dependencySection]?.["@deepseek-ai/dsh-llm"] !== DSH_RC_VERSION
+    )
+      throw new Error(
+        `packed manifest lacks the exact rc.1 LLM ${dependencySection} pin`,
+      );
   }
   const patch = readFileSync(join(packageDir, "cordis.patch.yml"), "utf8");
-  if (!/inject:\s*\[[^\]]*\bllm\b[^\]]*\]/u.test(patch)) throw new Error("packed Cordis patch lacks hard llm injection");
+  if (!/inject:\s*\[[^\]]*\bllm\b[^\]]*\]/u.test(patch))
+    throw new Error("packed Cordis patch lacks hard llm injection");
   const packageEntry = join(packageDir, "dist", "index.js");
-  if (!existsSync(packageEntry)) throw new Error("packed Host entry is missing");
+  if (!existsSync(packageEntry))
+    throw new Error("packed Host entry is missing");
   const clientEntry = join(packageDir, "dist", "client.js");
   const packedCode = `${readFileSync(packageEntry, "utf8")}\n${readFileSync(clientEntry, "utf8")}`;
-  if (packedCode.includes("@deepseek-ai/dsh-client-runtime")) throw new Error("packed artifact still references the retired client Runtime");
+  if (packedCode.includes("@deepseek-ai/dsh-client-runtime"))
+    throw new Error(
+      "packed artifact still references the retired client Runtime",
+    );
 
   const activationPath = join(temp, "activate-companion.mjs");
-  writeFileSync(activationPath, `import { apply, inject, name } from ${JSON.stringify(pathToFileURL(packageEntry).href)};\nif (name !== "dsh-companion" || typeof apply !== "function" || !inject.includes("llm")) throw new Error("packed Host entry lost its LLM contract");\nexport default { apply, inject, name };\n`);
+  writeFileSync(
+    activationPath,
+    `import { apply, inject, name } from ${JSON.stringify(pathToFileURL(packageEntry).href)};\nif (name !== "dsh-companion" || typeof apply !== "function" || !inject.includes("llm")) throw new Error("packed Host entry lost its LLM contract");\nexport default { apply, inject, name };\n`,
+  );
   const runnerPath = join(temp, "loader-runner.mjs");
   const runtimeRequire = createRequire(pathToFileURL(runnerPath));
-  writeFileSync(runnerPath, runnerSource({
-    activationUrl: pathToFileURL(activationPath).href,
-    cordisUrl: moduleUrl("@deepseek-ai/cordis", runtimeRequire),
-    loaderUrl: moduleUrl("@deepseek-ai/cordis-plugin-loader", runtimeRequire),
-    llmUrl: moduleUrl("@deepseek-ai/dsh-llm", runtimeRequire),
-  }));
-  execFileSync(process.execPath, ["--expose-internals", runnerPath], { cwd: temp, env, stdio: "inherit" });
+  writeFileSync(
+    runnerPath,
+    runnerSource({
+      activationUrl: pathToFileURL(activationPath).href,
+      cordisUrl: moduleUrl("@deepseek-ai/cordis", runtimeRequire),
+      loaderUrl: moduleUrl("@deepseek-ai/cordis-plugin-loader", runtimeRequire),
+      llmUrl: moduleUrl("@deepseek-ai/dsh-llm", runtimeRequire),
+    }),
+  );
+  execFileSync(process.execPath, ["--expose-internals", runnerPath], {
+    cwd: temp,
+    env,
+    stdio: "inherit",
+  });
 
   const runtimeCwd = join(temp, "runtime-cwd");
   await mkdir(runtimeCwd, { recursive: true });
@@ -261,14 +373,27 @@ try {
   try {
     runtime = await startRuntime(entry, env, runtimeCwd);
     const cookie = await authenticateRuntime(runtime);
-    const servedClient = await loadServedClient(runtime, "@lamplitisles/dsh-companion", cookie);
-    if (!servedClient.code.includes("dataset.pluginCss") || !servedClient.code.includes("@scope (#dsh-companion)")) {
-      throw new Error("served Companion client bundle does not contain its scoped stylesheet marker");
+    const servedClient = await loadServedClient(
+      runtime,
+      "@lamplitisles/dsh-companion",
+      cookie,
+    );
+    if (
+      !servedClient.code.includes("dataset.pluginCss") ||
+      !servedClient.code.includes("@scope (#dsh-companion)")
+    ) {
+      throw new Error(
+        "served Companion client bundle does not contain its scoped stylesheet marker",
+      );
     }
     if (servedClient.code.includes("@deepseek-ai/dsh-client-runtime")) {
-      throw new Error("served Companion client bundle references the retired client Runtime");
+      throw new Error(
+        "served Companion client bundle references the retired client Runtime",
+      );
     }
-    console.log("companion-web: packed client served through the real Web bootstrap and registered with the Loader");
+    console.log(
+      "companion-web: packed client served through the real Web bootstrap and registered with the Loader",
+    );
   } finally {
     await stopRuntime(runtime);
   }

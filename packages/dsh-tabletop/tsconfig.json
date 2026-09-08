@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "tests", "scripts", "tsup.config.ts", "vitest.config.ts"]
+  "include": ["src", "tests", "scripts", "tsdown.config.ts", "vitest.config.ts"]
 }

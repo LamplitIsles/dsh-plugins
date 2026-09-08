@@ -1,9 +1,20 @@
-import type { ISession, PendingSubmissionRetirement } from "@deepseek-ai/dsh-api-session-controller/client";
-import { serializeImageDrafts, type CompanionImageDraft } from "./image-drafts.js";
+import type {
+  ISession,
+  PendingSubmissionRetirement,
+} from "@deepseek-ai/dsh-api-session-controller/client";
+import {
+  serializeImageDrafts,
+  type CompanionImageDraft,
+} from "./image-drafts.js";
 
 export type CompanionAdmissionPart =
   | { type: "text"; text: string }
-  | { type: "image"; mediaType: import("@deepseek-ai/dsh-attachment").ImageMediaType; data: string; name?: string };
+  | {
+      type: "image";
+      mediaType: import("@deepseek-ai/dsh-attachment").ImageMediaType;
+      data: string;
+      name?: string;
+    };
 
 /** A Host-side admission rejection, distinct from a caller-side serialization failure. */
 export class CompanionAdmissionError extends Error {
@@ -25,8 +36,14 @@ export class CompanionPreControllerError extends Error {
   }
 }
 
-function reject(error: { code?: string; message?: string } | undefined, fallback: string): never {
-  const code = typeof error?.code === "string" && error.code ? error.code : "prompt-rejected";
+function reject(
+  error: { code?: string; message?: string } | undefined,
+  fallback: string,
+): never {
+  const code =
+    typeof error?.code === "string" && error.code
+      ? error.code
+      : "prompt-rejected";
   throw new CompanionAdmissionError(error?.message || fallback, code);
 }
 
@@ -41,13 +58,21 @@ export async function submitCompanionInput(
   text: string,
   drafts: readonly CompanionImageDraft[] = [],
   onRetire?: (retirement: PendingSubmissionRetirement) => void,
-  onSubmissionRetire?: (requestId: string, retirement: PendingSubmissionRetirement) => void,
+  onSubmissionRetire?: (
+    requestId: string,
+    retirement: PendingSubmissionRetirement,
+  ) => void,
 ): Promise<void> {
   if (text === "/compact") {
-    if (drafts.length > 0) throw new CompanionPreControllerError("compact-with-images");
+    if (drafts.length > 0)
+      throw new CompanionPreControllerError("compact-with-images");
     const result = await session.command(text);
-    if (!result.ok) throw new CompanionPreControllerError(result.error?.message || "compact-command-rejected");
-    if (!result.value?.matched) throw new CompanionPreControllerError("compact-command-unavailable");
+    if (!result.ok)
+      throw new CompanionPreControllerError(
+        result.error?.message || "compact-command-rejected",
+      );
+    if (!result.value?.matched)
+      throw new CompanionPreControllerError("compact-command-unavailable");
     return;
   }
 
@@ -55,7 +80,10 @@ export async function submitCompanionInput(
   const handle = session.beginSubmission({
     mode: "queue",
     text,
-    images: drafts.map((draft) => ({ previewUrl: draft.previewUrl, ...(draft.file.name ? { name: draft.file.name } : {}) })),
+    images: drafts.map((draft) => ({
+      previewUrl: draft.previewUrl,
+      ...(draft.file.name ? { name: draft.file.name } : {}),
+    })),
     onRetire: (retirement) => {
       if (requestId) onSubmissionRetire?.(requestId, retirement);
       onRetire?.(retirement);
@@ -64,8 +92,16 @@ export async function submitCompanionInput(
   requestId = handle.requestId;
   try {
     const images = await serializeImageDrafts(drafts);
-    const content: CompanionAdmissionPart[] = [...images, ...(text ? [{ type: "text" as const, text }] : [])];
-    const result = await session.prompt(content, "queue", undefined, handle.requestId);
+    const content: CompanionAdmissionPart[] = [
+      ...images,
+      ...(text ? [{ type: "text" as const, text }] : []),
+    ];
+    const result = await session.prompt(
+      content,
+      "queue",
+      undefined,
+      handle.requestId,
+    );
     if (!result.ok) reject(result.error, "prompt-rejected");
   } catch (error) {
     // The controller's abandon path is deliberately idempotent; on a thrown

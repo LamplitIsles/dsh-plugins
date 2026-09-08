@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { HindsightClient as HindsightSdkClient } from "@vectorize-io/hindsight-client";
 
-import type { RecallSettings, RecalledMemory, TranscriptTurn } from "./types.js";
+import type {
+  RecallSettings,
+  RecalledMemory,
+  TranscriptTurn,
+} from "./types.js";
 
 /** Small DSH-shaped adapter over the official typed Hindsight SDK. */
 export class HindsightClient {
@@ -10,21 +14,25 @@ export class HindsightClient {
   constructor(
     apiUrl: string,
     private readonly bankId: string,
-    apiToken?: string
+    apiToken?: string,
   ) {
     this.client = new HindsightSdkClient({
       baseUrl: apiUrl,
-      ...(apiToken ? { apiKey: apiToken } : {})
+      ...(apiToken ? { apiKey: apiToken } : {}),
     });
   }
 
-  async recall(query: string, settings: RecallSettings, signal?: AbortSignal): Promise<RecalledMemory[]> {
+  async recall(
+    query: string,
+    settings: RecallSettings,
+    signal?: AbortSignal,
+  ): Promise<RecalledMemory[]> {
     const response = await this.client.recall(this.bankId, query, {
       budget: settings.budget,
       types: settings.types,
       maxTokens: settings.maxTokens,
       preferObservations: settings.preferObservations,
-      signal
+      signal,
     });
     return response.results
       .map(toMemory)
@@ -34,7 +42,10 @@ export class HindsightClient {
   }
 
   async reflect(query: string, signal?: AbortSignal): Promise<string> {
-    const response = await this.client.reflect(this.bankId, query, { budget: "low", signal });
+    const response = await this.client.reflect(this.bankId, query, {
+      budget: "low",
+      signal,
+    });
     return response.text.trim();
   }
 
@@ -43,14 +54,16 @@ export class HindsightClient {
     sessionId: string,
     turn: number,
     turns: TranscriptTurn[],
-    updateMode: "replace" | "append"
+    updateMode: "replace" | "append",
   ): Promise<void> {
     if (!turns.length) return;
     // A trailing newline keeps the stored session a valid JSONL transcript even
     // when Hindsight implements append as literal text concatenation.
     const content = `${turns.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
     const documentId = `dsh:${sessionId}`;
-    const operationId = deterministicOperationId(`${this.bankId}\n${documentId}\n${turn}\n${updateMode}\n${content}`);
+    const operationId = deterministicOperationId(
+      `${this.bankId}\n${documentId}\n${turn}\n${updateMode}\n${content}`,
+    );
     await this.client.retain(this.bankId, content, {
       async: true,
       operationId,
@@ -61,8 +74,8 @@ export class HindsightClient {
         source: "chat",
         harness: "dsh",
         session_id: sessionId,
-        turn: String(turn)
-      }
+        turn: String(turn),
+      },
     });
   }
 }
@@ -93,6 +106,6 @@ function toMemory(value: unknown): RecalledMemory | undefined {
     text,
     ...(typeof value.id === "string" ? { id: value.id } : {}),
     ...(typeof value.type === "string" ? { type: value.type } : {}),
-    ...(typeof scores?.final === "number" ? { score: scores.final } : {})
+    ...(typeof scores?.final === "number" ? { score: scores.final } : {}),
   };
 }

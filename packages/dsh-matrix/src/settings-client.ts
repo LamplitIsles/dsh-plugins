@@ -5,11 +5,17 @@ export function decodeSettings(value: unknown): Partial<MatrixSettings> {
   if (typeof value !== "object" || value === null) return {};
   const input = value as Record<string, unknown>;
   return {
-    ...(typeof input.homeserverUrl === "string" ? { homeserverUrl: input.homeserverUrl } : {}),
+    ...(typeof input.homeserverUrl === "string"
+      ? { homeserverUrl: input.homeserverUrl }
+      : {}),
     ...(typeof input.userId === "string" ? { userId: input.userId } : {}),
     ...(typeof input.roomId === "string" ? { roomId: input.roomId } : {}),
-    ...(typeof input.workspaceId === "string" ? { workspaceId: input.workspaceId } : {}),
-    ...(typeof input.respondToAll === "boolean" ? { respondToAll: input.respondToAll } : {})
+    ...(typeof input.workspaceId === "string"
+      ? { workspaceId: input.workspaceId }
+      : {}),
+    ...(typeof input.respondToAll === "boolean"
+      ? { respondToAll: input.respondToAll }
+      : {}),
   };
 }
 
@@ -20,7 +26,7 @@ export function normalizeSettings(value: unknown): MatrixSettings {
     userId: decoded.userId ?? DEFAULT_SETTINGS.userId,
     roomId: decoded.roomId ?? DEFAULT_SETTINGS.roomId,
     workspaceId: decoded.workspaceId ?? DEFAULT_SETTINGS.workspaceId,
-    respondToAll: decoded.respondToAll ?? DEFAULT_SETTINGS.respondToAll
+    respondToAll: decoded.respondToAll ?? DEFAULT_SETTINGS.respondToAll,
   };
 }
 
@@ -29,13 +35,16 @@ export interface SettingsValidation {
   issues: Partial<Record<keyof MatrixSettings, string>>;
 }
 
-export function validateSettings(value: Partial<MatrixSettings>): SettingsValidation {
+export function validateSettings(
+  value: Partial<MatrixSettings>,
+): SettingsValidation {
   const issues: SettingsValidation["issues"] = {};
   if (!value.homeserverUrl?.trim()) issues.homeserverUrl = "required";
   else {
     try {
       const url = new URL(value.homeserverUrl);
-      if (url.protocol !== "https:" && url.protocol !== "http:") issues.homeserverUrl = "url";
+      if (url.protocol !== "https:" && url.protocol !== "http:")
+        issues.homeserverUrl = "url";
     } catch {
       issues.homeserverUrl = "url";
     }

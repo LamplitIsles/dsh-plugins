@@ -39,7 +39,7 @@ it.each([
         "scripts",
         "package.json",
         "tsconfig.json",
-        "tsup.config.ts",
+        "tsdown.config.ts",
       ]) {
         await cp(join(source, path), join(fixture, path), { recursive: true });
       }
@@ -55,14 +55,14 @@ it.each([
         join(fixture, "repro.ts"),
         `
 import { access } from "node:fs/promises";
-import { build } from "tsup";
-import config from "./tsup.config.ts";
-const options = typeof config === "function" ? await config({}) : config;
-const client = options.find((option) => option.platform === "browser");
-const host = options.find((option) => option.platform === "node");
+ import { build } from "tsdown";
+ import config from "./tsdown.config.ts";
+ const options = typeof config === "function" ? await config({}, {}) : config;
+ const client = options.find((option) => option.format === "cjs");
+ const host = options.find((option) => option.format === "esm");
 if (!client || !host) throw new Error("Expected a Host and Client build");
 // Force the worker ordering that exposed the CI race, using the real configs
-// and tsup declaration builders. Config evaluation (and cleanup) happens once.
+ // and tsdown declaration builders. Config evaluation (and cleanup) happens once.
 await build({ ...client, config: false, dts: { only: true } });
 await access("dist/client.d.cts");
 await build({ ...host, config: false, dts: { only: true } });

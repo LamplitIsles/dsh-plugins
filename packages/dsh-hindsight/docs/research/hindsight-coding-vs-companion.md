@@ -7,18 +7,18 @@ memory are different.
 
 ## Comparison
 
-| Concern | Official coding-agent integration | DSH companion integration |
-| --- | --- | --- |
-| Identity boundary | Repository/worktree | One continuing companion relationship |
-| Bank | Normally one `coding-agent::<workspace>` bank per repository | Dedicated `yuki-memory` bank |
-| Cold start | Seeds git history and a codebase survey, then deepens new material | Does not seed a repository; historical chat is a separate curated migration |
-| Primary sources | Commits, codebase survey, coding sessions, knowledge pages | Direct dialogue, relationship episodes, preferences, plans, and raw session transcripts |
-| Retain policy | Named `git`, `gitlog`, `conversation`, and `document` strategies | Top-level companion policy; the adapter sends no strategy |
-| Conversation goal | Final implementation state and developer-relevant decisions | Personal continuity, exact attribution, emotional episodes, mutual preferences, and open threads |
-| Write cadence | Session/Stop lifecycle plus repository deepening | Ordered asynchronous updates to one stable document per DSH session |
-| Automatic retrieval | First-prompt reflect and generated knowledge pages | Raw recall on every direct user turn |
-| Deliberate retrieval | Recall/reflect tools and knowledge pages | Reflect only for deliberate cross-memory synthesis |
-| Acceptable omission | Social detail is usually noise | Vivid, warm, funny, jealous, tense, or repaired moments can be the point |
+| Concern              | Official coding-agent integration                                  | DSH companion integration                                                                        |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Identity boundary    | Repository/worktree                                                | One continuing companion relationship                                                            |
+| Bank                 | Normally one `coding-agent::<workspace>` bank per repository       | Dedicated `yuki-memory` bank                                                                     |
+| Cold start           | Seeds git history and a codebase survey, then deepens new material | Does not seed a repository; historical chat is a separate curated migration                      |
+| Primary sources      | Commits, codebase survey, coding sessions, knowledge pages         | Direct dialogue, relationship episodes, preferences, plans, and raw session transcripts          |
+| Retain policy        | Named `git`, `gitlog`, `conversation`, and `document` strategies   | Top-level companion policy; the adapter sends no strategy                                        |
+| Conversation goal    | Final implementation state and developer-relevant decisions        | Personal continuity, exact attribution, emotional episodes, mutual preferences, and open threads |
+| Write cadence        | Session/Stop lifecycle plus repository deepening                   | Ordered asynchronous updates to one stable document per DSH session                              |
+| Automatic retrieval  | First-prompt reflect and generated knowledge pages                 | Raw recall on every direct user turn                                                             |
+| Deliberate retrieval | Recall/reflect tools and knowledge pages                           | Reflect only for deliberate cross-memory synthesis                                               |
+| Acceptable omission  | Social detail is usually noise                                     | Vivid, warm, funny, jealous, tense, or repaired moments can be the point                         |
 
 ## Why separate banks matter
 

@@ -6,12 +6,12 @@ import {
   OAUTH_ATTEMPT_TTL_MS,
   OAUTH_EXPIRY_SKEW_MS,
   OAUTH_REDIRECT_URI,
-  type ConnectionStatus
+  type ConnectionStatus,
 } from "./constants.js";
 import {
   validateHttpsUrl,
   validateOAuthAuthorizationServerUrl,
-  validateOAuthCallbackUrl
+  validateOAuthCallbackUrl,
 } from "./config.js";
 
 export interface CredentialGrantRecord {
@@ -79,11 +79,17 @@ export interface AuthorizationStart {
   readonly message?: string;
 }
 
-const SAFE_FAILURE = "Mail authorization failed. Check the registered callback URL and retry from DSH Settings.";
-const SAFE_REFRESH_FAILURE = "Mail authorization expired. Retry from DSH Settings.";
+const SAFE_FAILURE =
+  "Mail authorization failed. Check the registered callback URL and retry from DSH Settings.";
+const SAFE_REFRESH_FAILURE =
+  "Mail authorization expired. Retry from DSH Settings.";
 
 function base64Url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return Buffer.from(bytes)
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 function challengeFor(verifier: string): string {
@@ -106,7 +112,9 @@ function safeRefreshError(): Error {
   return new Error(SAFE_REFRESH_FAILURE);
 }
 
-function credentialText(value: CredentialGrantRecord | undefined): string | undefined {
+function credentialText(
+  value: CredentialGrantRecord | undefined,
+): string | undefined {
   if (!value || value.kind !== "grant") return undefined;
   try {
     return JSON.stringify(value.payload);
@@ -125,7 +133,15 @@ function parseGrant(value: string | undefined): OAuthGrant | undefined {
     const tokenEndpoint = stringValue(record.tokenEndpoint);
     const clientId = stringValue(record.clientId);
     const expiresAt = record.expiresAt;
-    if (!accessToken || !tokenEndpoint || !clientId || !isSafeHttpsUrl(tokenEndpoint) || typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined;
+    if (
+      !accessToken ||
+      !tokenEndpoint ||
+      !clientId ||
+      !isSafeHttpsUrl(tokenEndpoint) ||
+      typeof expiresAt !== "number" ||
+      !Number.isFinite(expiresAt)
+    )
+      return undefined;
     const refreshToken = stringValue(record.refreshToken);
     const scope = stringValue(record.scope);
     const binding = stringValue(record.binding);
@@ -137,7 +153,7 @@ function parseGrant(value: string | undefined): OAuthGrant | undefined {
       tokenType: stringValue(record.tokenType) ?? "Bearer",
       ...(refreshToken ? { refreshToken } : {}),
       ...(scope ? { scope } : {}),
-      ...(binding ? { binding } : {})
+      ...(binding ? { binding } : {}),
     };
   } catch {
     return undefined;
@@ -152,7 +168,13 @@ function isSafeHttpsUrl(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password && !url.hash;
+    return (
+      url.protocol === "https:" &&
+      Boolean(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.hash
+    );
   } catch {
     return false;
   }
@@ -167,7 +189,9 @@ function isSafeAuthorizationServerUrl(value: unknown): value is string {
   }
 }
 
-async function jsonResponse(response: Response): Promise<Record<string, unknown>> {
+async function jsonResponse(
+  response: Response,
+): Promise<Record<string, unknown>> {
   if (!response.ok) throw safeError();
   let body: unknown;
   try {
@@ -175,24 +199,34 @@ async function jsonResponse(response: Response): Promise<Record<string, unknown>
   } catch {
     throw safeError();
   }
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw safeError();
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw safeError();
   return body as Record<string, unknown>;
 }
 
 function metadataFrom(value: Record<string, unknown>): OAuthMetadata {
   const authorizationEndpoint = value.authorization_endpoint;
   const tokenEndpoint = value.token_endpoint;
-  if (!isSafeHttpsUrl(authorizationEndpoint) || !isSafeHttpsUrl(tokenEndpoint)) throw safeError();
-  const registrationEndpoint = isSafeHttpsUrl(value.registration_endpoint) ? value.registration_endpoint : undefined;
+  if (!isSafeHttpsUrl(authorizationEndpoint) || !isSafeHttpsUrl(tokenEndpoint))
+    throw safeError();
+  const registrationEndpoint = isSafeHttpsUrl(value.registration_endpoint)
+    ? value.registration_endpoint
+    : undefined;
   const scopes = Array.isArray(value.scopes_supported)
-    ? value.scopes_supported.filter((entry): entry is string => typeof entry === "string")
+    ? value.scopes_supported.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
     : undefined;
   return {
     authorization_endpoint: authorizationEndpoint,
     token_endpoint: tokenEndpoint,
-    ...(isSafeAuthorizationServerUrl(value.issuer) ? { issuer: value.issuer } : {}),
-    ...(registrationEndpoint ? { registration_endpoint: registrationEndpoint } : {}),
-    ...(scopes ? { scopes_supported: scopes } : {})
+    ...(isSafeAuthorizationServerUrl(value.issuer)
+      ? { issuer: value.issuer }
+      : {}),
+    ...(registrationEndpoint
+      ? { registration_endpoint: registrationEndpoint }
+      : {}),
+    ...(scopes ? { scopes_supported: scopes } : {}),
   };
 }
 
@@ -201,15 +235,20 @@ export class OAuthManager {
   private readonly now: () => number;
   private readonly random: (size: number) => Uint8Array;
   private readonly attempts = new Map<string, OAuthAttempt>();
-  private readonly callbackExchanges = new Map<string, Promise<ConnectionStatus>>();
+  private readonly callbackExchanges = new Map<
+    string,
+    Promise<ConnectionStatus>
+  >();
   private metadataPromise: Promise<OAuthMetadata> | undefined;
   private refreshPromise: Promise<OAuthGrant> | undefined;
   private lastStatus: ConnectionStatus = { state: "idle" };
 
   constructor(private readonly options: OAuthManagerOptions) {
     validateHttpsUrl(options.resourceEndpoint, "upstreamEndpoint");
-    if (options.authorizationServer !== undefined) validateOAuthAuthorizationServerUrl(options.authorizationServer);
-    if (options.redirectUri !== undefined) validateOAuthCallbackUrl(options.redirectUri);
+    if (options.authorizationServer !== undefined)
+      validateOAuthAuthorizationServerUrl(options.authorizationServer);
+    if (options.redirectUri !== undefined)
+      validateOAuthCallbackUrl(options.redirectUri);
     this.fetcher = options.fetcher ?? fetch;
     this.now = options.now ?? Date.now;
     this.random = options.randomBytes ?? ((size) => nodeRandomBytes(size));
@@ -227,7 +266,8 @@ export class OAuthManager {
       this.lastStatus = { state: "connected" };
       return { state: "connected" };
     }
-    for (const attempt of this.attempts.values()) this.attempts.delete(attempt.id);
+    for (const attempt of this.attempts.values())
+      this.attempts.delete(attempt.id);
     let stage = "authorization metadata";
     try {
       const metadata = await this.metadata();
@@ -236,7 +276,13 @@ export class OAuthManager {
       const verifier = base64Url(this.random(32));
       const state = base64Url(this.random(32));
       const expiresAt = this.now() + OAUTH_ATTEMPT_TTL_MS;
-      const attempt: OAuthAttempt = { id: state, verifier, metadata, clientId, expiresAt };
+      const attempt: OAuthAttempt = {
+        id: state,
+        verifier,
+        metadata,
+        clientId,
+        expiresAt,
+      };
       this.attempts.set(state, attempt);
       const url = new URL(metadata.authorization_endpoint);
       url.searchParams.set("response_type", "code");
@@ -245,14 +291,21 @@ export class OAuthManager {
       // Authorization servers can bind their authorization code to the
       // protected MCP resource. Omitting this standard target parameter may
       // yield invalid_target from the provider.
-      url.searchParams.set("resource", new URL(this.options.resourceEndpoint).origin);
+      url.searchParams.set(
+        "resource",
+        new URL(this.options.resourceEndpoint).origin,
+      );
       url.searchParams.set("state", state);
       url.searchParams.set("code_challenge", challengeFor(verifier));
       url.searchParams.set("code_challenge_method", "S256");
       const scope = this.options.scope ?? "";
       if (scope) url.searchParams.set("scope", scope);
       this.lastStatus = { state: "pending" };
-      return { state: "pending", authorizationUrl: url.toString(), attemptId: state };
+      return {
+        state: "pending",
+        authorizationUrl: url.toString(),
+        attemptId: state,
+      };
     } catch {
       const message = `Mail authorization setup failed during ${stage}. Retry from DSH Settings.`;
       this.lastStatus = { state: "failed", retryable: true, message };
@@ -271,22 +324,35 @@ export class OAuthManager {
   cancel(attemptId?: string): ConnectionStatus {
     if (attemptId) this.attempts.delete(attemptId);
     else this.attempts.clear();
-    this.lastStatus = { state: "cancelled", retryable: true, message: "Mail authorization was cancelled." };
+    this.lastStatus = {
+      state: "cancelled",
+      retryable: true,
+      message: "Mail authorization was cancelled.",
+    };
     return this.lastStatus;
   }
 
   /** Complete a callback. Every state is consumed before code exchange. */
-  async callback(params: URLSearchParams | Record<string, unknown>): Promise<ConnectionStatus> {
+  async callback(
+    params: URLSearchParams | Record<string, unknown>,
+  ): Promise<ConnectionStatus> {
     this.purgeExpired();
-    const read = (key: string): string | undefined => params instanceof URLSearchParams
-      ? params.get(key) ?? undefined
-      : stringValue(params[key]);
+    const read = (key: string): string | undefined =>
+      params instanceof URLSearchParams
+        ? (params.get(key) ?? undefined)
+        : stringValue(params[key]);
     const state = read("state");
-    const callbackExchange = state ? this.callbackExchanges.get(state) : undefined;
+    const callbackExchange = state
+      ? this.callbackExchanges.get(state)
+      : undefined;
     if (callbackExchange) return await callbackExchange;
     const attempt = state ? this.attempts.get(state) : undefined;
     if (!attempt || attempt.expiresAt <= this.now()) {
-      this.lastStatus = { state: "failed", retryable: true, message: this.safeFailureMessage() };
+      this.lastStatus = {
+        state: "failed",
+        retryable: true,
+        message: this.safeFailureMessage(),
+      };
       return this.lastStatus;
     }
     // Consume before any network work: callback replay can never exchange a code.
@@ -298,7 +364,7 @@ export class OAuthManager {
         retryable: true,
         message: oauthError
           ? `${this.providerLabel()} rejected authorization (${oauthError}). Retry from DSH Settings.`
-          : `${this.providerLabel()} did not issue an authorization code. Retry from DSH Settings.`
+          : `${this.providerLabel()} did not issue an authorization code. Retry from DSH Settings.`,
       };
       return this.lastStatus;
     }
@@ -306,27 +372,46 @@ export class OAuthManager {
       try {
         const response = await this.fetcher(attempt.metadata.token_endpoint, {
           method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            accept: "application/json",
+          },
           body: new URLSearchParams({
             grant_type: "authorization_code",
             code: read("code")!,
             client_id: attempt.clientId,
             redirect_uri: this.redirectUri(),
             code_verifier: attempt.verifier,
-            resource: this.resourceOrigin()
-          })
+            resource: this.resourceOrigin(),
+          }),
         });
         if (!response.ok) {
-          this.lastStatus = { state: "failed", retryable: true, message: `${this.providerLabel()} rejected the token exchange (HTTP ${response.status}). Retry from DSH Settings.` };
+          this.lastStatus = {
+            state: "failed",
+            retryable: true,
+            message: `${this.providerLabel()} rejected the token exchange (HTTP ${response.status}). Retry from DSH Settings.`,
+          };
           return this.lastStatus;
         }
         const body = await jsonResponse(response);
-        const grant = this.grantFromToken(body, attempt.metadata.token_endpoint, attempt.clientId, undefined);
-        await this.options.credentialStore.write(this.credentialRef, grantText(grant));
+        const grant = this.grantFromToken(
+          body,
+          attempt.metadata.token_endpoint,
+          attempt.clientId,
+          undefined,
+        );
+        await this.options.credentialStore.write(
+          this.credentialRef,
+          grantText(grant),
+        );
         this.lastStatus = { state: "connected" };
         return this.lastStatus;
       } catch {
-        this.lastStatus = { state: "failed", retryable: true, message: `${this.providerLabel()} token exchange could not be completed. Retry from DSH Settings.` };
+        this.lastStatus = {
+          state: "failed",
+          retryable: true,
+          message: `${this.providerLabel()} token exchange could not be completed. Retry from DSH Settings.`,
+        };
         return this.lastStatus;
       }
     })();
@@ -334,15 +419,20 @@ export class OAuthManager {
     try {
       return await exchange;
     } finally {
-      if (this.callbackExchanges.get(attempt.id) === exchange) this.callbackExchanges.delete(attempt.id);
+      if (this.callbackExchanges.get(attempt.id) === exchange)
+        this.callbackExchanges.delete(attempt.id);
     }
   }
 
   /** Resolve and proactively refresh the current grant before one mail call. */
   async accessToken(): Promise<string> {
     const grant = await this.readGrant();
-    if (!grant) throw new Error("Mail is not connected. Connect the Agent mailbox from DSH Settings.");
-    if (grant.expiresAt > this.now() + OAUTH_EXPIRY_SKEW_MS) return grant.accessToken;
+    if (!grant)
+      throw new Error(
+        "Mail is not connected. Connect the Agent mailbox from DSH Settings.",
+      );
+    if (grant.expiresAt > this.now() + OAUTH_EXPIRY_SKEW_MS)
+      return grant.accessToken;
     if (!grant.refreshToken) throw safeRefreshError();
     const refreshed = await this.refresh(grant);
     return refreshed.accessToken;
@@ -352,7 +442,10 @@ export class OAuthManager {
     try {
       const value = await this.options.credentialStore.read(this.credentialRef);
       const grant = parseGrant(credentialText(value));
-      return this.options.grantBinding && grant?.binding !== this.options.grantBinding ? undefined : grant;
+      return this.options.grantBinding &&
+        grant?.binding !== this.options.grantBinding
+        ? undefined
+        : grant;
     } catch {
       return undefined;
     }
@@ -363,7 +456,9 @@ export class OAuthManager {
   }
 
   private providerLabel(): string {
-    return this.options.authorizationServer ? "OAuth provider" : "Cloudflare Access";
+    return this.options.authorizationServer
+      ? "OAuth provider"
+      : "Cloudflare Access";
   }
 
   private safeFailureMessage(): string {
@@ -381,13 +476,24 @@ export class OAuthManager {
     for (const [id, attempt] of this.attempts) {
       if (attempt.expiresAt <= now) this.attempts.delete(id);
     }
-    if (this.attempts.size === 0 && this.callbackExchanges.size === 0 && this.lastStatus.state === "pending") {
-      this.lastStatus = { state: "failed", retryable: true, message: this.safeFailureMessage() };
+    if (
+      this.attempts.size === 0 &&
+      this.callbackExchanges.size === 0 &&
+      this.lastStatus.state === "pending"
+    ) {
+      this.lastStatus = {
+        state: "failed",
+        retryable: true,
+        message: this.safeFailureMessage(),
+      };
     }
   }
 
   private async metadata(): Promise<OAuthMetadata> {
-    if (this.options.metadata) return metadataFrom(this.options.metadata as unknown as Record<string, unknown>);
+    if (this.options.metadata)
+      return metadataFrom(
+        this.options.metadata as unknown as Record<string, unknown>,
+      );
     if (!this.metadataPromise) {
       this.metadataPromise = this.discoverMetadata().catch((error: unknown) => {
         // A transient discovery failure must not poison the Settings retry
@@ -403,14 +509,25 @@ export class OAuthManager {
     if (!isSafeHttpsUrl(this.options.resourceEndpoint)) throw safeError();
     const resource = new URL(this.options.resourceEndpoint);
     let authorizationServer = this.options.authorizationServer;
-    if (authorizationServer && !isSafeAuthorizationServerUrl(authorizationServer)) throw safeError();
+    if (
+      authorizationServer &&
+      !isSafeAuthorizationServerUrl(authorizationServer)
+    )
+      throw safeError();
     if (!authorizationServer) {
-      const protectedResource = new URL("/.well-known/oauth-protected-resource", resource.origin);
+      const protectedResource = new URL(
+        "/.well-known/oauth-protected-resource",
+        resource.origin,
+      );
       try {
         const response = await this.fetcher(protectedResource);
         if (response.ok) {
-          const body = await response.json() as { authorization_servers?: unknown };
-          const first = Array.isArray(body.authorization_servers) ? body.authorization_servers[0] : undefined;
+          const body = (await response.json()) as {
+            authorization_servers?: unknown;
+          };
+          const first = Array.isArray(body.authorization_servers)
+            ? body.authorization_servers[0]
+            : undefined;
           if (isSafeAuthorizationServerUrl(first)) authorizationServer = first;
         }
       } catch {
@@ -420,10 +537,18 @@ export class OAuthManager {
     authorizationServer ??= DEFAULT_OAUTH_AUTHORIZATION_SERVER;
     const issuerUrl = new URL(authorizationServer);
     const issuerPath = issuerUrl.pathname === "/" ? "" : issuerUrl.pathname;
-    for (const document of ["oauth-authorization-server", "openid-configuration"]) {
+    for (const document of [
+      "oauth-authorization-server",
+      "openid-configuration",
+    ]) {
       try {
-        const response = await this.fetcher(`${issuerUrl.origin}/.well-known/${document}${issuerPath}`);
-        if (response.ok) return metadataFrom(await response.json() as Record<string, unknown>);
+        const response = await this.fetcher(
+          `${issuerUrl.origin}/.well-known/${document}${issuerPath}`,
+        );
+        if (response.ok)
+          return metadataFrom(
+            (await response.json()) as Record<string, unknown>,
+          );
       } catch {
         // Try the next standards-defined metadata location.
       }
@@ -436,14 +561,17 @@ export class OAuthManager {
     if (!metadata.registration_endpoint) throw safeError();
     const response = await this.fetcher(metadata.registration_endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
       body: JSON.stringify({
         client_name: this.options.clientName ?? DEFAULT_CLIENT_NAME,
         redirect_uris: [this.redirectUri()],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        token_endpoint_auth_method: "none"
-      })
+        token_endpoint_auth_method: "none",
+      }),
     });
     const body = await jsonResponse(response);
     const clientId = stringValue(body.client_id);
@@ -451,15 +579,27 @@ export class OAuthManager {
     return clientId;
   }
 
-  private grantFromToken(body: Record<string, unknown>, tokenEndpoint: string, clientId: string, prior: OAuthGrant | undefined): OAuthGrant {
+  private grantFromToken(
+    body: Record<string, unknown>,
+    tokenEndpoint: string,
+    clientId: string,
+    prior: OAuthGrant | undefined,
+  ): OAuthGrant {
     const accessToken = stringValue(body.access_token);
     if (!accessToken) throw safeError();
     const refreshToken = stringValue(body.refresh_token) ?? prior?.refreshToken;
-    const expiresIn = typeof body.expires_in === "number" && Number.isFinite(body.expires_in) ? body.expires_in : 3600;
-    const expiresAt = typeof body.expires_at === "number" && Number.isFinite(body.expires_at)
-      ? body.expires_at * (body.expires_at < 10_000_000_000 ? 1000 : 1)
-      : this.now() + Math.max(1, expiresIn) * 1000;
-    const scope = stringValue(body.scope) ?? prior?.scope ?? (this.options.scope || undefined);
+    const expiresIn =
+      typeof body.expires_in === "number" && Number.isFinite(body.expires_in)
+        ? body.expires_in
+        : 3600;
+    const expiresAt =
+      typeof body.expires_at === "number" && Number.isFinite(body.expires_at)
+        ? body.expires_at * (body.expires_at < 10_000_000_000 ? 1000 : 1)
+        : this.now() + Math.max(1, expiresIn) * 1000;
+    const scope =
+      stringValue(body.scope) ??
+      prior?.scope ??
+      (this.options.scope || undefined);
     return {
       accessToken,
       expiresAt,
@@ -468,7 +608,9 @@ export class OAuthManager {
       tokenType: stringValue(body.token_type) ?? prior?.tokenType ?? "Bearer",
       ...(refreshToken ? { refreshToken } : {}),
       ...(scope ? { scope } : {}),
-      ...(this.options.grantBinding ? { binding: this.options.grantBinding } : {})
+      ...(this.options.grantBinding
+        ? { binding: this.options.grantBinding }
+        : {}),
     };
   }
 
@@ -478,17 +620,28 @@ export class OAuthManager {
       try {
         const response = await this.fetcher(prior.tokenEndpoint, {
           method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            accept: "application/json",
+          },
           body: new URLSearchParams({
             grant_type: "refresh_token",
             refresh_token: prior.refreshToken!,
             client_id: prior.clientId,
-            resource: this.resourceOrigin()
-          })
+            resource: this.resourceOrigin(),
+          }),
         });
         const body = await jsonResponse(response);
-        const grant = this.grantFromToken(body, prior.tokenEndpoint, prior.clientId, prior);
-        await this.options.credentialStore.write(this.credentialRef, grantText(grant));
+        const grant = this.grantFromToken(
+          body,
+          prior.tokenEndpoint,
+          prior.clientId,
+          prior,
+        );
+        await this.options.credentialStore.write(
+          this.credentialRef,
+          grantText(grant),
+        );
         this.lastStatus = { state: "connected" };
         return grant;
       } catch {
@@ -501,4 +654,8 @@ export class OAuthManager {
   }
 }
 
-export { challengeFor as pkceChallenge, parseGrant as parseOAuthGrant, grantText as serializeOAuthGrant };
+export {
+  challengeFor as pkceChallenge,
+  parseGrant as parseOAuthGrant,
+  grantText as serializeOAuthGrant,
+};

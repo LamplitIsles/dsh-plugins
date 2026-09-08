@@ -1,9 +1,10 @@
 # DSH Speech operator notes
 
 This package is intended for a disposable or locally managed DSH Web bundle.
-From the workspace root, build the package with Node.js/pnpm, run the
-typecheck/tests, and inspect the packed client artifact before installing it
-into a Web profile. Run the packed smoke with:
+From the workspace root, use Node.js `>=24.11.0` and the pinned Corepack pnpm
+12.3.4 to build the package, run the typecheck/tests, and inspect the packed
+client artifact before installing it into a Web profile. Run the packed smoke
+with:
 
 ```sh
 DSH_CLI=/absolute/path/to/dsh corepack pnpm --filter @lamplitisles/dsh-speech run pack-smoke

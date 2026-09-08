@@ -5,22 +5,22 @@ Hindsight has several independent prompt surfaces. Treating them as one global
 
 ## Configuration surfaces
 
-| Stage | Surface | Effect |
-| --- | --- | --- |
-| Retain item | `content` | Source data to extract; not a prompt setting |
-| Retain item | `timestamp` | Lets extraction resolve relative dates |
-| Retain item | `context` | Direct attribution/source cue injected into extraction |
-| Retain item | `metadata` | Included in extraction and stored with recalled memories |
-| Retain request | `strategy` | Selects a named bank strategy; otherwise the default applies |
-| Fact extraction | `retain_mission` | Focuses extraction alongside the built-in rules; ignored by `chunks` |
-| Fact extraction | `retain_extraction_mode` | Selects `concise`, `verbose`, `custom`, `verbatim`, or `chunks` |
-| Fact extraction | `retain_custom_instructions` | Replaces built-in extraction guidelines in `custom` mode |
+| Stage               | Surface                                         | Effect                                                               |
+| ------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| Retain item         | `content`                                       | Source data to extract; not a prompt setting                         |
+| Retain item         | `timestamp`                                     | Lets extraction resolve relative dates                               |
+| Retain item         | `context`                                       | Direct attribution/source cue injected into extraction               |
+| Retain item         | `metadata`                                      | Included in extraction and stored with recalled memories             |
+| Retain request      | `strategy`                                      | Selects a named bank strategy; otherwise the default applies         |
+| Fact extraction     | `retain_mission`                                | Focuses extraction alongside the built-in rules; ignored by `chunks` |
+| Fact extraction     | `retain_extraction_mode`                        | Selects `concise`, `verbose`, `custom`, `verbatim`, or `chunks`      |
+| Fact extraction     | `retain_custom_instructions`                    | Replaces built-in extraction guidelines in `custom` mode             |
 | Strategy resolution | `retain_strategies` / `retain_default_strategy` | Overlays mission, mode, chunk sizes, labels, and custom instructions |
-| Consolidation | `observations_mission` | Replaces the definition used to synthesize durable observations |
-| Reflect | `reflect_mission` | Identity and reasoning frame for reflect only |
-| Reflect | dispositions and directives | Soft style controls and hard reflect rules |
-| Mental models | `source_query` | Durable question used to maintain a synthesized knowledge page |
-| Recall | query, budgets, types, tags, token limits | Retrieval controls; there is no bank-level `recall_mission` |
+| Consolidation       | `observations_mission`                          | Replaces the definition used to synthesize durable observations      |
+| Reflect             | `reflect_mission`                               | Identity and reasoning frame for reflect only                        |
+| Reflect             | dispositions and directives                     | Soft style controls and hard reflect rules                           |
+| Mental models       | `source_query`                                  | Durable question used to maintain a synthesized knowledge page       |
+| Recall              | query, budgets, types, tags, token limits       | Retrieval controls; there is no bank-level `recall_mission`          |
 
 The calling integration owns the automatic-recall preamble and boundary. Bank
 configuration controls what was stored and how reflect reasons, not how DSH
@@ -28,16 +28,16 @@ labels the injected recall block.
 
 ## Extraction modes
 
-| Mode | LLM extraction | Practical meaning |
-| --- | --- | --- |
-| `concise` | Yes | Selective long-term facts. Cheap relative to verbose, but stock examples deliberately omit some seemingly trivial preferences, which is risky for a companion. |
-| `verbose` | Yes | Rich, exhaustive extraction. Useful for audits or a small migration sample, but creates more facts, tokens, consolidation work, and noise. |
-| `custom` | Yes | Replaces built-in extraction guidelines while retaining Hindsight's structural schema, temporal handling, and coreference machinery. Best fit for the companion bank. |
-| `verbatim` | Yes | Preserves raw chunk text as the fact, but still uses an LLM for metadata, entities, attribution, and time. It is not a no-LLM mode. |
-| `chunks` | No | Stores chunks without fact extraction. Useful as an archive/RAG source, but does not produce the normal fact graph or fact-driven observations. |
+| Mode       | LLM extraction | Practical meaning                                                                                                                                                     |
+| ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `concise`  | Yes            | Selective long-term facts. Cheap relative to verbose, but stock examples deliberately omit some seemingly trivial preferences, which is risky for a companion.        |
+| `verbose`  | Yes            | Rich, exhaustive extraction. Useful for audits or a small migration sample, but creates more facts, tokens, consolidation work, and noise.                            |
+| `custom`   | Yes            | Replaces built-in extraction guidelines while retaining Hindsight's structural schema, temporal handling, and coreference machinery. Best fit for the companion bank. |
+| `verbatim` | Yes            | Preserves raw chunk text as the fact, but still uses an LLM for metadata, entities, attribution, and time. It is not a no-LLM mode.                                   |
+| `chunks`   | No             | Stores chunks without fact extraction. Useful as an archive/RAG source, but does not produce the normal fact graph or fact-driven observations.                       |
 
 `retain_mission` still matters in `custom` mode. Custom instructions define
-*how* to extract; the mission defines *what the bank is trying to remember*.
+_how_ to extract; the mission defines _what the bank is trying to remember_.
 
 ## Companion prompt responsibilities
 

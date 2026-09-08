@@ -30,27 +30,59 @@ export const QWEN_ASR_MEDIA_TYPES = [
   "audio/wav",
   "audio/x-wav",
   "audio/webm",
-  "audio/x-ms-wma"
+  "audio/x-ms-wma",
 ] as const;
 
 export type QwenAsrMediaType = (typeof QWEN_ASR_MEDIA_TYPES)[number];
 
 /** Language hints and detected language values documented by Qwen3-ASR. */
 export const QWEN_ASR_LANGUAGES = [
-  "zh", "yue", "en", "ja", "de", "ko", "ru", "fr", "pt", "ar", "it", "es",
-  "hi", "id", "th", "tr", "uk", "vi", "cs", "da", "fil", "fi", "is", "ms", "no", "pl", "sv"
+  "zh",
+  "yue",
+  "en",
+  "ja",
+  "de",
+  "ko",
+  "ru",
+  "fr",
+  "pt",
+  "ar",
+  "it",
+  "es",
+  "hi",
+  "id",
+  "th",
+  "tr",
+  "uk",
+  "vi",
+  "cs",
+  "da",
+  "fil",
+  "fi",
+  "is",
+  "ms",
+  "no",
+  "pl",
+  "sv",
 ] as const;
 
 export type QwenAsrLanguage = (typeof QWEN_ASR_LANGUAGES)[number];
 
 /** Discrete model-derived speech-expression labels; absence is meaningful. */
 export const QWEN_ASR_EXPRESSIONS = [
-  "surprised", "neutral", "happy", "sad", "disgusted", "angry", "fearful"
+  "surprised",
+  "neutral",
+  "happy",
+  "sad",
+  "disgusted",
+  "angry",
+  "fearful",
 ] as const;
 
 export type QwenAsrExpression = (typeof QWEN_ASR_EXPRESSIONS)[number];
 
-export const BYTEDANCE_ENDPOINT = "https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse";
+export const BYTEDANCE_ENDPOINT =
+  "https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse";
 export const BYTEDANCE_RESOURCE_ID = "seed-tts-2.0";
 
 export const SPEECH_MAX_CHARS = 240;
@@ -79,8 +111,9 @@ export interface SpeechProfile {
 }
 
 export function normalizeProvider(value: unknown): SpeechProvider {
-  return typeof value === "string" && (SPEECH_PROVIDERS as readonly string[]).includes(value)
-    ? value as SpeechProvider
+  return typeof value === "string" &&
+    (SPEECH_PROVIDERS as readonly string[]).includes(value)
+    ? (value as SpeechProvider)
     : DEFAULT_PROVIDER;
 }
 
@@ -88,18 +121,23 @@ export function normalizeProvider(value: unknown): SpeechProvider {
 export function normalizeVoiceId(value: unknown, fallback: string): string {
   if (typeof value !== "string") return fallback;
   const normalized = value.trim();
-  if (!normalized || Array.from(normalized).length > VOICE_ID_MAX_LENGTH) return fallback;
+  if (!normalized || Array.from(normalized).length > VOICE_ID_MAX_LENGTH)
+    return fallback;
   return normalized;
 }
 
 export function normalizeSettings(value: unknown): SpeechSettings {
-  const record = typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   return {
     provider: normalizeProvider(record.provider),
     alibabaVoice: normalizeVoiceId(record.alibabaVoice, DEFAULT_ALIBABA_VOICE),
-    bytedanceVoice: normalizeVoiceId(record.bytedanceVoice, DEFAULT_BYTEDANCE_VOICE)
+    bytedanceVoice: normalizeVoiceId(
+      record.bytedanceVoice,
+      DEFAULT_BYTEDANCE_VOICE,
+    ),
   };
 }
 
@@ -110,14 +148,14 @@ export function profileFromSettings(value: unknown): SpeechProfile {
       provider: "bytedance",
       voice: settings.bytedanceVoice,
       model: BYTEDANCE_RESOURCE_ID,
-      credentialRef: BYTEDANCE_CREDENTIAL_REF
+      credentialRef: BYTEDANCE_CREDENTIAL_REF,
     };
   }
   return {
     provider: "alibaba",
     voice: settings.alibabaVoice,
     model: ALIBABA_MODEL,
-    credentialRef: ALIBABA_CREDENTIAL_REF
+    credentialRef: ALIBABA_CREDENTIAL_REF,
   };
 }
 
