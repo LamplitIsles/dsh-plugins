@@ -1,12 +1,11 @@
+import { linkDshDependencies } from "../../../scripts/dsh-web-smoke.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  realpathSync,
   readFileSync,
   rmSync,
-  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -58,22 +57,6 @@ function dshInvocation(entry) {
   const candidate = resolve(dirname(entry), "..", "@deepseek-ai/dsh/lib/bin.js");
   if (existsSync(candidate)) return { command: process.execPath, args: ["--expose-internals", candidate] };
   return { command: entry, args: [] };
-}
-
-function linkDshDependencies(directory, entry) {
-  const resolved = resolve(entry);
-  const invocation = dshInvocation(resolved);
-  const cliEntry = invocation.args.at(-1) ?? resolved;
-  let runtimeNodeModules = dirname(dirname(resolved));
-  if (!resolved.endsWith("/node_modules/.bin/dsh")) {
-    runtimeNodeModules = realpathSync(cliEntry);
-    for (let i = 0; i < 6; i += 1) runtimeNodeModules = dirname(runtimeNodeModules);
-  }
-  const dependencies = join(runtimeNodeModules, ".pnpm", "node_modules");
-  if (!existsSync(join(dependencies, "@deepseek-ai", "dsh-tools"))) {
-    throw new Error("DSH runtime dependencies are not available");
-  }
-  symlinkSync(dependencies, join(directory, "node_modules"), "dir");
 }
 
 function runDsh(entry, args, cwd, env) {
@@ -178,7 +161,7 @@ try {
   mkdirSync(runtimeCwd, { recursive: true });
   const env = isolatedEnvironment(temp, home);
   const entry = dshEntry(env);
-  linkDshDependencies(temp, entry);
+  await linkDshDependencies(temp, entry);
   const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--pack-destination", temp], { cwd: root, encoding: "utf8" }));
   const filename = packedManifest(packed)?.filename;
   if (typeof filename !== "string") throw new Error("pnpm pack did not return a tarball name");

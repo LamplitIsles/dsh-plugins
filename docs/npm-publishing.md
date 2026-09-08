@@ -28,16 +28,59 @@ After the workflow is merged and appears on GitHub `main`:
    repository publishers once their replacement is verified and old releases
    are no longer needed.
 
-Speech and Hindsight's new package names need an explicitly approved first
-publication before their package settings can be configured. Bootstrap and
-version changes are separate from this workflow setup. The other four package
-names already have published versions; preserve their version histories.
+New package names need an explicitly confirmed first publication before their
+package settings can be configured. Use the bootstrap wizard below; established
+packages continue through ordinary version PRs.
 
 Use interactive npm login for manual account operations. No `NPM_TOKEN`,
 `NODE_AUTH_TOKEN`, or npm secret is needed by this workflow. GitHub-hosted
 runners supply OIDC, and npm generates provenance for the public package.
 This is ordinary publishing, not staged publishing: successful `npm publish`
 makes the version public immediately.
+
+## Bootstrap a new package
+
+Run the reusable wizard from a locally committed checkout. No push or merge is
+required for the bootstrap publication:
+
+```sh
+bash scripts/npm-bootstrap.sh --plan @lamplitisles/dsh-tabletop
+bash scripts/npm-bootstrap.sh @lamplitisles/dsh-tabletop
+```
+
+It accepts a full public package name or its directory from the shared package
+inventory. The private workspace root and unknown packages are rejected.
+`--plan` prints proposed versions without network access or changes. Interactive
+execution requires Node.js 24, Corepack pnpm 11.22.0, curl, and an existing
+official DSH `0.1.2-rc.1` executable on PATH or in `DSH_CLI`.
+
+The wizard exports the local commit into a temporary workspace. For a stable
+manifest such as `0.1.0`, it asks before changing **only that temporary copy** to
+`0.1.0-beta.0`; an existing prerelease is preserved. Tracked source changes must
+be committed locally first. The selected package must be part of that commit.
+The original checkout, versions, and Git state remain unchanged.
+
+It verifies npm login, runs the declared frozen install, workspace checks,
+packing, real DSH artifact smoke, registry preflight, and selected-package
+release preparation in the temporary workspace. It then asks before publishing
+the verified tarball publicly under `beta`. Only the selected package is
+published. Registry errors stop execution; an exact version that already exists
+skips completed validation/publication. A successful publish is followed by
+propagation checks. Temporary builds and tarballs are removed on exit.
+No token is captured, `.env` is untouched, and no CI secret is created.
+
+After bootstrap, the wizard checks the public GitHub workflow with curl, which
+uses the environment proxy, and guides the human through the `npm` environment
+and package's Trusted Publisher settings. This verifies existing release
+infrastructure; it does not wait for the new package to be merged. If this
+lookup fails after publication, rerunning resumes setup without republishing.
+
+The stable release is a separate version PR. The agent must inspect both main
+and npm before selecting its version: a newly added manifest does not publish,
+and an unchanged version cannot trigger the workflow. If main already records
+`0.1.0`, choose a higher unpublished stable version for that PR. If main has a
+prerelease baseline, changing it to `0.1.0` can trigger that stable release.
+The wizard does not change stable versions, commit, push, merge, tag, or deploy.
 
 ## Release a package
 
@@ -61,7 +104,7 @@ push fails closed. Batched version bumps of the same package publish only the
 final version in that push.
 
 Each release checks metadata and npm availability, runs workspace
-typechecks/tests and six-package packing, installs an isolated DSH rc.1
+typechecks/tests and seven-package packing, installs an isolated DSH rc.1
 runtime, and runs the selected packed Host gate before publishing its tarball
 using OIDC. Stable versions use `latest`; prereleases use `beta`. Existing
 versions and stable versions at or below npm `latest` are rejected.

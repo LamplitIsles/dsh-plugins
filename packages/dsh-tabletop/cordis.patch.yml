@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-tabletop
+      name: "@lamplitisles/dsh-tabletop"
+      inject: [tools]

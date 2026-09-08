@@ -1,6 +1,6 @@
 # Import provenance
 
-This workspace is the delivery repository for six public DSH plugins. Product
+The initial workspace import delivered six public DSH plugins. Product
 files, tests, required assets, license notices, and relevant documentation were
 copied from the pinned source snapshots below. The source checkouts were read
 only; their histories, remotes, services, credentials, and installed files were
@@ -33,3 +33,6 @@ is the only workspace lockfile. Forgejo remains the source of truth; package
 metadata points to its public GitHub mirror for npm provenance:
 
 `https://github.com/LamplitIsles/dsh-plugins.git`
+
+`packages/dsh-tabletop` (`@lamplitisles/dsh-tabletop`) was authored directly in
+this workspace; it has no imported source snapshot.

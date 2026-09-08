@@ -2,8 +2,8 @@
 
 Use this procedure only when deployment is requested for the local DSH `web`
 profile. The target is `/home/neil/.local/state/dsh`, served by the user
-`dsh.service`. All six plugins run from this checkout. Settings and credentials
-remain in DSH's state directory; ordinary updates do not rewrite them.
+`dsh.service`. A complete deployment links all seven plugins to this checkout.
+Settings and credentials remain in DSH's state directory; ordinary updates do not rewrite them.
 
 Build before stopping the service:
 
@@ -13,7 +13,7 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm run build
 ```
 
-After a successful build, update the six links through DSH's package manager.
+After a successful build, update the seven links through DSH's package manager.
 The subshell stops the service on a failed post-stop command. It preserves
 unrelated profile dependencies and retains a restricted backup of profile files.
 
@@ -36,7 +36,8 @@ done
   "link:$REPO/packages/dsh-matrix" \
   "link:$REPO/packages/dsh-speech" \
   "link:$REPO/packages/dsh-hindsight" \
-  "link:$REPO/packages/dsh-imagegen"
+  "link:$REPO/packages/dsh-imagegen" \
+  "link:$REPO/packages/dsh-tabletop"
 systemctl --user restart dsh.service
 for attempt in $(seq 1 30); do
   status=$(curl --silent --output /dev/null --max-time 2 --write-out '%{http_code}' http://127.0.0.1:3080/ || true)
@@ -44,7 +45,7 @@ for attempt in $(seq 1 30); do
   if [ "$attempt" = 30 ]; then exit 1; fi
   sleep 1
 done
-for package in companion mail matrix speech hindsight imagegen; do
+for package in companion mail matrix speech hindsight imagegen tabletop; do
   test "$(readlink -f "$DSH_HOME/profiles/web/node_modules/@lamplitisles/dsh-$package")" = "$REPO/packages/dsh-$package"
 done
 trap - EXIT
@@ -55,6 +56,8 @@ printf 'Profile backup retained: %s\n' "$backup"
 HTTP 401 is the expected unauthenticated boundary, not proof of client health.
 Finish with a new authenticated browser session: confirm all six plugin settings
 contributions load without Loader errors and the preserved settings are visible.
+Tabletop has no settings or client contribution; verify its `roll_dice` tool
+with `{ "sides": 6 }` and confirm the result contains one die and its total.
 Never print launch tokens or stored credentials. Do not send mail or Matrix
 messages, invoke paid generation, or modify Hindsight memory for verification.
 

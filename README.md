@@ -1,6 +1,6 @@
 # dsh-plugins
 
-**Six independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, and image generation—in one pnpm workspace.**
+**Seven independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, image generation, and dice rolling—in one pnpm workspace.**
 
 ```sh
 corepack pnpm install --frozen-lockfile
@@ -21,6 +21,7 @@ identities and versions remain independent.
 | `@lamplitisles/dsh-speech` | Tagged TTS playback and optional Qwen ASR through an isolated Host service. |
 | `@lamplitisles/dsh-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection. |
 | `@lamplitisles/dsh-imagegen` | DSH image generation and editing under the active workspace. |
+| `@lamplitisles/dsh-tabletop` | Host-only `roll_dice` with structured inputs and unbiased dice rolls. |
 
 Imagegen keeps its provider and workspace-boundary core as ordinary internal
 modules in the public package; there is no separate private workspace package.
@@ -72,7 +73,7 @@ and loopback ports and removes them when it finishes:
 DSH_CLI=/absolute/path/to/dsh corepack pnpm run artifact:smoke
 ```
 
-This gate activates all six packed artifacts through the real DSH Host/Loader
+This gate activates all seven packed artifacts through the real DSH Host/Loader
 and uses fakes for provider behavior. It does not send mail or Matrix traffic,
 call a paid image provider, use credentials, or mutate a live profile.
 
@@ -83,6 +84,18 @@ package, then approve and merge its version PR. The GitHub mirror automatically
 publishes packages whose manifest version changed and verifies npm visibility.
 The npm version and provenance record the release; no Git tag is needed.
 Ordinary code PRs do not publish.
+
+For a new package's first publication, run the interactive bootstrap wizard
+from a local commit; no push or merge is required:
+
+```sh
+bash scripts/npm-bootstrap.sh @lamplitisles/dsh-tabletop
+```
+
+Use `--plan` before the package name to preview the proposed prerelease and
+stable version candidate without changes. The wizard changes only a temporary
+copy for the confirmed bootstrap publication, then hands stable version
+selection back to the version-PR workflow.
 
 For one-time Trusted Publisher setup and failure recovery, see
 [`docs/npm-publishing.md`](docs/npm-publishing.md). There is no manual workflow
@@ -113,7 +126,7 @@ import boundary and pinned source snapshots are recorded in
 [`docs/IMPORTS.md`](docs/IMPORTS.md). Contributor and agent workflow guidance
 is in [`AGENTS.md`](AGENTS.md).
 
-For an explicitly requested host-local update, follow the six-package
+For an explicitly requested host-local update, follow the seven-package
 build, link, restart, and verification procedure in
 [`docs/local-deployment.md`](docs/local-deployment.md).
 

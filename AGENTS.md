@@ -5,7 +5,7 @@
 - Treat the root `package.json`, `pnpm-workspace.yaml`, and `pnpm-lock.yaml` as
   the workspace source of truth. Use Node.js 24 and pnpm 11.22.0 through
   Corepack; keep dependency ownership in the package that imports it.
-- The six public packages under `packages/` keep independent names and
+- The seven public packages under `packages/` keep independent names and
   versions. Imagegen's core is an internal module in `packages/dsh-imagegen`;
   there is no separate private workspace package.
 - Keep the DSH/Cordis/Schemastery/React contract versions aligned with the root
@@ -39,7 +39,7 @@ rooms, and paid image generation remain outside tests.
 
 For explicitly requested host-local deployment, follow
 [`docs/local-deployment.md`](docs/local-deployment.md). Completion requires
-all six links to resolve to this checkout and the restarted Host and cold
+all seven links to resolve to this checkout and the restarted Host and cold
 client to load successfully.
 
 ## Artifacts and releases
@@ -58,6 +58,13 @@ selected packages' versions and any required release changes. Merging that PR
 publishes each changed package independently through the GitHub mirror, without
 Git tags. One PR may update one or more packages; follow
 [`docs/npm-publishing.md`](docs/npm-publishing.md) for setup and recovery.
+For a new package, use `scripts/npm-bootstrap.sh <package>` from a local commit;
+see the bootstrap section in `docs/npm-publishing.md`. It confirms the version
+change only in a temporary copy and local prerelease publication, with no
+pre-merge wait or checkout mutation. Select the later stable version PR against
+both main and npm; adding a manifest or leaving its version unchanged does not
+trigger CI publication.
+
 Local release preparation does not publish, deploy, create trust
 configuration, or modify credentials. Use `og` for Forgejo clone/pull/push,
 authentication, tags, comments, and CI operations.

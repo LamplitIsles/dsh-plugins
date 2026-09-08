@@ -90,6 +90,17 @@ export const PUBLIC_PACKAGES = [
       "LICENSE",
     ],
   },
+  {
+    directory: "dsh-tabletop",
+    name: "@lamplitisles/dsh-tabletop",
+    requiredFiles: [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "cordis.patch.yml",
+      "README.md",
+      "LICENSE",
+    ],
+  },
 ] as const;
 
 export type PublicPackage = (typeof PUBLIC_PACKAGES)[number];

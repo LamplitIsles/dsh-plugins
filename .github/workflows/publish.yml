@@ -74,7 +74,7 @@ jobs:
         run: |
           corepack pnpm run typecheck
           corepack pnpm run test
-      - name: Build and inspect all six tarballs
+      - name: Build and inspect all seven tarballs
         run: corepack pnpm run pack:check
       - name: Install isolated official DSH runtime
         run: |

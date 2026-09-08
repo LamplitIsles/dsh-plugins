@@ -1,5 +1,6 @@
+import { linkDshDependencies } from "../../../scripts/dsh-web-smoke.mjs";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import vm from "node:vm";
@@ -38,22 +39,6 @@ function dshEntry(env: NodeJS.ProcessEnv): string {
   }
   if (version !== DSH_VERSION) throw new Error(`pack-smoke requires dsh ${DSH_VERSION}, got ${version || "unknown"}`);
   return entry;
-}
-
-function linkDshDependencies(directory: string, entry: string): void {
-  const resolved = resolve(entry);
-  const invocation = dshInvocation(resolved);
-  const cliEntry = invocation.args.at(-1) ?? resolved;
-  let runtimeNodeModules = dirname(dirname(resolved));
-  if (!resolved.endsWith("/node_modules/.bin/dsh")) {
-    runtimeNodeModules = realpathSync(cliEntry);
-    for (let i = 0; i < 6; i += 1) runtimeNodeModules = dirname(runtimeNodeModules);
-  }
-  const dependencies = join(runtimeNodeModules, ".pnpm", "node_modules");
-  if (!existsSync(join(dependencies, "@deepseek-ai", "dsh-tools"))) {
-    throw new Error("DSH runtime dependencies are not available");
-  }
-  symlinkSync(dependencies, join(directory, "node_modules"), "dir");
 }
 
 function startRuntime(entry: string, env: NodeJS.ProcessEnv, cwd: string): Promise<{ child: ChildProcess; baseUrl: string; launchUrl: string }> {
@@ -172,7 +157,7 @@ try {
   mkdirSync(runtimeCwd, { recursive: true });
   const env = isolatedEnvironment(temp, home);
   const entry = dshEntry(env);
-  linkDshDependencies(temp, entry);
+  await linkDshDependencies(temp, entry);
   try {
     const invocation = dshInvocation(entry);
     execFileSync(invocation.command, [...invocation.args, "plugin", "--profile", "web", "add", tarball, "--ignore-scripts"], {

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { dshInvocation } from "./dsh-web-smoke.mjs";
 import {
   DSH_RC_VERSION,
   PUBLIC_PACKAGES,
@@ -24,8 +25,11 @@ function selectedPackage(selector: string | undefined): PublicPackage[] {
 }
 
 const entries = selectedPackage(process.argv[2]);
-const env = { ...process.env, DSH_CLI: dshCli() };
-const version = execFileSync(env.DSH_CLI, ["--version"], {
+const configuredCli = dshCli();
+const invocation = dshInvocation(configuredCli);
+// Exercise the same resolved entry that the npm bootstrap wizard passes.
+const env = { ...process.env, DSH_CLI: invocation.args.at(-1) ?? configuredCli };
+const version = execFileSync(invocation.command, [...invocation.args, "--version"], {
   encoding: "utf8",
   env,
 }).trim();

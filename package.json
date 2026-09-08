@@ -2,7 +2,7 @@
   "name": "@lamplitisles/dsh-plugins",
   "version": "0.0.0",
   "private": true,
-  "description": "Plugins for DeepSeek Harness — companion UI, email, Matrix, speech, memory, and image generation.",
+  "description": "Plugins for DeepSeek Harness — companion UI, email, Matrix, speech, memory, image generation, and dice rolling.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -17,7 +17,7 @@
     "typecheck": "pnpm run typecheck:root && pnpm --filter \"./packages/*\" run typecheck",
     "typecheck:root": "tsc --noEmit",
     "test": "pnpm --filter \"./packages/*\" run test && pnpm run test:release",
-    "test:release": "vitest run tests/release.test.ts tests/build-declarations.test.ts",
+    "test:release": "vitest run tests/release.test.ts tests/build-declarations.test.ts tests/npm-bootstrap.test.ts",
     "test:e2e": "pnpm --filter @lamplitisles/dsh-companion run test:e2e",
     "build": "pnpm --filter \"./packages/*\" run build",
     "pack:check": "pnpm run build && tsx scripts/pack-check.ts",
