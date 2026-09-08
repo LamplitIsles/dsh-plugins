@@ -8,6 +8,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import {
+  APPLY_PATCH_GRAMMAR,
+  APPLY_PATCH_NAME,
   CODE_MODE_TOOL_DESCRIPTION,
   CODE_MODE_GRAMMAR,
   RUN_CODE_DESCRIPTION,
@@ -61,6 +63,19 @@ function runCodeTool(): PiTool {
   } as PiTool;
 }
 
+function applyPatchTool(): PiTool {
+  return {
+    name: APPLY_PATCH_NAME,
+    description: "Apply patch",
+    parameters: {
+      type: "object",
+      properties: { patch: { type: "string" } },
+      required: ["patch"],
+      additionalProperties: false,
+    },
+  } as PiTool;
+}
+
 const settings: CodexSettings = {
   enabled: true,
   baseURL: "https://codex-gateway.test",
@@ -74,6 +89,9 @@ const settings: CodexSettings = {
     },
   ],
   transport: "websocket-cached",
+  maxPatchChars: 4_000_000,
+  maxPatchFiles: 64,
+  maxPatchFileBytes: 4_000_000,
 };
 
 async function collect(
@@ -104,6 +122,7 @@ describe("Codex provider mapping", () => {
       messages: [assistant([canonicalToolCall, otherToolCall])],
       tools: [
         runCodeTool(),
+        applyPatchTool(),
         {
           name: "ordinary_tool",
           description: "An ordinary function tool",
@@ -141,6 +160,20 @@ describe("Codex provider mapping", () => {
         properties: { input: { type: "string" } },
       },
     });
+    expect(mapped.tools).toHaveLength(2);
+    expect(mapped.tools?.[1]).toMatchObject({
+      name: APPLY_PATCH_NAME,
+      constrainedSampling: {
+        type: "grammar",
+        variants: { openai_lark: APPLY_PATCH_GRAMMAR },
+      },
+      parameters: {
+        type: "object",
+        required: ["input"],
+        additionalProperties: false,
+        properties: { input: { type: "string" } },
+      },
+    });
     expect(context).toEqual(before);
   });
 
@@ -166,6 +199,16 @@ describe("Codex provider mapping", () => {
       );
     },
   );
+
+  it("rejects code-mode mapping when the direct patch registration is absent", () => {
+    const context: PiContext = {
+      messages: [],
+      tools: [runCodeTool()],
+    };
+    expect(() => mapContextToCodex(context)).toThrow(
+      "Codex code-mode requires the direct apply_patch tool registration",
+    );
+  });
 
   it("normalizes streamed custom-tool input to canonical run_code arguments", async () => {
     const code = "return await tools.a({ value: 1 });\nreturn await tools.b();";
@@ -246,6 +289,110 @@ describe("Codex provider mapping", () => {
           { arguments: { code: "", description: RUN_CODE_DESCRIPTION } },
         ],
       },
+    });
+  });
+
+  it("normalizes fragmented streamed patch input and patch history", async () => {
+    const patch =
+      "*** Begin Patch\n*** Add File: new.txt\n+hello\n*** End Patch";
+    const canonicalToolCall = {
+      type: "toolCall" as const,
+      id: "call-patch|fc-patch",
+      name: APPLY_PATCH_NAME,
+      arguments: { patch },
+    };
+    const context: PiContext = {
+      messages: [assistant([canonicalToolCall])],
+      tools: [runCodeTool(), applyPatchTool()],
+    };
+    const before = structuredClone(context);
+    const mapped = mapContextToCodex(context);
+    const mappedMessage = mapped.messages[0];
+    expect(mappedMessage).toMatchObject({
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          name: APPLY_PATCH_NAME,
+          arguments: { input: patch },
+        },
+      ],
+    });
+    expect(mapped).not.toBe(context);
+    expect(context).toEqual(before);
+
+    const source = createAssistantMessageEventStream();
+    const initial = assistant([
+      {
+        type: "toolCall",
+        id: "call-patch|ctc-patch",
+        name: APPLY_PATCH_NAME,
+        arguments: { input: "" },
+      },
+    ]);
+    source.push({ type: "toolcall_start", contentIndex: 0, partial: initial });
+    source.push({
+      type: "toolcall_delta",
+      contentIndex: 0,
+      delta: "ignored",
+      partial: assistant([
+        {
+          type: "toolCall",
+          id: "call-patch|ctc-patch",
+          name: APPLY_PATCH_NAME,
+          arguments: { input: patch.slice(0, 25) },
+        },
+      ]),
+    });
+    source.push({
+      type: "toolcall_delta",
+      contentIndex: 0,
+      delta: "ignored",
+      partial: assistant([
+        {
+          type: "toolCall",
+          id: "call-patch|ctc-patch",
+          name: APPLY_PATCH_NAME,
+          arguments: { input: patch },
+        },
+      ]),
+    });
+    const complete = assistant([
+      {
+        type: "toolCall",
+        id: "call-patch|ctc-patch",
+        name: APPLY_PATCH_NAME,
+        arguments: { input: patch },
+      },
+    ]);
+    source.push({
+      type: "toolcall_end",
+      contentIndex: 0,
+      toolCall: complete.content[0] as Extract<
+        AssistantMessage["content"][number],
+        { type: "toolCall" }
+      >,
+      partial: complete,
+    });
+    source.end();
+
+    const events = await collect(mapEventsToCanonical(source));
+    const deltas = events.filter((event) => event.type === "toolcall_delta");
+    expect(deltas.map((event) => event.delta).join("")).toBe(
+      JSON.stringify({ patch }),
+    );
+    expect(events.find((event) => event.type === "toolcall_end")).toMatchObject(
+      {
+        type: "toolcall_end",
+        toolCall: {
+          name: APPLY_PATCH_NAME,
+          arguments: { patch },
+        },
+      },
+    );
+    expect(events[0]).toMatchObject({
+      type: "toolcall_start",
+      partial: { content: [{ arguments: { patch: "" } }] },
     });
   });
 

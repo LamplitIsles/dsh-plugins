@@ -17,7 +17,10 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "CONTEXT.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "license": "Apache-2.0",
   "publishConfig": {
@@ -40,10 +43,14 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-credentials": "catalog:",
+    "@deepseek-ai/dsh-fs": "catalog:",
     "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-llm-pi-ai": "catalog:",
     "@deepseek-ai/dsh-session": "catalog:",
+    "@deepseek-ai/dsh-scope": "catalog:",
     "@deepseek-ai/dsh-settings": "catalog:",
+    "@deepseek-ai/dsh-system-prompt": "catalog:",
+    "@deepseek-ai/dsh-tools": "catalog:",
     "@deepseek-ai/schemastery": "catalog:"
   },
   "scripts": {
@@ -55,10 +62,14 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-credentials": "catalog:",
+    "@deepseek-ai/dsh-fs": "catalog:",
     "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-llm-pi-ai": "catalog:",
     "@deepseek-ai/dsh-session": "catalog:",
+    "@deepseek-ai/dsh-scope": "catalog:",
     "@deepseek-ai/dsh-settings": "catalog:",
+    "@deepseek-ai/dsh-system-prompt": "catalog:",
+    "@deepseek-ai/dsh-tools": "catalog:",
     "@earendil-works/pi-ai": "0.84.4",
     "@types/node": "^24.10.1",
     "@types/ws": "^8.18.1",

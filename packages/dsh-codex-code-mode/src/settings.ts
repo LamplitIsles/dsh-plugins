@@ -2,6 +2,9 @@ import { isCredentialRefName } from "@deepseek-ai/dsh-credentials";
 import z from "@deepseek-ai/schemastery";
 import {
   DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_PATCH_CHARS,
+  DEFAULT_MAX_PATCH_FILE_BYTES,
+  DEFAULT_MAX_PATCH_FILES,
   DEFAULT_MAX_TOKENS,
   DEFAULT_SETTINGS,
   type CodexModelSettings,
@@ -26,9 +29,38 @@ export const CodexSettingsSchema: z<CodexSettings> = z.object({
   transport: z
     .union(["auto", "sse", "websocket", "websocket-cached"])
     .default(DEFAULT_SETTINGS.transport),
+  maxPatchChars: z
+    .number()
+    .step(1)
+    .min(1)
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(DEFAULT_MAX_PATCH_CHARS),
+  maxPatchFiles: z
+    .number()
+    .step(1)
+    .min(1)
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(DEFAULT_MAX_PATCH_FILES),
+  maxPatchFileBytes: z
+    .number()
+    .step(1)
+    .min(1)
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(DEFAULT_MAX_PATCH_FILE_BYTES),
 });
 
 export function validateCodexSettings(settings: CodexSettings): void {
+  for (const [name, value] of [
+    ["maxPatchChars", settings.maxPatchChars],
+    ["maxPatchFiles", settings.maxPatchFiles],
+    ["maxPatchFileBytes", settings.maxPatchFileBytes],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      throw new TypeError(
+        `dsh-codex-code-mode: ${name} must be a positive safe integer`,
+      );
+    }
+  }
   if (!settings.enabled) return;
   let endpoint: URL;
   try {

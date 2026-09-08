@@ -18,16 +18,16 @@ public package identities and versions remain independent.
 
 ## Packages
 
-| Package                             | Purpose                                                                                              |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `@lamplitisles/dsh-companion`       | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior.      |
-| `@lamplitisles/dsh-mail`            | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.          |
-| `@lamplitisles/dsh-matrix`          | Matrix room reading, search, and explicit message delivery through DSH tools.                        |
-| `@lamplitisles/dsh-speech`          | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                          |
-| `@lamplitisles/dsh-hindsight`       | Companion-oriented Hindsight recall, retention, and deliberate reflection.                           |
-| `@lamplitisles/dsh-imagegen`        | DSH image generation and editing under the active workspace.                                         |
-| `@lamplitisles/dsh-tabletop`        | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                                |
-| `@lamplitisles/dsh-codex-code-mode` | An opt-in Codex Responses route that presents DSH's existing PTC `run_code` entry as raw TypeScript. |
+| Package                             | Purpose                                                                                                           |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `@lamplitisles/dsh-companion`       | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior.                   |
+| `@lamplitisles/dsh-mail`            | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.                       |
+| `@lamplitisles/dsh-matrix`          | Matrix room reading, search, and explicit message delivery through DSH tools.                                     |
+| `@lamplitisles/dsh-speech`          | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                                       |
+| `@lamplitisles/dsh-hindsight`       | Companion-oriented Hindsight recall, retention, and deliberate reflection.                                        |
+| `@lamplitisles/dsh-imagegen`        | DSH image generation and editing under the active workspace.                                                      |
+| `@lamplitisles/dsh-tabletop`        | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                                             |
+| `@lamplitisles/dsh-codex-code-mode` | An opt-in Codex Responses route with raw TypeScript `run_code` and direct Codex Add/Update `apply_patch` editing. |
 
 Imagegen keeps its provider and workspace-boundary core as ordinary internal
 modules in the public package; there is no separate private workspace package.

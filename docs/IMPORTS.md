@@ -41,3 +41,8 @@ this workspace; it has no imported source snapshot.
 authored directly in this workspace. Its provider seam is a minimal wrapper
 around the published `@earendil-works/pi-ai@0.84.4` Codex Responses API and
 the DSH `0.1.2-rc.1` Host contracts; no external source snapshot was copied.
+Its direct patch parser and matcher are narrow Apache-2.0 ports of the OpenAI
+Codex `apply-patch` implementation at commit
+`8e6a44b428e31f91b21edc97904fcdf4f0931ade`; the supported operation set removes
+Codex delete and move operations. The package carries the attribution and
+license references in `NOTICE` and `THIRD_PARTY_NOTICES.md`.

@@ -109,7 +109,10 @@ export const PUBLIC_PACKAGES = [
       "dist/index.d.ts",
       "cordis.patch.yml",
       "README.md",
+      "CONTEXT.md",
       "LICENSE",
+      "NOTICE",
+      "THIRD_PARTY_NOTICES.md",
     ],
   },
 ] as const;

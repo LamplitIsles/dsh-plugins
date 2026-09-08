@@ -31,6 +31,9 @@ import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import {
   CODE_MODE_TOOL_DESCRIPTION,
   CODE_MODE_GRAMMAR,
+  APPLY_PATCH_DESCRIPTION,
+  APPLY_PATCH_GRAMMAR,
+  APPLY_PATCH_NAME,
   PROVIDER_ID,
   RUN_CODE_DESCRIPTION,
   RUN_CODE_NAME,
@@ -157,14 +160,36 @@ type CanonicalRunCodeArguments = {
   description: typeof RUN_CODE_DESCRIPTION;
 };
 
+type DirectToolName = typeof RUN_CODE_NAME | typeof APPLY_PATCH_NAME;
+
+function isDirectToolName(name: string): name is DirectToolName {
+  return name === RUN_CODE_NAME || name === APPLY_PATCH_NAME;
+}
+
+function directToolOrder(tool: PiTool): number {
+  return tool.name === RUN_CODE_NAME ? 0 : 1;
+}
+
 function isRunCodeTool(tool: PiTool): boolean {
   return tool.name === RUN_CODE_NAME;
+}
+
+function isApplyPatchTool(tool: PiTool): boolean {
+  return tool.name === APPLY_PATCH_NAME;
 }
 
 function requireRunCodeTool(context: PiContext): void {
   if (context.tools?.some(isRunCodeTool) !== true) {
     throw new Error(
       "Codex code-mode requires the existing DSH PTC run_code tool",
+    );
+  }
+}
+
+function requireApplyPatchTool(context: PiContext): void {
+  if (context.tools?.some(isApplyPatchTool) !== true) {
+    throw new Error(
+      "Codex code-mode requires the direct apply_patch tool registration",
     );
   }
 }
@@ -192,7 +217,32 @@ function wireArguments(
   return { input: arguments_.code };
 }
 
+function canonicalPatchArguments(arguments_: Record<string, unknown>): {
+  patch: string;
+} {
+  const patch = arguments_.input;
+  if (typeof patch !== "string" || patch.length === 0) {
+    throw new Error(
+      "Codex apply_patch custom-tool input must be a non-empty string",
+    );
+  }
+  return { patch };
+}
+
+function wirePatchArguments(
+  arguments_: Record<string, unknown>,
+): Record<string, unknown> {
+  if (typeof arguments_.patch !== "string") {
+    throw new Error(
+      "Codex apply_patch history must contain a string patch argument",
+    );
+  }
+  return { input: arguments_.patch };
+}
+
 function mapToolCallToWire(toolCall: ToolCall): ToolCall {
+  if (toolCall.name === APPLY_PATCH_NAME)
+    return { ...toolCall, arguments: wirePatchArguments(toolCall.arguments) };
   if (toolCall.name !== RUN_CODE_NAME)
     return { ...toolCall, arguments: { ...toolCall.arguments } };
   return { ...toolCall, arguments: wireArguments(toolCall.arguments) };
@@ -240,6 +290,27 @@ function mapHistoryToWire(context: PiContext): PiContext {
 }
 
 function mapToolToCodex(tool: PiTool): PiTool {
+  if (isApplyPatchTool(tool)) {
+    return {
+      name: APPLY_PATCH_NAME,
+      description: APPLY_PATCH_DESCRIPTION,
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          input: {
+            type: "string",
+            description: "The complete raw Codex Add File/Update File patch.",
+          },
+        },
+        required: ["input"],
+      },
+      constrainedSampling: {
+        type: "grammar",
+        variants: { openai_lark: APPLY_PATCH_GRAMMAR },
+      },
+    };
+  }
   if (!isRunCodeTool(tool)) {
     return { ...tool, parameters: structuredClone(tool.parameters) };
   }
@@ -267,12 +338,16 @@ function mapToolToCodex(tool: PiTool): PiTool {
 
 export function mapContextToCodex(context: PiContext): PiContext {
   requireRunCodeTool(context);
+  requireApplyPatchTool(context);
   const mapped = mapHistoryToWire(context);
   return mapped.tools === undefined
     ? mapped
     : {
         ...mapped,
-        tools: mapped.tools.map(mapToolToCodex),
+        tools: mapped.tools
+          .filter((tool) => isDirectToolName(tool.name))
+          .sort((left, right) => directToolOrder(left) - directToolOrder(right))
+          .map(mapToolToCodex),
       };
 }
 
@@ -280,18 +355,27 @@ function canonicalJsonPrefix(
   input: string,
   previousInput: string,
   started: boolean,
+  field: "code" | "patch",
 ): string {
   if (!input.startsWith(previousInput)) {
     throw new Error(
-      "Codex run_code custom-tool input changed non-monotonically",
+      `Codex ${field === "patch" ? APPLY_PATCH_NAME : RUN_CODE_NAME} custom-tool input changed non-monotonically`,
     );
   }
   const suffix = input.slice(previousInput.length);
   const escaped = JSON.stringify(suffix).slice(1, -1);
-  return `${started ? "" : '{"code":"'}${escaped}`;
+  return `${started ? "" : `{"${field}":"`}${escaped}`;
 }
 
-function canonicalJsonClose(input: string, started: boolean): string {
+function canonicalJsonClose(
+  input: string,
+  started: boolean,
+  field: "code" | "patch",
+): string {
+  if (field === "patch") {
+    if (started) return '"}';
+    return `${'{"patch":"'}${JSON.stringify(input).slice(1, -1)}"}`;
+  }
   const prefix = started
     ? ""
     : `${'{"code":"'}${JSON.stringify(input).slice(1, -1)}`;
@@ -313,10 +397,15 @@ function mapPartial(
   closed = false,
 ): AssistantMessage {
   const toolCall = toolCallAt(partial, contentIndex);
-  if (!toolCall || toolCall.name !== RUN_CODE_NAME) return partial;
-  const arguments_ = closed
-    ? canonicalArguments({ input })
-    : { code: input, description: RUN_CODE_DESCRIPTION };
+  if (!toolCall || !isDirectToolName(toolCall.name)) return partial;
+  const arguments_ =
+    toolCall.name === APPLY_PATCH_NAME
+      ? closed
+        ? canonicalPatchArguments({ input })
+        : { patch: input }
+      : closed
+        ? canonicalArguments({ input })
+        : { code: input, description: RUN_CODE_DESCRIPTION };
   return {
     ...partial,
     content: partial.content.map((block, index) =>
@@ -333,7 +422,7 @@ function mapEvent(
 ): AssistantMessageEvent[] {
   if (event.type === "toolcall_delta") {
     const toolCall = toolCallAt(event.partial, event.contentIndex);
-    if (!toolCall || toolCall.name !== RUN_CODE_NAME) return [{ ...event }];
+    if (!toolCall || !isDirectToolName(toolCall.name)) return [{ ...event }];
     const input =
       typeof toolCall.arguments.input === "string"
         ? toolCall.arguments.input
@@ -342,8 +431,16 @@ function mapEvent(
       value: "",
       started: false,
     };
-    const delta = canonicalJsonPrefix(input, previous.value, previous.started);
-    inputs.set(event.contentIndex, { value: input, started: true });
+    const delta = canonicalJsonPrefix(
+      input,
+      previous.value,
+      previous.started,
+      toolCall.name === APPLY_PATCH_NAME ? "patch" : "code",
+    );
+    inputs.set(event.contentIndex, {
+      value: input,
+      started: true,
+    });
     return [
       {
         ...event,
@@ -353,21 +450,28 @@ function mapEvent(
     ];
   }
   if (event.type === "toolcall_end") {
-    if (event.toolCall.name !== RUN_CODE_NAME)
+    if (!isDirectToolName(event.toolCall.name))
       return [{ ...event, toolCall: { ...event.toolCall } }];
     const input = event.toolCall.arguments.input;
     if (typeof input !== "string" || input.length === 0) {
       throw new Error(
-        "Codex run_code custom-tool input must be a non-empty string",
+        `Codex ${event.toolCall.name} custom-tool input must be a non-empty string`,
       );
     }
     const previous = inputs.get(event.contentIndex) ?? {
       value: "",
       started: false,
     };
-    const close = canonicalJsonClose(input, previous.started);
-    inputs.set(event.contentIndex, { value: input, started: true });
-    const canonical = canonicalArguments({ input });
+    const field = event.toolCall.name === APPLY_PATCH_NAME ? "patch" : "code";
+    const close = canonicalJsonClose(input, previous.started, field);
+    inputs.set(event.contentIndex, {
+      value: input,
+      started: true,
+    });
+    const canonical =
+      event.toolCall.name === APPLY_PATCH_NAME
+        ? canonicalPatchArguments({ input })
+        : canonicalArguments({ input });
     return [
       {
         type: "toolcall_delta",
@@ -384,8 +488,11 @@ function mapEvent(
   }
   if (event.type === "toolcall_start") {
     const toolCall = toolCallAt(event.partial, event.contentIndex);
-    if (toolCall?.name === RUN_CODE_NAME) {
-      inputs.set(event.contentIndex, { value: "", started: false });
+    if (toolCall !== undefined && isDirectToolName(toolCall.name)) {
+      inputs.set(event.contentIndex, {
+        value: "",
+        started: false,
+      });
       return [
         {
           ...event,
@@ -404,7 +511,18 @@ function mapEvent(
 
 function partialArguments(
   arguments_: Record<string, unknown>,
-): CanonicalRunCodeArguments {
+  toolName: DirectToolName,
+): CanonicalRunCodeArguments | { patch: string } {
+  if (toolName === APPLY_PATCH_NAME) {
+    return {
+      patch:
+        typeof arguments_.input === "string"
+          ? arguments_.input
+          : typeof arguments_.patch === "string"
+            ? arguments_.patch
+            : "",
+    };
+  }
   const code =
     typeof arguments_.input === "string"
       ? arguments_.input
@@ -421,13 +539,15 @@ function mapMessageFromCodex(
   return {
     ...message,
     content: message.content.map((block) => {
-      if (block.type !== "toolCall" || block.name !== RUN_CODE_NAME)
+      if (block.type !== "toolCall" || !isDirectToolName(block.name))
         return { ...block };
       return {
         ...block,
         arguments: allowIncomplete
-          ? partialArguments(block.arguments)
-          : canonicalArguments(block.arguments),
+          ? partialArguments(block.arguments, block.name)
+          : block.name === APPLY_PATCH_NAME
+            ? canonicalPatchArguments(block.arguments)
+            : canonicalArguments(block.arguments),
       };
     }),
   };

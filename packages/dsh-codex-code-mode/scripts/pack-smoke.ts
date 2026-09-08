@@ -38,6 +38,15 @@ function send(socket: WebSocket, value: ResponseBody): void {
   socket.send(JSON.stringify(value));
 }
 
+const patch = `*** Begin Patch
+*** Add File: added.txt
++created by apply_patch
+*** Update File: existing.txt
+@@
+-before
++updated by apply_patch
+*** End Patch`;
+
 function rawText(raw: RawData): string {
   if (Array.isArray(raw)) return Buffer.concat(raw).toString("utf8");
   if (Buffer.isBuffer(raw)) return raw.toString("utf8");
@@ -69,17 +78,71 @@ function runChild(
   });
 }
 
+function sendPatchResponse(socket: WebSocket): void {
+  const item = {
+    type: "custom_tool_call",
+    id: "fc-patch",
+    call_id: "call-patch",
+    name: "apply_patch",
+    input: patch,
+  };
+  send(socket, {
+    type: "response.created",
+    response: { id: "resp-1", status: "in_progress" },
+  });
+  send(socket, {
+    type: "response.output_item.added",
+    output_index: 0,
+    item: { ...item, input: "" },
+  });
+  send(socket, {
+    type: "response.custom_tool_call_input.delta",
+    output_index: 0,
+    delta: patch.slice(0, 37),
+  });
+  send(socket, {
+    type: "response.custom_tool_call_input.delta",
+    output_index: 0,
+    delta: patch.slice(37),
+  });
+  send(socket, {
+    type: "response.custom_tool_call_input.done",
+    output_index: 0,
+    input: patch,
+  });
+  send(socket, {
+    type: "response.output_item.done",
+    output_index: 0,
+    item,
+  });
+  send(socket, {
+    type: "response.completed",
+    response: {
+      id: "resp-1",
+      status: "completed",
+      output: [item],
+      usage: {
+        input_tokens: 12,
+        output_tokens: 8,
+        total_tokens: 20,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
+    },
+  });
+}
+
 function sendCodeResponse(socket: WebSocket): void {
   const item = {
     type: "custom_tool_call",
-    id: "fc-1",
-    call_id: "call-1",
+    id: "fc-code",
+    call_id: "call-code",
     name: "run_code",
     input: code,
   };
   send(socket, {
     type: "response.created",
-    response: { id: "resp-1", status: "in_progress" },
+    response: { id: "resp-2", status: "in_progress" },
   });
   send(socket, {
     type: "response.output_item.added",
@@ -109,7 +172,7 @@ function sendCodeResponse(socket: WebSocket): void {
   send(socket, {
     type: "response.completed",
     response: {
-      id: "resp-1",
+      id: "resp-2",
       status: "completed",
       output: [item],
       usage: {
@@ -132,7 +195,7 @@ function sendContinuationResponse(socket: WebSocket): void {
   };
   send(socket, {
     type: "response.created",
-    response: { id: "resp-2", status: "in_progress" },
+    response: { id: "resp-3", status: "in_progress" },
   });
   send(socket, {
     type: "response.output_item.added",
@@ -152,7 +215,7 @@ function sendContinuationResponse(socket: WebSocket): void {
   send(socket, {
     type: "response.completed",
     response: {
-      id: "resp-2",
+      id: "resp-3",
       status: "completed",
       output: [item],
       usage: {
@@ -170,42 +233,70 @@ function runnerSource({
   activationUrl,
   codexBaseUrl,
   cordisUrl,
+  fsLocalUrl,
+  fsObservationUrl,
+  patchText,
+  workspacePath,
   loaderUrl,
   llmUrl,
+  agentUrl,
+  agentLoopUrl,
+  sessionProjectionUrl,
+  systemPromptUrl,
   codexApiUrl,
   codexLazyUrl,
   sessionUrl,
   toolsUrl,
   runtimeUrl,
+  scopeUrl,
 }: {
   activationUrl: string;
   codexBaseUrl: string;
   cordisUrl: string;
+  fsLocalUrl: string;
+  fsObservationUrl: string;
+  patchText: string;
+  workspacePath: string;
   loaderUrl: string;
   llmUrl: string;
+  agentUrl: string;
+  agentLoopUrl: string;
+  sessionProjectionUrl: string;
+  systemPromptUrl: string;
   codexApiUrl: string;
   codexLazyUrl: string;
   sessionUrl: string;
   toolsUrl: string;
   runtimeUrl: string;
+  scopeUrl: string;
 }): string {
   return `
 import assert from "node:assert/strict";
 import { Context } from ${JSON.stringify(cordisUrl)};
 import Loader from ${JSON.stringify(loaderUrl)};
+import LocalFileSystem from ${JSON.stringify(fsLocalUrl)};
+import { apply as applyFsObservationPolicy, name as fsObservationPolicyName } from ${JSON.stringify(fsObservationUrl)};
 import {
   BlockAssembler,
+  LlmAdapter,
   LlmRuntime,
   createToolResultMessage,
   createUserMessage,
 } from ${JSON.stringify(llmUrl)};
+import AgentRegistry, { installModelSelection } from ${JSON.stringify(agentUrl)};
+import AgentLoop from ${JSON.stringify(agentLoopUrl)};
+import SessionProjectionRegistry from ${JSON.stringify(sessionProjectionUrl)};
+import SystemPrompt from ${JSON.stringify(systemPromptUrl)};
 import { closeOpenAICodexWebSocketSessions } from ${JSON.stringify(codexApiUrl)};
 import { openAICodexResponsesApi } from ${JSON.stringify(codexLazyUrl)};
-import SessionStore from ${JSON.stringify(sessionUrl)};
+import SessionStore, { SessionId } from ${JSON.stringify(sessionUrl)};
 import { defineTool, ToolRuntime } from ${JSON.stringify(toolsUrl)};
 import WorkerThreadCodeRuntime from ${JSON.stringify(runtimeUrl)};
+import { scopeTarget } from ${JSON.stringify(scopeUrl)};
 
 const baseURL = ${JSON.stringify(codexBaseUrl)};
+const rawPatch = ${JSON.stringify(patchText)};
+const workspacePath = ${JSON.stringify(workspacePath)};
 const token = "header." + Buffer.from(JSON.stringify({
   "https://api.openai.com/auth": { chatgpt_account_id: "pack-smoke-account" },
 })).toString("base64url") + ".signature";
@@ -215,15 +306,19 @@ let currentSettings = {
   credentialRef: "CODEX_API_KEY",
   models: [{ id: "gpt-5-codex", name: "GPT-5 Codex", contextWindow: 262144, maxTokens: 32768 }],
   transport: "websocket-cached",
+  maxPatchChars: 4000000,
+  maxPatchFiles: 64,
+  maxPatchFileBytes: 4000000,
 };
 const settingsListeners = new Set();
-const systemPrompt = {
-  tools: () => () => undefined,
-  section: () => () => undefined,
-  getSectionOrder: () => 0,
-};
 const root = new Context();
-root.provide("systemPrompt", systemPrompt);
+const fsRuntime = root.plugin(LocalFileSystem, { cwd: workspacePath });
+await fsRuntime;
+const fsObservationRuntime = root.plugin({
+  name: fsObservationPolicyName,
+  apply: applyFsObservationPolicy,
+});
+await fsObservationRuntime;
 root.provide("credentials", {
   resolve: async () => ({ value: token }),
 });
@@ -239,11 +334,18 @@ root.provide("settings", {
       },
     };
   },
+  installSection() {
+    return () => undefined;
+  },
 });
 
 const llmRuntime = root.plugin(LlmRuntime);
 await llmRuntime;
-const toolsRuntime = root.plugin(ToolRuntime, { mode: "ptc", maxParallelSubCalls: 10 });
+const projectionRuntime = root.plugin(SessionProjectionRegistry);
+await projectionRuntime;
+const systemPromptRuntime = root.plugin(SystemPrompt);
+await systemPromptRuntime;
+const toolsRuntime = root.plugin(ToolRuntime, { mode: "both", maxParallelSubCalls: 10 });
 await toolsRuntime;
 const codeRuntime = root.plugin(WorkerThreadCodeRuntime, {
   computeMs: 5000,
@@ -255,6 +357,10 @@ const loader = root.plugin(Loader, { baseUrl: import.meta.url });
 await loader;
 const sessionsRuntime = root.plugin(SessionStore);
 await sessionsRuntime;
+const agentsRuntime = root.plugin(AgentRegistry);
+await agentsRuntime;
+const agentLoopRuntime = root.plugin(AgentLoop, { agents: [] });
+await agentLoopRuntime;
 
 function sendParent(message) {
   if (typeof process.send !== "function")
@@ -301,86 +407,237 @@ function makeTestTool(name) {
     },
   });
 }
+function makeReadTool() {
+  return defineTool({
+    name: "read",
+    description: "Test-only read used to establish a DSH filesystem observation.",
+    parameters: {
+      path: { type: "string", required: true },
+    },
+    output: {
+      schema: { type: "string" },
+      render: (_args, value) => [{ type: "text", text: value }],
+    },
+    async execute(args, exec) {
+      const target = await root.fs.resolve(args.path, {
+        cwd: workspacePath,
+        signal: exec.signal,
+      });
+      const info = await root.fs.stat(target, exec.signal);
+      if (info === undefined || info.type !== "file")
+        throw new Error("read target is not a regular file: " + args.path);
+      const content = await root.fs.readText(target, exec.signal);
+      root.emit(
+        scopeTarget(root.fs, exec.agent),
+        "fs/observed",
+        target,
+        { kind: "present", version: info.version },
+        exec,
+      );
+      return content;
+    },
+  });
+}
 const disposeAlpha = root.tools.register(makeTestTool("alpha"));
 const disposeBeta = root.tools.register(makeTestTool("beta"));
+const disposeRead = root.tools.register(makeReadTool());
+const stockRequests = [];
+function textResponse(text) {
+  return [
+    { type: "block-start", index: 0, blockType: "text" },
+    ...Array.from(text, (character) => ({ type: "text-delta", index: 0, text: character })),
+    { type: "block-end", index: 0, block: { type: "text", text } },
+    { type: "usage", usage: { inputTokens: 10, outputTokens: text.length } },
+    { type: "finish", reason: { kind: "stop" } },
+  ];
+}
+class StockAdapter extends LlmAdapter {
+  resolveModel(provider, model) {
+    return Promise.resolve({ provider, id: model, name: model });
+  }
+  async *stream(options) {
+    stockRequests.push(options);
+    for (const chunk of textResponse("stock provider complete")) yield chunk;
+  }
+}
+const disposeStock = root.llm.registerAdapter(["stock-provider"], new StockAdapter());
 const activationPath = ${JSON.stringify(activationUrl)};
 let entryId;
 let unloadDone = Promise.resolve();
 let unrelatedDone = Promise.resolve();
+let agentHandle;
 try {
   entryId = await root.loader.create({
     id: "dsh-codex-code-mode",
     name: activationPath,
-    inject: ["llm", "credentials", "settings", "sessions"],
+    inject: ["llm", "credentials", "fs", "settings", "systemPrompt", "tools", "sessions"],
   });
   await root.loader.await();
   assert.equal(root.llm.listProviders().some((provider) => provider.id === "codex-code-mode"), true);
-  assert.deepEqual(root.tools.schemas().map((tool) => tool.name), ["alpha", "beta", "run_code"]);
-
   const tools = root.tools.schemas();
+  assert.deepEqual(tools.map((tool) => tool.name), ["alpha", "beta", "read", "apply_patch", "run_code"]);
   const user = createUserMessage({
-    content: [{ type: "text", text: "Run both test tools and continue." }],
+    content: [{ type: "text", text: "Apply the patch, run both test tools, and continue." }],
     source: { kind: "user" },
   });
   const sessionId = "pack-codex-session";
-  const firstAssembler = new BlockAssembler();
-  const firstStream = root.llm.stream({
-    provider: "codex-code-mode",
-    model: "gpt-5-codex",
-    messages: [user],
-    system: "Use the DSH TypeScript SDK.",
-    tools,
-    sessionId,
+  const selection = {
+    current: { provider: "codex-code-mode", model: "gpt-5-codex" },
+    assembled: undefined,
+  };
+  let switchedDuringStep = false;
+  root.on("agent/request", async (_payload, next) => {
+    const proposed = await next();
+    if (!switchedDuringStep && proposed.provider === "codex-code-mode") {
+      switchedDuringStep = true;
+      queueMicrotask(() => {
+        selection.current = { provider: "stock-provider", model: "stock-model" };
+      });
+    }
+    return proposed;
+  });
+  agentHandle = await root.agents.create({
+    sessionId: SessionId(sessionId),
+    meta: { cwd: workspacePath },
+    agentOptions: { provider: "codex-code-mode", model: "gpt-5-codex" },
+    setup: (agentCtx) => {
+      installModelSelection(agentCtx, selection);
+    },
+  });
+  const agent = agentHandle.agent;
+  const readResult = await root.tools.execute({
+    callId: "read-before-patch",
+    name: "read",
+    arguments: { path: "existing.txt" },
+    agent: { options: { provider: "other-provider" }, session: agent.session },
     signal: new AbortController().signal,
   });
-  for await (const chunk of firstStream) {
-    firstAssembler.push(chunk);
-  }
-  const firstBlocks = firstAssembler.blocks();
-  assert.equal(firstBlocks.length, 1);
-  assert.equal(firstBlocks[0].type, "tool-call");
-  if (firstBlocks[0].type !== "tool-call") throw new Error("packed Codex response did not produce a tool call");
-  assert.equal(firstBlocks[0].name, "run_code");
-  const firstArguments = JSON.parse(firstBlocks[0].arguments);
-  assert.deepEqual(Object.keys(firstArguments).sort(), ["code", "description"]);
-  assert.equal(firstArguments.description, "Run code");
-  assert.equal(firstArguments.code, ${JSON.stringify(code)});
-
-  const runCode = root.tools.get("run_code");
-  assert.ok(runCode);
-  const execution = await root.tools.execute({
-    callId: firstBlocks[0].id,
-    name: "run_code",
-    arguments: firstArguments,
+  assert.equal(readResult.isError, false);
+  if (readResult.isError) throw new Error(readResult.error.message);
+  assert.equal(readResult.value, ${JSON.stringify("before\n")});
+  const policyAgent = {
+    options: { provider: "codex-code-mode" },
+    session: { header: { cwd: workspacePath } },
+  };
+  const unobservedPolicyResult = await root.tools.execute({
+    callId: "policy-unobserved-update",
+    name: "apply_patch",
+    arguments: {
+      patch: ${JSON.stringify("*** Begin Patch\n*** Add File: unobserved-added.txt\n++must not publish\n*** Update File: unobserved.txt\n@@\n-before\n+after\n*** End Patch")},
+    },
+    agent: policyAgent,
     signal: new AbortController().signal,
   });
-  assert.equal(execution.isError, false);
-  if (execution.isError) throw new Error(execution.error.message);
-  assert.deepEqual(execution.value, { logs: [], result: { alpha: 6, beta: 8 } });
-  assert.equal(maximumActive, 2);
-
-  const assistant = firstAssembler.message({
-    kind: "model",
-    provider: "codex-code-mode",
-    model: "gpt-5-codex",
-    ...(firstAssembler.replayState === undefined ? {} : { replayState: firstAssembler.replayState }),
+  assert.equal(unobservedPolicyResult.isError, true);
+  assert.match(unobservedPolicyResult.error.message, /read.*first/iu);
+  const unobservedAddedTarget = await root.fs.resolve("unobserved-added.txt", { cwd: workspacePath });
+  const unobservedTarget = await root.fs.resolve("unobserved.txt", { cwd: workspacePath });
+  assert.equal(await root.fs.stat(unobservedAddedTarget), undefined);
+  assert.equal(await root.fs.readText(unobservedTarget), ${JSON.stringify("before\n")});
+  const staleReadResult = await root.tools.execute({
+    callId: "policy-stale-read",
+    name: "read",
+    arguments: { path: "stale.txt" },
+    agent: { options: { provider: "other-provider" }, session: policyAgent.session },
+    signal: new AbortController().signal,
   });
-  const toolResult = createToolResultMessage({
-    callId: firstBlocks[0].id,
-    content: execution.content,
-    isError: false,
+  assert.equal(staleReadResult.isError, false);
+  if (staleReadResult.isError) throw new Error(staleReadResult.error.message);
+  const staleTarget = await root.fs.resolve("stale.txt", { cwd: workspacePath });
+  await root.fs.writeText(staleTarget, ${JSON.stringify("changed externally\n")});
+  const stalePolicyResult = await root.tools.execute({
+    callId: "policy-stale-update",
+    name: "apply_patch",
+    arguments: {
+      patch: ${JSON.stringify("*** Begin Patch\n*** Add File: stale-added.txt\n++must not publish\n*** Update File: stale.txt\n@@\n-before\n+after\n*** End Patch")},
+    },
+    agent: policyAgent,
+    signal: new AbortController().signal,
   });
+  assert.equal(stalePolicyResult.isError, true);
+  assert.match(stalePolicyResult.error.message, /stale|changed/iu);
+  const staleAddedTarget = await root.fs.resolve("stale-added.txt", { cwd: workspacePath });
+  assert.equal(await root.fs.stat(staleAddedTarget), undefined);
+  assert.equal(await root.fs.readText(staleTarget), ${JSON.stringify("changed externally\n")});
+  agent.followup(user);
+  await agent.whenIdle();
+  assert.equal(switchedDuringStep, true);
+  assert.deepEqual(selection.assembled, {
+    provider: "stock-provider",
+    model: "stock-model",
+  });
+  assert.equal(stockRequests.length, 1);
+  assert.equal(stockRequests[0]?.provider, "stock-provider");
+  assert.deepEqual(
+    stockRequests[0]?.tools?.map((tool) => tool.name),
+    ["alpha", "beta", "read", "run_code"],
+  );
+  assert.doesNotMatch(stockRequests[0]?.system ?? "", /apply_patch/iu);
+  sendParent({
+    type: "agent-probe",
+    provider: stockRequests[0]?.provider,
+    tools: stockRequests[0]?.tools?.map((tool) => tool.name),
+    system: stockRequests[0]?.system,
+  });
+  await waitForParent("agent-probe-ack");
+  const addedTarget = await root.fs.resolve("added.txt", { cwd: workspacePath });
+  const existingTarget = await root.fs.resolve("existing.txt", { cwd: workspacePath });
+  assert.equal(await root.fs.readText(addedTarget), ${JSON.stringify("created by apply_patch\n")});
+  assert.equal(await root.fs.readText(existingTarget), ${JSON.stringify("updated by apply_patch\n")});
   const secondAssembler = new BlockAssembler();
   for await (const chunk of root.llm.stream({
     provider: "codex-code-mode",
     model: "gpt-5-codex",
-    messages: [user, assistant, toolResult],
-    system: "Use the DSH TypeScript SDK.",
+    messages: [user],
+    system: "Use the direct patch tool, then the DSH TypeScript SDK.",
     tools,
     sessionId,
     signal: new AbortController().signal,
   })) secondAssembler.push(chunk);
-  assert.deepEqual(secondAssembler.blocks(), [{ type: "text", text: "continuation complete" }]);
+  const secondBlocks = secondAssembler.blocks();
+  assert.equal(secondBlocks.length, 1);
+  assert.equal(secondBlocks[0].type, "tool-call");
+  if (secondBlocks[0].type !== "tool-call") throw new Error("packed continuation did not produce a tool call");
+  assert.equal(secondBlocks[0].name, "run_code");
+  const secondArguments = JSON.parse(secondBlocks[0].arguments);
+  assert.deepEqual(Object.keys(secondArguments).sort(), ["code", "description"]);
+  assert.equal(secondArguments.description, "Run code");
+  assert.equal(secondArguments.code, ${JSON.stringify(code)});
+
+  const codeExecution = await root.tools.execute({
+    callId: secondBlocks[0].id,
+    name: "run_code",
+    arguments: secondArguments,
+    agent,
+    signal: new AbortController().signal,
+  });
+  assert.equal(codeExecution.isError, false);
+  if (codeExecution.isError) throw new Error(codeExecution.error.message);
+  assert.deepEqual(codeExecution.value, { logs: [], result: { alpha: 6, beta: 8 } });
+  assert.equal(maximumActive, 2);
+
+  const codeAssistant = secondAssembler.message({
+    kind: "model",
+    provider: "codex-code-mode",
+    model: "gpt-5-codex",
+    ...(secondAssembler.replayState === undefined ? {} : { replayState: secondAssembler.replayState }),
+  });
+  const codeResult = createToolResultMessage({
+    callId: secondBlocks[0].id,
+    content: codeExecution.content,
+    isError: false,
+  });
+  const thirdAssembler = new BlockAssembler();
+  for await (const chunk of root.llm.stream({
+    provider: "codex-code-mode",
+    model: "gpt-5-codex",
+    messages: [user, codeAssistant, codeResult],
+    system: "Use the direct patch tool, then the DSH TypeScript SDK.",
+    tools,
+    sessionId,
+    signal: new AbortController().signal,
+  })) thirdAssembler.push(chunk);
+  assert.deepEqual(thirdAssembler.blocks(), [{ type: "text", text: "continuation complete" }]);
 
   let unloadSettled = false;
   const unloadStream = root.llm.stream({
@@ -474,10 +731,17 @@ try {
   if (entryId !== undefined && root.llm.listProviders().some((provider) => provider.id === "codex-code-mode")) {
     await root.loader.remove(entryId);
   }
+  await agentHandle?.dispose();
+  disposeStock();
   disposeAlpha();
   disposeBeta();
+  disposeRead();
   await codeRuntime.dispose();
   await toolsRuntime.dispose();
+  await systemPromptRuntime.dispose();
+  await projectionRuntime.dispose();
+  await agentLoopRuntime.dispose();
+  await agentsRuntime.dispose();
   await llmRuntime.dispose();
 }
 `;
@@ -508,12 +772,13 @@ server.on("connection", (socket) => {
       const request = JSON.parse(rawText(raw)) as ResponseBody;
       assert.equal(request.type, "response.create");
       requests.push(request);
-      if (requests.length === 1) sendCodeResponse(socket);
-      else if (requests.length === 2) sendContinuationResponse(socket);
-      else if (requests.length === 3) {
+      if (requests.length === 1) sendPatchResponse(socket);
+      else if (requests.length === 2) sendCodeResponse(socket);
+      else if (requests.length === 3) sendContinuationResponse(socket);
+      else if (requests.length === 4) {
         unloadWaiter?.send({ type: "unload-ready" });
         unloadWaiter = undefined;
-      } else if (requests.length === 4) {
+      } else if (requests.length === 5) {
         stockWaiter?.send({ type: "stock-ready" });
         stockWaiter = undefined;
       } else
@@ -560,6 +825,9 @@ try {
   const home = join(temporaryDirectory, "dsh-home");
   const cwd = join(temporaryDirectory, "workspace");
   await mkdir(cwd, { recursive: true });
+  await writeFile(join(cwd, "existing.txt"), "before\n");
+  await writeFile(join(cwd, "unobserved.txt"), "before\n");
+  await writeFile(join(cwd, "stale.txt"), "before\n");
   const env = isolatedEnvironment(temporaryDirectory, home);
   assert.equal(
     execFileSync(invocation.command, [...invocation.args, "--version"], {
@@ -641,13 +909,22 @@ try {
       activationUrl: pathToFileURL(activationPath).href,
       codexBaseUrl,
       cordisUrl: moduleUrl("@deepseek-ai/cordis"),
+      fsLocalUrl: moduleUrl("@deepseek-ai/dsh-fs-local"),
+      fsObservationUrl: moduleUrl("@deepseek-ai/dsh-fs-observation-policy"),
+      patchText: patch,
+      workspacePath: cwd,
       loaderUrl: moduleUrl("@deepseek-ai/cordis-plugin-loader"),
       llmUrl: moduleUrl("@deepseek-ai/dsh-llm"),
+      agentUrl: moduleUrl("@deepseek-ai/dsh-agent"),
+      agentLoopUrl: moduleUrl("@deepseek-ai/dsh-agent-loop"),
+      sessionProjectionUrl: moduleUrl("@deepseek-ai/dsh-session-projection"),
+      systemPromptUrl: moduleUrl("@deepseek-ai/dsh-system-prompt"),
       codexApiUrl,
       codexLazyUrl,
       sessionUrl: moduleUrl("@deepseek-ai/dsh-session"),
       toolsUrl: moduleUrl("@deepseek-ai/dsh-tools"),
       runtimeUrl: moduleUrl("@deepseek-ai/dsh-code-runtime-worker-thread"),
+      scopeUrl: moduleUrl("@deepseek-ai/dsh-scope"),
     }),
   );
   // Keep the parent event loop active so it can service the child’s fake WebSocket.
@@ -658,13 +935,33 @@ try {
     (child, message) => {
       if (typeof message !== "object" || message === null) return;
       const type = (message as { type?: unknown }).type;
+      if (type === "agent-probe") {
+        const probe = message as {
+          provider?: unknown;
+          tools?: unknown;
+          system?: unknown;
+        };
+        try {
+          assert.equal(probe.provider, "stock-provider");
+          assert.deepEqual(probe.tools, ["alpha", "beta", "read", "run_code"]);
+          assert.doesNotMatch(
+            typeof probe.system === "string" ? probe.system : "",
+            /apply_patch/iu,
+          );
+          child.send({ type: "agent-probe-ack" });
+        } catch (error) {
+          serverFailure = error;
+          child.kill();
+        }
+        return;
+      }
       if (type === "await-unload") {
-        if (requests.length >= 3) child.send({ type: "unload-ready" });
+        if (requests.length >= 4) child.send({ type: "unload-ready" });
         else unloadWaiter = child;
         return;
       }
       if (type === "await-stock") {
-        if (requests.length >= 4) child.send({ type: "stock-ready" });
+        if (requests.length >= 5) child.send({ type: "stock-ready" });
         else stockWaiter = child;
         return;
       }
@@ -681,11 +978,18 @@ try {
   );
   if (serverFailure !== undefined) throw serverFailure;
   await waitForSocketCount(0);
-  assert.equal(requests.length, 4);
-  assert.ok(
-    requests[0]?.tools?.some((tool: ResponseBody) => tool.name === "run_code"),
+  assert.equal(requests.length, 5);
+  assert.deepEqual(
+    requests[0]?.tools?.map((tool: ResponseBody) => tool.name),
+    ["run_code", "apply_patch"],
   );
-  assert.equal(requests[1]?.previous_response_id, "resp-1");
+  assert.equal(
+    requests[0]?.tools?.find(
+      (tool: ResponseBody) => tool.name === "apply_patch",
+    )?.type,
+    "custom",
+  );
+  assert.equal(requests[2]?.previous_response_id, "resp-2");
   console.log(
     JSON.stringify({
       package: entry.name,
