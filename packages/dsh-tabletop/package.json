@@ -1,6 +1,6 @@
 {
   "name": "@lamplitisles/dsh-tabletop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Host-only structured dice rolls for DeepSeek Harness",
   "type": "module",
   "engines": {
