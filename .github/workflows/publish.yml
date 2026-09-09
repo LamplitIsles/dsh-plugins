@@ -31,6 +31,8 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
         run: |
+          # Node 24.11.0 bundles Corepack 0.34.0, which expects pnpm's old executable layout.
+          npm install --global corepack@0.35.0
           corepack enable
           corepack pnpm install --frozen-lockfile
           corepack pnpm exec tsx scripts/release-changes.ts "$BEFORE_SHA" "$AFTER_SHA"
@@ -68,7 +70,7 @@ jobs:
           package-manager-cache: false
       - name: Install toolchain and dependencies
         run: |
-          npm install --global npm@11.17.0
+          npm install --global npm@11.17.0 corepack@0.35.0
           corepack enable
           corepack pnpm install --frozen-lockfile
       - name: Validate release identity and registry availability
