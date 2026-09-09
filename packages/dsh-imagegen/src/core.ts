@@ -28,6 +28,7 @@ export interface ImageResult {
 
 export interface RequestImageOptions {
   fetch: typeof globalThis.fetch;
+  model: string;
   prompt: string;
   images?: readonly string[] | undefined;
   baseUrl?: string;
@@ -71,6 +72,17 @@ export function assertNonblankPrompt(
   if (typeof prompt !== "string" || prompt.trim() === "") {
     throw new ImagegenError("A nonblank image prompt is required.");
   }
+}
+
+export function assertNonblankModel(model: unknown): asserts model is string {
+  if (typeof model !== "string" || model.trim() === "") {
+    throw new ImagegenError("A nonblank image model is required.");
+  }
+}
+
+export function normalizeModel(model: unknown): string {
+  assertNonblankModel(model);
+  return model.trim();
 }
 
 export function isSupportedMediaType(value: unknown): value is ImageMediaType {
@@ -143,10 +155,12 @@ export function decodeImageDataUrl(value: unknown): {
 }
 
 export function remainingSourceBytes(
+  model: string,
   prompt: string,
   currentImages: readonly string[],
   mediaType: ImageMediaType,
 ): number {
+  const normalizedModel = normalizeModel(model);
   assertNonblankPrompt(prompt);
   if (!isSupportedMediaType(mediaType) || currentImages.length >= 5) {
     return 0;
@@ -156,7 +170,11 @@ export function remainingSourceBytes(
   }
 
   const prefix = `data:${mediaType};base64,`;
-  const body = JSON.stringify({ prompt, images: [...currentImages, prefix] });
+  const body = JSON.stringify({
+    model: normalizedModel,
+    prompt,
+    images: [...currentImages, prefix],
+  });
   const available = MAX_BRIDGE_JSON_BYTES - utf8Length(body);
   if (available < 4) {
     return 0;
@@ -165,9 +183,11 @@ export function remainingSourceBytes(
 }
 
 export function assertBridgePayloadFits(
+  model: string,
   prompt: string,
   images?: readonly string[],
 ): void {
+  const normalizedModel = normalizeModel(model);
   assertNonblankPrompt(prompt);
   if (images !== undefined) {
     if (images.length === 0 || images.length > 5) {
@@ -179,7 +199,9 @@ export function assertBridgePayloadFits(
   }
 
   const body = JSON.stringify(
-    images === undefined ? { prompt } : { prompt, images },
+    images === undefined
+      ? { model: normalizedModel, prompt }
+      : { model: normalizedModel, prompt, images },
   );
   if (utf8Length(body) > MAX_BRIDGE_JSON_BYTES) {
     throw new ImagegenError(
@@ -190,15 +212,19 @@ export function assertBridgePayloadFits(
 
 export async function requestImage({
   fetch,
+  model,
   prompt,
   images,
   baseUrl = DEFAULT_BRIDGE_URL,
   signal,
 }: RequestImageOptions): Promise<ImageResult> {
   const normalizedBaseUrl = normalizeBridgeUrl(baseUrl);
-  assertBridgePayloadFits(prompt, images);
+  const normalizedModel = normalizeModel(model);
+  assertBridgePayloadFits(normalizedModel, prompt, images);
   const body = JSON.stringify(
-    images === undefined ? { prompt } : { prompt, images },
+    images === undefined
+      ? { model: normalizedModel, prompt }
+      : { model: normalizedModel, prompt, images },
   );
   const request: RequestInit = {
     method: "POST",

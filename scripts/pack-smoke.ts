@@ -71,7 +71,10 @@ const bridge = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const body = Buffer.concat(chunks).toString("utf8");
     const payload = JSON.parse(body);
-    assert.deepEqual(payload, { prompt: "pack smoke image" });
+    assert.deepEqual(payload, {
+      model: "pack-smoke-generation",
+      prompt: "pack smoke image",
+    });
     requests.push(payload);
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ image_url: "data:image/png;base64," + encodedPng }));
@@ -126,10 +129,18 @@ const attachments = {
   },
 };
 let settingsNamespace;
+let settingsSchema;
 const settings = {
-  register(namespace) {
+  register(namespace, schema) {
     settingsNamespace = namespace;
-    return { get: () => ({ bridgeUrl }) };
+    settingsSchema = schema;
+    return {
+      get: () => ({
+        bridgeUrl,
+        generationModel: "pack-smoke-generation",
+        editModel: "pack-smoke-edit",
+      }),
+    };
   },
 };
 const registeredTools = [];
@@ -151,6 +162,11 @@ try {
   entryId = await root.loader.create({ id: "imagegen-pack-smoke", name: ${JSON.stringify(activationUrl)} });
   await root.loader.await();
   assert.equal(settingsNamespace, "lamplitisles-kepos-imagegen");
+  assert.deepEqual(settingsSchema({}), {
+    bridgeUrl: "http://codex-bridge.localhost:17480",
+    generationModel: "gpt-image-2.5-flare",
+    editModel: "gpt-image-2.5-sunburst",
+  });
   assert.equal(registeredTools.length, 1);
   assert.equal(registeredTools[0].name, "kepos_image_generate");
 

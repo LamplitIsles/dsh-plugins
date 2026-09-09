@@ -8,10 +8,20 @@ dsh plugin --profile <profile> add @lamplitisles/dsh-imagegen
 
 This package targets the DSH `0.1.2-rc.1` API contract.
 
-Open DSH Settings and use **Kepos Image Generation** to set the bridge address. The
-tool generates when `images` is omitted and edits one through five PNG, JPEG, GIF,
-or WebP files named relative to the active workspace. Kepos owns authentication;
-this plugin does not accept or store credentials.
+Open DSH Settings and use **Kepos Image Generation** to set the bridge address and
+the two model identifiers. **Generation model** defaults to
+`gpt-image-2.5-flare`; **Editing model** defaults to `gpt-image-2.5-sunburst`.
+The Host uses the generation model when `images` is omitted and the editing model
+when one through five PNG, JPEG, GIF, or WebP files are supplied. Model values
+must be nonblank; surrounding whitespace is trimmed before saving and sending the
+request. Kepos owns authentication; this plugin does not accept or store
+credentials.
+
+The bridge must accept the explicit `model` field on `POST /codex/images` and
+forward it to its image provider. Deploy the matching bridge and imagegen
+changes together; this plugin has no bridge-side model default or compatibility
+fallback. The model policy is changed in the DSH settings card rather than in
+the bridge.
 
 Every generated image is saved under `.dsh/kepos-imagegen/` in the active
 workspace. The returned relative path can be used in a later image-edit call;
@@ -34,10 +44,13 @@ The packed smoke installs the DSH-only artifact into a disposable real
 module Loader, and verifies the Host Settings namespace. A separate real
 Cordis Loader run activates the packed Host entry and calls
 `kepos_image_generate` through a test-owned HTTP fake bridge, checking the
-generated PNG write and attachment result. Imagegen's provider and
-workspace-boundary core is implemented as ordinary internal modules in the
-artifact; no second workspace package is installed at runtime,
+generated model-bearing request, PNG write, and attachment result. Imagegen's
+provider and workspace-boundary core is implemented as ordinary internal modules
+in the artifact; no second workspace package is installed at runtime,
 and the smoke never calls a paid image provider or touches a live workspace.
+The packed gate is not the host-local rendered-client acceptance check: that
+task-scoped check still requires an authorized deployment/restart of the host
+instance and is not performed by this package workflow.
 
 ## Independent release
 

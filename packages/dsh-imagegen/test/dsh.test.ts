@@ -1,3 +1,8 @@
+import {
+  DEFAULT_EDIT_MODEL,
+  DEFAULT_GENERATION_MODEL,
+  type ImagegenSettings,
+} from "../src/constants.js";
 import { DEFAULT_BRIDGE_URL, MAX_BRIDGE_JSON_BYTES } from "../src/core.js";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { SettingsProvider } from "@deepseek-ai/dsh-settings";
@@ -12,22 +17,35 @@ import { describe, expect, it } from "vitest";
 import {
   SETTINGS_NAMESPACE,
   GENERATED_IMAGES_DIRECTORY,
+  SettingsSchema,
   apply,
   generateWithDsh,
   inject,
+  normalizeImagegenSettings,
   validOrDefault,
   writeGeneratedImage,
   type DshAttachments,
   type DshFileSystem,
 } from "../src/index.js";
 import {
-  bridgeUrlFromSnapshot,
   decodeSettings,
-  saveBridgeUrl,
-  syncBridgeUrlDraft,
+  imagegenSettingsFromSnapshot,
+  saveSetting,
+  syncImagegenSettingsDraft,
 } from "../src/client.js";
 
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0]);
+
+function imagegenSettings(
+  overrides: Partial<ImagegenSettings> = {},
+): ImagegenSettings {
+  return {
+    bridgeUrl: DEFAULT_BRIDGE_URL,
+    generationModel: DEFAULT_GENERATION_MODEL,
+    editModel: DEFAULT_EDIT_MODEL,
+    ...overrides,
+  };
+}
 
 type Target = { targetKey: string };
 
@@ -140,7 +158,7 @@ function bridgeFetch(
 }
 
 describe("DSH image adapter", () => {
-  it("registers a persisted non-string bridge URL with the default fallback", async () => {
+  it("registers persisted settings with bridge and model defaults", async () => {
     const context = new Context();
     const settings = new MemorySettingsProvider(context, {
       [SETTINGS_NAMESPACE]: { bridgeUrl: 42 },
@@ -158,8 +176,30 @@ describe("DSH image adapter", () => {
 
       expect(settings.get(SETTINGS_NAMESPACE)).toEqual({
         bridgeUrl: DEFAULT_BRIDGE_URL,
+        generationModel: DEFAULT_GENERATION_MODEL,
+        editModel: DEFAULT_EDIT_MODEL,
       });
       expect(validOrDefault("unsafe/path")).toBe(DEFAULT_BRIDGE_URL);
+      expect(SettingsSchema({} as never)).toEqual(imagegenSettings());
+      expect(
+        SettingsSchema({
+          bridgeUrl: "https://bridge.example/",
+          generationModel: "  fast-model  ",
+          editModel: "  precise-model  ",
+        } as never),
+      ).toEqual(
+        imagegenSettings({
+          bridgeUrl: "https://bridge.example/",
+          generationModel: "fast-model",
+          editModel: "precise-model",
+        }),
+      );
+      expect(() => SettingsSchema({ generationModel: "   " } as never)).toThrow(
+        "string",
+      );
+      expect(() => SettingsSchema({ editModel: 42 } as never)).toThrow(
+        "string",
+      );
     } finally {
       if (typeof cleanup.value === "function") await cleanup.value();
     }
@@ -182,7 +222,11 @@ describe("DSH image adapter", () => {
         fs,
         attachments,
         fetch: bridgeFetch(calls),
-        getBridgeUrl: () => "https://bridge.example/",
+        getSettings: () =>
+          imagegenSettings({
+            bridgeUrl: "https://bridge.example/",
+            editModel: "precise-edit-model",
+          }),
         writeGeneratedImage: async (path, data, _fs, cwd) => {
           writes.push({ path, data, cwd });
         },
@@ -190,6 +234,7 @@ describe("DSH image adapter", () => {
     );
 
     expect(JSON.parse(requestBody(calls[0]?.init))).toEqual({
+      model: "precise-edit-model",
       prompt: "make it watercolor",
       images: ["data:image/png;base64,iVBORw0KGgoA"],
     });
@@ -221,7 +266,7 @@ describe("DSH image adapter", () => {
       fs: fakeFileSystem(),
       attachments: fakeAttachments(),
       fetch: bridgeFetch(calls),
-      getBridgeUrl: () => DEFAULT_BRIDGE_URL,
+      getSettings: () => imagegenSettings(),
       writeGeneratedImage: async () => undefined,
     };
     const exec = { agent: { session: { header: { cwd: "/workspace" } } } };
@@ -231,9 +276,14 @@ describe("DSH image adapter", () => {
       exec,
       services,
     );
+    expect(JSON.parse(requestBody(calls[0]?.init))).toMatchObject({
+      model: DEFAULT_EDIT_MODEL,
+      images: expect.any(Array),
+    });
     expect(JSON.parse(requestBody(calls[0]?.init)).images).toHaveLength(5);
     await generateWithDsh({ prompt: "generate" }, exec, services);
     expect(JSON.parse(requestBody(calls[1]?.init))).toEqual({
+      model: DEFAULT_GENERATION_MODEL,
       prompt: "generate",
     });
     await expect(
@@ -251,11 +301,70 @@ describe("DSH image adapter", () => {
     ).rejects.toThrow("nonblank");
   });
 
+  it("selects configured models from one coherent settings snapshot per operation", async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const settings = imagegenSettings({
+      bridgeUrl: "https://bridge.example/",
+      generationModel: "configured-generation",
+      editModel: "configured-edit",
+    });
+    let settingsReads = 0;
+    const services = {
+      fs: fakeFileSystem(),
+      attachments: fakeAttachments(),
+      fetch: bridgeFetch(calls),
+      getSettings: () => {
+        settingsReads += 1;
+        return settings;
+      },
+      writeGeneratedImage: async () => undefined,
+    };
+    const exec = { agent: { session: { header: { cwd: "/workspace" } } } };
+
+    await generateWithDsh({ prompt: "configured generation" }, exec, services);
+    expect(JSON.parse(requestBody(calls[0]?.init))).toEqual({
+      model: "configured-generation",
+      prompt: "configured generation",
+    });
+    expect(settingsReads).toBe(1);
+
+    await generateWithDsh(
+      { prompt: "configured edit", images: ["source.png"] },
+      exec,
+      services,
+    );
+    expect(JSON.parse(requestBody(calls[1]?.init))).toEqual({
+      model: "configured-edit",
+      prompt: "configured edit",
+      images: ["data:image/png;base64,iVBORw0KGgoA"],
+    });
+    expect(settingsReads).toBe(2);
+  });
+
+  it("rejects an invalid stored model before reading workspace sources", async () => {
+    const fs = fakeFileSystem();
+    await expect(
+      generateWithDsh(
+        { prompt: "edit", images: ["source.png"] },
+        { agent: { session: { header: { cwd: "/workspace" } } } },
+        {
+          fs,
+          attachments: fakeAttachments(),
+          fetch: bridgeFetch([]),
+          getSettings: () =>
+            imagegenSettings({ editModel: " " }) as ImagegenSettings,
+          writeGeneratedImage: async () => undefined,
+        },
+      ),
+    ).rejects.toThrow("nonblank image model");
+    expect(fs.limits).toEqual([]);
+  });
+
   it("fails source boundary violations without exposing host paths", async () => {
     const baseServices = {
       attachments: fakeAttachments(),
       fetch: bridgeFetch([]),
-      getBridgeUrl: () => DEFAULT_BRIDGE_URL,
+      getSettings: () => imagegenSettings(),
       writeGeneratedImage: async () => undefined,
     };
     const exec = { agent: { session: { header: { cwd: "/workspace" } } } };
@@ -326,7 +435,7 @@ describe("DSH image adapter", () => {
           fs,
           attachments: fakeAttachments(),
           fetch: bridgeFetch([]),
-          getBridgeUrl: () => DEFAULT_BRIDGE_URL,
+          getSettings: () => imagegenSettings(),
           writeGeneratedImage: async () => undefined,
         },
       ),
@@ -342,7 +451,7 @@ describe("DSH image adapter", () => {
       settings: {
         register(namespace: unknown) {
           expect(namespace).toBe(SETTINGS_NAMESPACE);
-          return { get: () => ({ bridgeUrl: "not a URL" }) };
+          return { get: () => imagegenSettings({ bridgeUrl: "not a URL" }) };
         },
       },
       tools: {
@@ -442,7 +551,7 @@ describe("DSH image adapter", () => {
     const scope = {
       getSnapshot: () => ({
         status: "ready" as const,
-        value: { bridgeUrl: "https://persisted.example/" },
+        value: imagegenSettings({ bridgeUrl: "https://persisted.example/" }),
         base: {},
         user: {},
         revision: 1,
@@ -450,50 +559,156 @@ describe("DSH image adapter", () => {
         mode: "host" as const,
       }),
       subscribe: () => () => undefined,
-      async set(_key: "bridgeUrl", value: string) {
+      async set(_key: string, value: string) {
         writes.push(value);
       },
     };
-    await expect(saveBridgeUrl(scope, "https://bridge.example/")).resolves.toBe(
-      "https://bridge.example",
-    );
     await expect(
-      saveBridgeUrl(scope, "https://bridge.example/path"),
+      saveSetting(scope, "bridgeUrl", "https://bridge.example/"),
+    ).resolves.toBe("https://bridge.example");
+    await expect(
+      saveSetting(scope, "bridgeUrl", "https://bridge.example/path"),
     ).rejects.toThrow("valid Kepos");
     expect(writes).toEqual(["https://bridge.example"]);
-    expect(bridgeUrlFromSnapshot(scope.getSnapshot())).toBe(
+    expect(imagegenSettingsFromSnapshot(scope.getSnapshot()).bridgeUrl).toBe(
       "https://persisted.example",
     );
-    expect(decodeSettings({ bridgeUrl: "https://bridge.example/" })).toEqual({
-      bridgeUrl: "https://bridge.example",
-    });
+    expect(decodeSettings({ bridgeUrl: "https://bridge.example/" })).toEqual(
+      imagegenSettings({ bridgeUrl: "https://bridge.example" }),
+    );
     expect(decodeSettings({ bridgeUrl: "unsafe/path" })).toEqual({
       bridgeUrl: DEFAULT_BRIDGE_URL,
-    });
-  });
-
-  it("keeps a staged bridge URL across failed or conflicting snapshot reloads", () => {
-    const edited = {
-      value: "https://draft.example",
-      saved: "https://saved.example",
-    };
-
-    expect(syncBridgeUrlDraft(edited, "https://saved.example")).toBe(edited);
-    expect(syncBridgeUrlDraft(edited, "https://other.example")).toEqual({
-      value: "https://draft.example",
-      saved: "https://other.example",
+      generationModel: DEFAULT_GENERATION_MODEL,
+      editModel: DEFAULT_EDIT_MODEL,
     });
     expect(
-      syncBridgeUrlDraft(
+      decodeSettings({
+        generationModel: "  configured-generation  ",
+        editModel: "configured-edit",
+      }),
+    ).toEqual(
+      imagegenSettings({
+        generationModel: "configured-generation",
+        editModel: "configured-edit",
+      }),
+    );
+    expect(() => decodeSettings({ generationModel: " " })).toThrow(
+      "nonblank image model",
+    );
+    expect(() => normalizeImagegenSettings({ editModel: 42 })).toThrow(
+      "nonblank image model",
+    );
+  });
+
+  it("keeps staged settings across failed or conflicting snapshot reloads", async () => {
+    const calls: Array<{ field: string; value: unknown }> = [];
+    const scope = {
+      getSnapshot: () => ({
+        status: "ready" as const,
+        value: imagegenSettings({ bridgeUrl: "https://saved.example" }),
+        base: {},
+        user: {},
+        revision: 1,
+        writable: true,
+        mode: "host" as const,
+      }),
+      subscribe: () => () => undefined,
+      async set(field: string, value: unknown) {
+        calls.push({ field, value });
+      },
+    };
+
+    await expect(
+      saveSetting(scope, "bridgeUrl", "https://bridge.example/"),
+    ).resolves.toBe("https://bridge.example");
+    await expect(
+      saveSetting(scope, "generationModel", "  configured-generation  "),
+    ).resolves.toBe("configured-generation");
+    await expect(saveSetting(scope, "editModel", " ")).rejects.toThrow(
+      "nonblank image model",
+    );
+    expect(calls).toEqual([
+      { field: "bridgeUrl", value: "https://bridge.example" },
+      { field: "generationModel", value: "configured-generation" },
+    ]);
+
+    const draft = {
+      bridgeUrl: {
+        value: "https://draft.example",
+        saved: "https://saved.example",
+      },
+      generationModel: {
+        value: "staged-generation",
+        saved: "saved-generation",
+      },
+      editModel: { value: "saved-edit", saved: "saved-edit" },
+    };
+    const saved = imagegenSettings({
+      bridgeUrl: "https://other.example",
+      generationModel: "other-generation",
+      editModel: "other-edit",
+    });
+
+    expect(
+      syncImagegenSettingsDraft(
+        draft,
+        imagegenSettings({
+          bridgeUrl: "https://saved.example",
+          generationModel: "saved-generation",
+          editModel: "saved-edit",
+        }),
+      ),
+    ).toEqual(draft);
+    expect(syncImagegenSettingsDraft(draft, saved)).toEqual({
+      bridgeUrl: {
+        value: "https://draft.example",
+        saved: "https://other.example",
+      },
+      generationModel: {
+        value: "staged-generation",
+        saved: "other-generation",
+      },
+      editModel: { value: "other-edit", saved: "other-edit" },
+    });
+    expect(
+      syncImagegenSettingsDraft(
         {
-          value: "https://saved.example",
-          saved: "https://saved.example",
+          bridgeUrl: {
+            value: "https://saved.example",
+            saved: "https://saved.example",
+          },
+          generationModel: {
+            value: "saved-generation",
+            saved: "saved-generation",
+          },
+          editModel: { value: "saved-edit", saved: "saved-edit" },
         },
-        "https://other.example",
+        saved,
       ),
     ).toEqual({
-      value: "https://other.example",
-      saved: "https://other.example",
+      bridgeUrl: {
+        value: "https://other.example",
+        saved: "https://other.example",
+      },
+      generationModel: {
+        value: "other-generation",
+        saved: "other-generation",
+      },
+      editModel: { value: "other-edit", saved: "other-edit" },
     });
+
+    const snapshot = {
+      status: "ready" as const,
+      value: imagegenSettings({
+        generationModel: "generation-from-snapshot",
+        editModel: "edit-from-snapshot",
+      }),
+      base: {},
+      user: {},
+      revision: 1,
+      writable: true,
+      mode: "host" as const,
+    };
+    expect(imagegenSettingsFromSnapshot(snapshot)).toEqual(snapshot.value);
   });
 });

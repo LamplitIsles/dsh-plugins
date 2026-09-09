@@ -61,6 +61,7 @@ describe("Kepos bridge core", () => {
     await expect(
       requestImage({
         fetch,
+        model: "gpt-image-2.5-flare",
         prompt: "a moonlit island",
         baseUrl: "https://bridge.example",
         signal: controller.signal,
@@ -71,7 +72,10 @@ describe("Kepos bridge core", () => {
       init: {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: "a moonlit island" }),
+        body: JSON.stringify({
+          model: "gpt-image-2.5-flare",
+          prompt: "a moonlit island",
+        }),
         credentials: "omit",
         signal: controller.signal,
       },
@@ -89,18 +93,32 @@ describe("Kepos bridge core", () => {
       return response();
     }) as typeof globalThis.fetch;
 
-    await requestImage({ fetch, prompt: "edit it", images: [source] });
-    expect(JSON.parse(body)).toEqual({ prompt: "edit it", images: [source] });
+    await requestImage({
+      fetch,
+      model: "gpt-image-2.5-sunburst",
+      prompt: "edit it",
+      images: [source],
+    });
+    expect(JSON.parse(body)).toEqual({
+      model: "gpt-image-2.5-sunburst",
+      prompt: "edit it",
+      images: [source],
+    });
   });
 
   it("rejects invalid prompts, source URLs, image counts, and noncanonical data", async () => {
     const neverFetch = (() =>
       Promise.reject(new Error("not called"))) as typeof globalThis.fetch;
     await expect(
-      requestImage({ fetch: neverFetch, prompt: " " }),
+      requestImage({ fetch: neverFetch, model: "test-model", prompt: " " }),
     ).rejects.toThrow("nonblank");
     await expect(
-      requestImage({ fetch: neverFetch, prompt: "ok", images: [] }),
+      requestImage({
+        fetch: neverFetch,
+        model: "test-model",
+        prompt: "ok",
+        images: [],
+      }),
     ).rejects.toThrow("between one and five");
     expect(() => decodeImageDataUrl("data:image/png;base64,AA")).toThrow(
       ImagegenError,
@@ -119,33 +137,69 @@ describe("Kepos bridge core", () => {
         status: 502,
       })) as typeof globalThis.fetch;
     await expect(
-      requestImage({ fetch: rejected, prompt: "ok" }),
+      requestImage({ fetch: rejected, model: "test-model", prompt: "ok" }),
     ).rejects.toThrow("rejected the request");
 
     const malformed = (async () =>
       response("data:image/jpeg;base64,/9j/")) as typeof globalThis.fetch;
     await expect(
-      requestImage({ fetch: malformed, prompt: "ok" }),
+      requestImage({ fetch: malformed, model: "test-model", prompt: "ok" }),
     ).rejects.toThrow("invalid PNG");
   });
 
   it("enforces the bridge's encoded JSON limit and derives next-source capacity from it", () => {
     const prefix = "data:image/png;base64,";
     const fixed = new TextEncoder().encode(
-      JSON.stringify({ prompt: "x", images: [prefix] }),
+      JSON.stringify({
+        model: "test-model",
+        prompt: "x",
+        images: [prefix],
+      }),
     ).byteLength;
-    expect(remainingSourceBytes("x", [], "image/png")).toBe(
+    expect(remainingSourceBytes("test-model", "x", [], "image/png")).toBe(
       Math.floor((MAX_BRIDGE_JSON_BYTES - fixed) / 4) * 3,
     );
     expect(
       remainingSourceBytes(
+        "test-model",
         "x",
         [pngUrl, pngUrl, pngUrl, pngUrl, pngUrl],
         "image/png",
       ),
     ).toBe(0);
     expect(() =>
-      assertBridgePayloadFits("x".repeat(MAX_BRIDGE_JSON_BYTES), undefined),
+      assertBridgePayloadFits(
+        "test-model",
+        "x".repeat(MAX_BRIDGE_JSON_BYTES),
+        undefined,
+      ),
     ).toThrow("too large");
+  });
+
+  it("counts escaped and multibyte model bytes before the source read budget", () => {
+    const model = `model-"${"界".repeat(32)}`;
+    const prefix = "data:image/png;base64,";
+    const fixed = new TextEncoder().encode(
+      JSON.stringify({ model, prompt: "x", images: [prefix] }),
+    ).byteLength;
+
+    expect(remainingSourceBytes(model, "x", [], "image/png")).toBe(
+      Math.floor((MAX_BRIDGE_JSON_BYTES - fixed) / 4) * 3,
+    );
+    expect(() =>
+      assertBridgePayloadFits(` ${"界".repeat(MAX_BRIDGE_JSON_BYTES)} `, "x"),
+    ).toThrow("too large");
+  });
+
+  it("requires an explicit nonblank model without a transport default", async () => {
+    const neverFetch = (() =>
+      Promise.reject(new Error("not called"))) as typeof globalThis.fetch;
+
+    await expect(
+      requestImage({ fetch: neverFetch, model: " ", prompt: "ok" }),
+    ).rejects.toThrow("nonblank image model");
+    await expect(
+      requestImage({ fetch: neverFetch, model: 42 as never, prompt: "ok" }),
+    ).rejects.toThrow("nonblank image model");
   });
 });

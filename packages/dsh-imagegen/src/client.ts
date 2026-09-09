@@ -1,4 +1,14 @@
-import { DEFAULT_BRIDGE_URL, normalizeBridgeUrl } from "./core.js";
+import {
+  DEFAULT_BRIDGE_URL,
+  ImagegenError,
+  normalizeBridgeUrl,
+  normalizeModel,
+} from "./core.js";
+import {
+  DEFAULT_EDIT_MODEL,
+  DEFAULT_GENERATION_MODEL,
+  type ImagegenSettings,
+} from "./constants.js";
 import type { Context as ClientContext } from "@deepseek-ai/cordis";
 import type {
   ISession,
@@ -14,7 +24,7 @@ import type {} from "@deepseek-ai/dsh-client-ui-settings-plugins/client";
 import type { ImageAttachmentRef } from "@deepseek-ai/dsh-attachment";
 import { IconChevronDownOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 import type { ToolCallViewProps } from "@deepseek-ai/dsh-client-ui-tool/client";
-import { createElement, useEffect, useId, useState } from "react";
+import { createElement, useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import cssText from "./client.css";
 import styles from "./settings.module.css";
@@ -22,51 +32,91 @@ import styles from "./settings.module.css";
 export const SETTINGS_NAMESPACE = "lamplitisles-kepos-imagegen";
 export const inject = ["sessions", "settingsScope", "slots"] as const;
 
-export interface ClientSettings {
-  bridgeUrl?: string;
-}
+export type ClientSettings = ImagegenSettings;
 
 export type SettingsScope = Pick<
   DshSettingsScope<ClientSettings>,
-  "getSnapshot" | "subscribe" | "set"
+  "getSnapshot" | "subscribe" | "mutate" | "set"
 >;
 
 export function decodeSettings(value: unknown): ClientSettings {
-  if (typeof value !== "object" || value === null) {
-    return { bridgeUrl: DEFAULT_BRIDGE_URL };
+  if (value === undefined || value === null) {
+    return defaultClientSettings();
   }
-  const bridgeUrl = (value as { bridgeUrl?: unknown }).bridgeUrl;
-  return { bridgeUrl: validOrDefault(bridgeUrl) };
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new ImagegenError("The Kepos image settings are invalid.");
+  }
+  const settings = value as Record<string, unknown>;
+  return {
+    bridgeUrl: validOrDefault(settings.bridgeUrl),
+    generationModel: modelOrDefault(
+      settings.generationModel,
+      DEFAULT_GENERATION_MODEL,
+    ),
+    editModel: modelOrDefault(settings.editModel, DEFAULT_EDIT_MODEL),
+  };
 }
 
-export async function saveBridgeUrl(
-  scope: SettingsScope,
+export type ImagegenSettingKey = keyof ClientSettings;
+
+export function normalizeSetting(
+  field: ImagegenSettingKey,
+  value: string,
+): string {
+  return field === "bridgeUrl"
+    ? normalizeBridgeUrl(value)
+    : normalizeModel(value);
+}
+
+export async function saveSetting(
+  scope: Pick<SettingsScope, "set">,
+  field: ImagegenSettingKey,
   value: string,
 ): Promise<string> {
-  const bridgeUrl = normalizeBridgeUrl(value);
-  await scope.set("bridgeUrl", bridgeUrl);
-  return bridgeUrl;
+  const normalized = normalizeSetting(field, value);
+  await scope.set(field, normalized);
+  return normalized;
 }
 
-export function bridgeUrlFromSnapshot(
+export function imagegenSettingsFromSnapshot(
   snapshot: SettingsScopeSnapshot<ClientSettings>,
-): string {
-  return validOrDefault(snapshot.value?.bridgeUrl);
+): ClientSettings {
+  return decodeSettings(snapshot.value);
 }
 
-export interface BridgeUrlDraft {
+export interface SettingDraft {
   value: string;
   saved: string;
 }
 
-export function syncBridgeUrlDraft(
-  draft: BridgeUrlDraft,
+export function syncSettingDraft(
+  draft: SettingDraft,
   saved: string,
-): BridgeUrlDraft {
+): SettingDraft {
   if (draft.saved === saved) return draft;
   return draft.value === draft.saved
     ? { value: saved, saved }
     : { value: draft.value, saved };
+}
+
+export interface ImagegenSettingsDraft {
+  bridgeUrl: SettingDraft;
+  generationModel: SettingDraft;
+  editModel: SettingDraft;
+}
+
+export function syncImagegenSettingsDraft(
+  draft: ImagegenSettingsDraft,
+  saved: ClientSettings,
+): ImagegenSettingsDraft {
+  return {
+    bridgeUrl: syncSettingDraft(draft.bridgeUrl, saved.bridgeUrl),
+    generationModel: syncSettingDraft(
+      draft.generationModel,
+      saved.generationModel,
+    ),
+    editModel: syncSettingDraft(draft.editModel, saved.editModel),
+  };
 }
 
 export function apply(ctx: ClientContext): void {
@@ -281,12 +331,11 @@ function isToolResult(
 
 function SettingsCard({ scope }: { scope: SettingsScope }) {
   const [snapshot, setSnapshot] = useState(() => scope.getSnapshot());
-  const initialBridgeUrl = bridgeUrlFromSnapshot(snapshot);
-  const [draft, setDraft] = useState<BridgeUrlDraft>(() => ({
-    value: initialBridgeUrl,
-    saved: initialBridgeUrl,
-  }));
-  const [feedback, setFeedback] = useState<string>();
+  const initialSettings = imagegenSettingsFromSnapshot(snapshot);
+  const [draft, setDraft] = useState<ImagegenSettingsDraft>(() =>
+    imagegenSettingsDraft(initialSettings),
+  );
+  const [feedback, setFeedback] = useState<SettingsFeedback>();
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
   const cardId = useId();
@@ -295,23 +344,75 @@ function SettingsCard({ scope }: { scope: SettingsScope }) {
     () => scope.subscribe(() => setSnapshot(scope.getSnapshot())),
     [scope],
   );
-  const saved = bridgeUrlFromSnapshot(snapshot);
-  const dirty = draft.value !== draft.saved;
+  const saved = useMemo(
+    () => imagegenSettingsFromSnapshot(snapshot),
+    [snapshot],
+  );
+  const dirty = Object.values(draft).some(
+    ({ value, saved: savedValue }) => value !== savedValue,
+  );
   useEffect(() => {
     // Reconcile an external Host snapshot without overwriting local edits.
     // oxlint-disable-next-line react/set-state-in-effect -- this is external-store reconciliation.
-    setDraft((current) => syncBridgeUrlDraft(current, saved));
+    setDraft((current) => syncImagegenSettingsDraft(current, saved));
   }, [saved]);
+
+  const setFieldValue = (field: ImagegenSettingKey, value: string) => {
+    setDraft((current) => ({
+      ...current,
+      [field]: { ...current[field], value },
+    }));
+    setFeedback(undefined);
+  };
 
   const save = async () => {
     setFeedback(undefined);
+    const normalized = {} as Record<ImagegenSettingKey, string>;
+    for (const field of IMAGEGEN_SETTING_KEYS) {
+      try {
+        normalized[field] = normalizeSetting(field, draft[field].value);
+      } catch (error) {
+        setFeedback({
+          field,
+          message: error instanceof Error ? error.message : "Invalid setting.",
+        });
+        return;
+      }
+    }
+
     try {
       setSaving(true);
-      const bridgeUrl = await saveBridgeUrl(scope, draft.value);
-      setDraft({ value: bridgeUrl, saved: bridgeUrl });
+      const changes = IMAGEGEN_SETTING_KEYS.filter(
+        (field) => normalized[field] !== draft[field].saved,
+      ).map((field) => ({
+        op: "set" as const,
+        path: [field],
+        value: normalized[field],
+      }));
+      if (changes.length > 0) await scope.mutate(changes);
+      setDraft({
+        bridgeUrl: {
+          value: normalized.bridgeUrl,
+          saved: normalized.bridgeUrl,
+        },
+        generationModel: {
+          value: normalized.generationModel,
+          saved: normalized.generationModel,
+        },
+        editModel: {
+          value: normalized.editModel,
+          saved: normalized.editModel,
+        },
+      });
       setFeedback(undefined);
-    } catch {
-      setFeedback("Enter a valid Kepos bridge address.");
+      setOpen(false);
+    } catch (error) {
+      setFeedback({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Image settings could not be saved from this connection.",
+      });
     } finally {
       setSaving(false);
     }
@@ -345,7 +446,7 @@ function SettingsCard({ scope }: { scope: SettingsScope }) {
         createElement(
           "span",
           { className: styles.description },
-          "Bridge used for generated image attachments.",
+          "Bridge and model policy for generated image attachments.",
         ),
       ),
       dirty
@@ -366,43 +467,36 @@ function SettingsCard({ scope }: { scope: SettingsScope }) {
                 "This deployment is read-only.",
               )
             : null,
-          createElement(
-            "div",
-            { className: styles.field },
-            createElement(
-              "label",
-              { className: styles.label, htmlFor: `${cardId}-bridge` },
-              "Kepos bridge address",
-            ),
-            createElement("input", {
-              className: styles.control,
-              id: `${cardId}-bridge`,
-              type: "text",
-              value: draft.value,
-              "aria-describedby": `${cardId}-bridge-hint`,
-              disabled: saving || !snapshot.writable,
-              onChange: (event: { target: { value: string } }) => {
-                setDraft((current) => ({
-                  ...current,
-                  value: event.target.value,
-                }));
-                setFeedback(undefined);
-              },
-            }),
-            createElement(
-              "p",
-              { className: styles.hint, id: `${cardId}-bridge-hint` },
-              "The plugin appends /codex/images to this address.",
-            ),
+          renderSettingField(
+            "bridgeUrl",
+            "bridge",
+            "Kepos bridge address",
+            "The plugin appends /codex/images to this address.",
+          ),
+          renderSettingField(
+            "generationModel",
+            "generation-model",
+            "Generation model",
+            `Used when images are omitted. Default: ${DEFAULT_GENERATION_MODEL}.`,
+          ),
+          renderSettingField(
+            "editModel",
+            "edit-model",
+            "Editing model",
+            `Used with one through five source images. Default: ${DEFAULT_EDIT_MODEL}.`,
           ),
           createElement(
             "div",
             { className: styles.footer },
-            feedback
+            feedback && feedback.field === undefined
               ? createElement(
                   "p",
-                  { className: styles.error, role: "alert" },
-                  feedback,
+                  {
+                    className: styles.error,
+                    id: `${cardId}-save-error`,
+                    role: "alert",
+                  },
+                  feedback.message,
                 )
               : null,
             createElement(
@@ -412,7 +506,7 @@ function SettingsCard({ scope }: { scope: SettingsScope }) {
                 type: "button",
                 disabled: !dirty || saving,
                 onClick: () => {
-                  setDraft({ value: saved, saved });
+                  setDraft(imagegenSettingsDraft(saved));
                   setFeedback(undefined);
                 },
               },
@@ -432,6 +526,74 @@ function SettingsCard({ scope }: { scope: SettingsScope }) {
         )
       : null,
   );
+
+  function renderSettingField(
+    field: ImagegenSettingKey,
+    idSuffix: string,
+    label: string,
+    hint: string,
+  ) {
+    const fieldError = feedback?.field === field ? feedback.message : undefined;
+    const hintId = `${cardId}-${idSuffix}-hint`;
+    const errorId = `${cardId}-${idSuffix}-error`;
+    const describedBy = [hintId];
+    if (fieldError) describedBy.push(errorId);
+    else if (feedback !== undefined && feedback.field === undefined) {
+      describedBy.push(`${cardId}-save-error`);
+    }
+    return createElement(
+      "div",
+      { className: styles.field, key: field },
+      createElement(
+        "label",
+        { className: styles.label, htmlFor: `${cardId}-${idSuffix}` },
+        label,
+      ),
+      createElement("input", {
+        className: styles.control,
+        id: `${cardId}-${idSuffix}`,
+        type: "text",
+        value: draft[field].value,
+        "aria-describedby": describedBy.join(" "),
+        "aria-invalid": fieldError ? true : undefined,
+        disabled: saving || !snapshot.writable,
+        onChange: (event: { target: { value: string } }) =>
+          setFieldValue(field, event.target.value),
+      }),
+      createElement("p", { className: styles.hint, id: hintId }, hint),
+      fieldError
+        ? createElement(
+            "p",
+            { className: styles.error, id: errorId, role: "alert" },
+            fieldError,
+          )
+        : null,
+    );
+  }
+}
+
+const IMAGEGEN_SETTING_KEYS = [
+  "bridgeUrl",
+  "generationModel",
+  "editModel",
+] as const satisfies readonly ImagegenSettingKey[];
+
+type SettingsFeedback = {
+  field?: ImagegenSettingKey;
+  message: string;
+};
+
+function imagegenSettingsDraft(
+  settings: ClientSettings,
+): ImagegenSettingsDraft {
+  return {
+    bridgeUrl: { value: settings.bridgeUrl, saved: settings.bridgeUrl },
+    generationModel: {
+      value: settings.generationModel,
+      saved: settings.generationModel,
+    },
+    editModel: { value: settings.editModel, saved: settings.editModel },
+  };
 }
 
 function installStyles(css: string): () => void {
@@ -450,4 +612,16 @@ function validOrDefault(value: unknown): string {
   } catch {
     return DEFAULT_BRIDGE_URL;
   }
+}
+
+function defaultClientSettings(): ClientSettings {
+  return {
+    bridgeUrl: DEFAULT_BRIDGE_URL,
+    generationModel: DEFAULT_GENERATION_MODEL,
+    editModel: DEFAULT_EDIT_MODEL,
+  };
+}
+
+function modelOrDefault(value: unknown, fallback: string): string {
+  return value === undefined ? fallback : normalizeModel(value);
 }

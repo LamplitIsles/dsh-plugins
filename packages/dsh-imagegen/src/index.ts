@@ -4,12 +4,18 @@ import {
   assertNonblankPrompt,
   encodeImageDataUrl,
   isSupportedMediaType,
+  normalizeModel,
   normalizeBridgeUrl,
   remainingSourceBytes,
   requestImage,
   type ImageMediaType,
   type RequestImageOptions,
 } from "./core.js";
+import {
+  DEFAULT_EDIT_MODEL,
+  DEFAULT_GENERATION_MODEL,
+  type ImagegenSettings,
+} from "./constants.js";
 import type { ImageAttachmentRef } from "@deepseek-ai/dsh-attachment";
 import z from "@deepseek-ai/schemastery";
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
@@ -22,8 +28,15 @@ export const inject = ["attachments", "fs", "settings", "tools"] as const;
 export const SETTINGS_NAMESPACE = "lamplitisles-kepos-imagegen";
 export const GENERATED_IMAGES_DIRECTORY = ".dsh/kepos-imagegen";
 
-export const SettingsSchema = z.object({
+const modelSetting = (fallback: string) =>
+  z
+    .transform(z.string().pattern(/\S/u), (value: string) => value.trim(), true)
+    .default(fallback);
+
+export const SettingsSchema: z<ImagegenSettings> = z.object({
   bridgeUrl: z.string().default(DEFAULT_BRIDGE_URL).loose(),
+  generationModel: modelSetting(DEFAULT_GENERATION_MODEL),
+  editModel: modelSetting(DEFAULT_EDIT_MODEL),
 });
 
 export interface DshTarget {
@@ -74,7 +87,7 @@ export interface DshImageArgs {
 export interface DshPluginServices {
   attachments: DshAttachments;
   fs: DshFileSystem;
-  getBridgeUrl(): string;
+  getSettings(): ImagegenSettings;
   fetch: typeof globalThis.fetch;
   writeGeneratedImage(
     path: string,
@@ -103,7 +116,11 @@ type DshContext = {
       namespace: unknown,
       schema: unknown,
     ): {
-      get(): { bridgeUrl?: unknown };
+      get(): {
+        bridgeUrl?: unknown;
+        generationModel?: unknown;
+        editModel?: unknown;
+      };
     };
   };
   tools: { register(definition: ToolDefinition): unknown };
@@ -178,7 +195,7 @@ export function apply(ctx: DshContext): void {
       return generateWithDsh(args, exec, {
         attachments: ctx.attachments,
         fs: ctx.fs,
-        getBridgeUrl: () => validOrDefault(scope.get().bridgeUrl),
+        getSettings: () => normalizeImagegenSettings(scope.get()),
         fetch: globalThis.fetch,
         writeGeneratedImage,
       });
@@ -194,10 +211,14 @@ export async function generateWithDsh(
 ): Promise<DshToolResult> {
   try {
     const { prompt, images } = parseArgs(args);
+    const settings = normalizeImagegenSettings(services.getSettings());
     const cwd = workspaceCwd(exec);
+    const model =
+      images === undefined ? settings.generationModel : settings.editModel;
     const sourceUrls = images
       ? await readDshSources(
           images,
+          model,
           prompt,
           exec,
           services.fs,
@@ -206,8 +227,9 @@ export async function generateWithDsh(
       : undefined;
     const request: RequestImageOptions = {
       fetch: services.fetch,
+      model,
       prompt,
-      baseUrl: validOrDefault(services.getBridgeUrl()),
+      baseUrl: settings.bridgeUrl,
     };
     if (sourceUrls !== undefined) request.images = sourceUrls;
     if (exec.signal !== undefined) request.signal = exec.signal;
@@ -300,6 +322,7 @@ function parseArgs(value: unknown): DshImageArgs {
 
 async function readDshSources(
   images: readonly string[],
+  model: string,
   prompt: string,
   exec: DshExecution,
   fs: DshFileSystem,
@@ -328,7 +351,7 @@ async function readDshSources(
     if (!stat || stat.type !== "file") {
       throw new ImagegenError("Each source image must be a regular file.");
     }
-    const maxBytes = remainingSourceBytes(prompt, sourceUrls, mediaType);
+    const maxBytes = remainingSourceBytes(model, prompt, sourceUrls, mediaType);
     if (maxBytes === 0) {
       throw new ImagegenError(
         "The image request is too large for the Kepos bridge.",
@@ -358,6 +381,24 @@ export function validOrDefault(value: unknown): string {
   } catch {
     return DEFAULT_BRIDGE_URL;
   }
+}
+
+export function normalizeImagegenSettings(value: unknown): ImagegenSettings {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ImagegenError("The Kepos image settings are invalid.");
+  }
+  const settings = value as Record<string, unknown>;
+  return {
+    bridgeUrl: validOrDefault(settings.bridgeUrl),
+    generationModel:
+      settings.generationModel === undefined
+        ? DEFAULT_GENERATION_MODEL
+        : normalizeModel(settings.generationModel),
+    editModel:
+      settings.editModel === undefined
+        ? DEFAULT_EDIT_MODEL
+        : normalizeModel(settings.editModel),
+  };
 }
 
 function mediaTypeForPath(path: string): ImageMediaType {
