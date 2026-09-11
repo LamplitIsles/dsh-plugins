@@ -81,6 +81,30 @@ export interface CompanionStateRecord {
   state: CompanionState;
 }
 
+export interface CompanionHistoryPage {
+  /** Records are newest first within this page. */
+  records: CompanionStateRecord[];
+  /** The next `before` cursor, or undefined when this is the oldest page. */
+  nextBefore?: number;
+  hasEarlier: boolean;
+  /** The complete record immediately before the oldest visible record. */
+  predecessor?: CompanionStateRecord;
+}
+
+export type CompanionHistoryValue =
+  | { value: Mood; note?: string }
+  | { value: number }
+  | { value: string };
+
+export interface CompanionHistoryChange {
+  dimension: "mood" | "affinity" | "signature";
+  before?: CompanionHistoryValue;
+  after: CompanionHistoryValue;
+  reason?: string;
+}
+
+export { companionHistoryChanges } from "./relationship-history.js";
+
 export interface RelationshipUpdate {
   mood?: { value: Mood; note?: string; reason: string };
   affinity?: { delta: number; reason: string };
@@ -195,6 +219,34 @@ export function canonicalizeHistoryRead(value: unknown): number {
     throw new CompanionValidationError("历史读取包含未知字段。");
   }
   return canonicalizeHistoryLimit(record.limit);
+}
+
+export interface CompanionHistoryPageRead {
+  limit: number;
+  /** Absolute exclusive record position, counted from the beginning. */
+  before?: number;
+}
+
+export function canonicalizeHistoryPageRead(
+  value: unknown,
+): CompanionHistoryPageRead {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new CompanionValidationError("历史分页读取格式无效。");
+  }
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => key !== "limit" && key !== "before")) {
+    throw new CompanionValidationError("历史分页读取包含未知字段。");
+  }
+  const limit = canonicalizeHistoryLimit(record.limit);
+  if (record.before === undefined) return { limit };
+  if (
+    typeof record.before !== "number" ||
+    !Number.isSafeInteger(record.before) ||
+    record.before < 0
+  ) {
+    throw new CompanionValidationError("历史分页位置必须是非负整数。");
+  }
+  return { limit, before: record.before };
 }
 
 function canonicalizeOptionalChangeReason(value: unknown): string | undefined {
@@ -741,6 +793,39 @@ export class CompanionStateStore {
       .reverse();
   }
 
+  /**
+   * Read one stable-position page of the append-only history. Positions are
+   * counted from the beginning, so appending newer records never invalidates
+   * a cursor held by a client browsing earlier records.
+   */
+  async readHistoryPage(
+    input: unknown = {},
+    signal?: AbortSignal,
+  ): Promise<CompanionHistoryPage> {
+    const request = canonicalizeHistoryPageRead(input);
+    if (signal?.aborted) throw signal.reason ?? new Error("aborted");
+    await this.load(signal);
+    if (signal?.aborted) throw signal.reason ?? new Error("aborted");
+    const history = decodeCompanionStateHistory(
+      this.historyText,
+      this.defaultAffinity,
+    );
+    const end = request.before ?? history.length;
+    if (end > history.length) {
+      throw new CompanionValidationError("历史分页位置超出当前记录。");
+    }
+    const start = Math.max(0, end - request.limit);
+    const records = history.slice(start, end).reverse();
+    return {
+      records,
+      hasEarlier: start > 0,
+      ...(start > 0 ? { nextBefore: start } : {}),
+      ...(start > 0 && history[start - 1]
+        ? { predecessor: history[start - 1] }
+        : {}),
+    };
+  }
+
   subscribe(listener: (state: CompanionState) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -1123,11 +1208,10 @@ export function isCompanionPath(pathname: string): boolean {
   return pathname === "/companion" || pathname.startsWith(COMPANION_PATH);
 }
 
-/** Deterministic remembered → recent → blank selection (never cross Workspace). */
+/** Deterministic recent → blank selection (never crosses Workspace). */
 export function selectCompanionSession(
   workspaceId: string,
   sessions: readonly SessionCandidate[],
-  rememberedId?: string,
   ownership: {
     sessionIds?: readonly string[];
     archivedSessionIds?: readonly string[];
@@ -1147,8 +1231,6 @@ export function selectCompanionSession(
       !session.subagent &&
       session.origin !== "subagent",
   );
-  if (rememberedId && members.some((session) => session.id === rememberedId))
-    return rememberedId;
   const recent = members
     .filter((session) => !session.blank)
     .sort(
@@ -1156,7 +1238,14 @@ export function selectCompanionSession(
         (right.updatedAt ?? 0) - (left.updatedAt ?? 0) ||
         left.id.localeCompare(right.id),
     )[0];
-  return recent?.id ?? members.find((session) => session.blank)?.id;
+  const blank = members
+    .filter((session) => session.blank)
+    .sort(
+      (left, right) =>
+        (right.updatedAt ?? 0) - (left.updatedAt ?? 0) ||
+        left.id.localeCompare(right.id),
+    )[0];
+  return recent?.id ?? blank?.id;
 }
 
 export type PresenceStatus = "ready" | "working" | "reconnecting";

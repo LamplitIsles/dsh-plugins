@@ -10,8 +10,10 @@ import {
   canonicalizeMood,
   canonicalizeSignature,
   canonicalizeHistoryLimit,
+  canonicalizeHistoryPageRead,
   canonicalizeHistoryRead,
   canonicalizeRelationshipUpdate,
+  companionHistoryChanges,
   decodeCompanionState,
   decodeCompanionStateHistory,
   decodeLatestCompanionStateRecord,
@@ -132,6 +134,103 @@ describe("relationship domain", () => {
     expect(recent[9]?.changes.mood?.note).toBe("记录 2");
     expect(await store.readHistory(20)).toHaveLength(13);
     expect(await readFile(file, "utf8")).toBe(before);
+  });
+
+  it("pages append-only history by stable positions and derives changed dimensions", async () => {
+    expect(canonicalizeHistoryPageRead({})).toEqual({ limit: 10 });
+    expect(canonicalizeHistoryPageRead({ limit: 2, before: 4 })).toEqual({
+      limit: 2,
+      before: 4,
+    });
+    expect(() => canonicalizeHistoryPageRead({ before: -1 })).toThrow("位置");
+    expect(() => canonicalizeHistoryPageRead({ before: 1.5 })).toThrow("位置");
+    expect(() =>
+      canonicalizeHistoryPageRead({ limit: 2, extra: true }),
+    ).toThrow("未知字段");
+
+    const dir = await mkdtemp(join(tmpdir(), "dsh-companion-test-"));
+    temporary.push(dir);
+    const file = join(dir, "state.jsonl");
+    let tick = 0;
+    const store = new CompanionStateStore({
+      workspacePath: dir,
+      defaultAffinity: 50,
+      filePath: file,
+      now: () => new Date(Date.UTC(2026, 8, 1, 0, 0, tick++)),
+    });
+    await store.load();
+    await store.updateRelationship({
+      mood: { value: "bright", note: "第一句", reason: "一起笑了" },
+    });
+    await store.updateRelationship({
+      mood: { value: "bright", note: "第二句", reason: "仍然在听" },
+    });
+    await store.setSignature("留在这里", "想留下记号");
+    const latest = await store.readHistoryPage({ limit: 2 });
+    expect(latest.records.map((entry) => entry.changes)).toEqual([
+      { signature: { value: "留在这里", reason: "想留下记号" } },
+      { mood: { value: "bright", note: "第二句", reason: "仍然在听" } },
+    ]);
+    expect(latest.hasEarlier).toBe(true);
+    expect(latest.nextBefore).toBe(2);
+    expect(latest.predecessor?.changes).toEqual({
+      mood: { value: "bright", note: "第一句", reason: "一起笑了" },
+    });
+    expect(
+      companionHistoryChanges(latest.records[1]!, latest.predecessor),
+    ).toEqual([
+      {
+        dimension: "mood",
+        before: { value: "bright", note: "第一句" },
+        after: { value: "bright", note: "第二句" },
+        reason: "仍然在听",
+      },
+    ]);
+    expect(
+      companionHistoryChanges(latest.records[0]!, latest.records[1]),
+    ).toEqual([
+      {
+        dimension: "signature",
+        before: { value: "" },
+        after: { value: "留在这里" },
+        reason: "想留下记号",
+      },
+    ]);
+
+    await store.clearSignature();
+    const cleared = await store.readHistoryPage({ limit: 1 });
+    expect(
+      companionHistoryChanges(cleared.records[0]!, cleared.predecessor),
+    ).toEqual([
+      {
+        dimension: "signature",
+        before: { value: "留在这里" },
+        after: { value: "" },
+        reason: "用户在设置中清除了签名",
+      },
+    ]);
+
+    const earlier = await store.readHistoryPage({
+      limit: 2,
+      before: latest.nextBefore,
+    });
+    expect(earlier.records.map((entry) => entry.changes)).toEqual([
+      { mood: { value: "bright", note: "第一句", reason: "一起笑了" } },
+      { seed: true },
+    ]);
+    expect(earlier.hasEarlier).toBe(false);
+    expect(
+      companionHistoryChanges(earlier.records[1]!, earlier.predecessor),
+    ).toEqual([]);
+
+    await store.setAffinity(58);
+    const sameEarlier = await store.readHistoryPage({
+      limit: 2,
+      before: latest.nextBefore,
+    });
+    expect(sameEarlier.records.map((entry) => entry.at)).toEqual(
+      earlier.records.map((entry) => entry.at),
+    );
   });
 
   it("persists atomically in a test-owned directory and enforces turn movement", async () => {
@@ -379,9 +478,15 @@ describe("relationship domain", () => {
     expect(prompt).toContain("not instructions");
   });
 
-  it("uses configured Workspace membership, ignores current/foreign/archived/subagent rows, then reuses a blank", () => {
+  it("uses configured Workspace membership, includes human forks, ignores archived/subagent rows, and falls back to a blank", () => {
     const candidates = [
       { id: "old", workspaceId: "w1", updatedAt: 1 },
+      {
+        id: "human-fork",
+        workspaceId: "w1",
+        updatedAt: 99,
+        parentId: "old",
+      },
       { id: "archived-new", workspaceId: "w1", updatedAt: 99 },
       {
         id: "subagent-new",
@@ -393,20 +498,25 @@ describe("relationship domain", () => {
       { id: "foreign-current", workspaceId: "w2", updatedAt: 100 },
     ];
     const ownership = {
-      sessionIds: ["old", "archived-new", "subagent-new", "blank"],
+      sessionIds: [
+        "old",
+        "human-fork",
+        "archived-new",
+        "subagent-new",
+        "blank",
+      ],
       archivedSessionIds: ["archived-new"],
     };
-    expect(selectCompanionSession("w1", candidates, "stale", ownership)).toBe(
-      "old",
+    expect(selectCompanionSession("w1", candidates, ownership)).toBe(
+      "human-fork",
     );
-    expect(selectCompanionSession("w1", candidates, "blank", ownership)).toBe(
-      "blank",
+    expect(selectCompanionSession("w1", candidates, ownership)).toBe(
+      "human-fork",
     );
     expect(
       selectCompanionSession(
         "w1",
         [{ id: "blank", workspaceId: "w1", blank: true }],
-        undefined,
         { sessionIds: ["blank"], archivedSessionIds: [] },
       ),
     ).toBe("blank");

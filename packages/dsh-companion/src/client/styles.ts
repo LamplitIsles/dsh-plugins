@@ -3,6 +3,7 @@ import type { Context as ClientContext } from "@deepseek-ai/cordis";
 export const CLIENT_PLUGIN_ID = "@lamplitisles/dsh-companion" as const;
 export const APPLICATION_STYLESHEET_ID =
   `${CLIENT_PLUGIN_ID}/application.css` as const;
+export const ENTRY_STYLESHEET_ID = `${CLIENT_PLUGIN_ID}/entry.css` as const;
 export const SETTINGS_STYLESHEET_ID =
   `${CLIENT_PLUGIN_ID}/settings.css` as const;
 

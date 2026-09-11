@@ -34,7 +34,21 @@ export interface CompanionSessionListItem {
   selected: boolean;
 }
 
-/** Project only root sessions owned by the configured Workspace into sidebar rows. */
+/** Keep a manual selection stable while the authoritative list is reordered. */
+export function resolveCompanionSessionSelection(
+  workspaceId: string | undefined,
+  explicit: { workspaceId: string; sessionId: string } | undefined,
+  available: readonly CompanionSessionListItem[],
+  entrySessionId: string | undefined,
+): string | undefined {
+  return workspaceId !== undefined &&
+    explicit?.workspaceId === workspaceId &&
+    available.some((item) => item.id === explicit.sessionId)
+    ? explicit.sessionId
+    : entrySessionId;
+}
+
+/** Project eligible sessions owned by the configured Workspace into sidebar rows. */
 export function companionSessionList(
   sessions: readonly CompanionSessionCandidate[],
   selectedId: string | undefined,
@@ -52,7 +66,6 @@ export function companionSessionList(
         memberIds.has(session.id) &&
         !archivedIds.has(session.id) &&
         !session.archived &&
-        !session.parentId &&
         session.origin !== "subagent",
     )
     .sort(
@@ -74,7 +87,6 @@ export function companionSessionList(
 /** Workspace.sessionIds is authoritative; list.current and cwd never decide Companion ownership. */
 export function selectCompanionSession(
   sessions: readonly CompanionSessionCandidate[],
-  rememberedId: string | undefined,
   ownership: {
     sessionIds: readonly string[];
     archivedSessionIds: readonly string[];
@@ -87,11 +99,8 @@ export function selectCompanionSession(
       memberIds.has(session.id) &&
       !archivedIds.has(session.id) &&
       !session.archived &&
-      !session.parentId &&
       session.origin !== "subagent",
   );
-  if (rememberedId && members.some((session) => session.id === rememberedId))
-    return rememberedId;
   const recent = members
     .filter((session) => !session.blank)
     .sort(
@@ -99,5 +108,12 @@ export function selectCompanionSession(
         (right.updatedAt ?? 0) - (left.updatedAt ?? 0) ||
         left.id.localeCompare(right.id),
     )[0];
-  return recent?.id ?? members.find((session) => session.blank)?.id;
+  const blank = members
+    .filter((session) => session.blank)
+    .sort(
+      (left, right) =>
+        (right.updatedAt ?? 0) - (left.updatedAt ?? 0) ||
+        left.id.localeCompare(right.id),
+    )[0];
+  return recent?.id ?? blank?.id;
 }

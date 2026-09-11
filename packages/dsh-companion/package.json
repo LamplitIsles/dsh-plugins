@@ -54,6 +54,7 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-settings",
@@ -73,6 +74,7 @@
     "@deepseek-ai/dsh-client-locale": "catalog:",
     "@deepseek-ai/dsh-client-ui-chat": "catalog:",
     "@deepseek-ai/dsh-client-ui-conversation": "catalog:",
+    "@deepseek-ai/dsh-client-ui-layout": "catalog:",
     "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
     "@deepseek-ai/dsh-client-ui-session": "catalog:",
     "@deepseek-ai/dsh-client-ui-settings": "catalog:",
@@ -104,6 +106,7 @@
     "@deepseek-ai/dsh-client-locale": "catalog:",
     "@deepseek-ai/dsh-client-ui-chat": "catalog:",
     "@deepseek-ai/dsh-client-ui-conversation": "catalog:",
+    "@deepseek-ai/dsh-client-ui-layout": "catalog:",
     "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
     "@deepseek-ai/dsh-client-ui-session": "catalog:",
     "@deepseek-ai/dsh-client-ui-settings": "catalog:",
@@ -155,6 +158,7 @@
     "@capacitor/camera": "^8.2.3",
     "@capacitor/core": "^8.5.1",
     "@humanspeak/svelte-markdown": "1.8.5",
+    "katex": "0.16.47",
     "lucide-svelte": "^1.0.1"
   }
 }

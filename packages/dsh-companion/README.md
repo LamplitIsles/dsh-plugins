@@ -31,7 +31,10 @@ The package is pinned to the published DSH `0.1.2-rc.1` contract family (Cordis 
 ## Two surfaces
 
 - `/` remains the stock DSH Web UI, including advanced navigation, ordinary Tool views, Kepos ImageGen's React view, and plugin settings.
-- `/companion/` selects the lower-priority Companion root. It shows one configured Workspace and one remembered/recent Session, human and assistant chat, allowlisted ImageGen images, and finalized DSH Speech voice messages. A small **高级 DSH** link returns to `/` with a full-page navigation so the two compositions do not leak into one another.
+- `/companion/` selects the lower-priority Companion root. On each full-page entry it opens the **最新对话**: the most recently active eligible conversation in the configured Workspace, including human-created forks and excluding archived, foreign, and subagent sessions. Its conversation drawer lists those sessions for explicit switching without letting later background activity change the current choice. It also shows human and assistant chat, allowlisted ImageGen images, and finalized DSH Speech voice messages. A small **高级 DSH** link returns to `/` with a full-page navigation so the two compositions do not leak into one another.
+- The stock DSH `/` surface contributes an **Open Companion** entry in its frame-wide top-right overlay. It performs a full-page navigation to `/companion/`, so the advanced surface's selected conversation is not transported into the independent Companion composition.
+- The Companion avatar opens a right-side relationship drawer with the current state and newest-first Workspace-owned changes. Each change keeps only the dimensions and reasons recorded for that state update; the drawer can load earlier records without changing relationship state.
+- Companion Markdown renders `\(...\)`, `\[...\]`, `$$...$$`, and supported single-dollar inline math with locally bundled KaTeX assets. Raw HTML stays unsupported, malformed expressions remain non-fatal, and long display formulas scroll within their message bubble.
 
 Typing `/compact` as the complete Companion input invokes DSH's Session command channel and keeps the continuity checkpoint invisible; other slash-prefixed text remains an ordinary message.
 
@@ -43,7 +46,7 @@ DSH continues to stream and persist model output internally, while Companion sho
 
 While ImageGen is running, its image skeleton and “正在画一张图…” status replace the generic typing bubble. If the agent resumes text generation after the image settles, the typing indicator returns with a fresh long-wait timer.
 
-The Companion deliberately does not include a Workspace picker, session list/new-chat flow, model or preset controls, permissions/approvals, reasoning, Trajectory, generic Tool cards, prompt-injection inspection, generic file upload, notifications, or multi-contact UI. It supports image messages through DSH's Session attachment contract and one short voice-input control in the composer.
+The Companion deliberately does not include a Workspace picker or new-chat creation flow, model or preset controls, permissions/approvals, reasoning, Trajectory, generic Tool cards, prompt-injection inspection, generic file upload, notifications, or multi-contact UI. It does include a read-only session list for the configured Workspace and supports image messages through DSH's Session attachment contract plus one short voice-input control in the composer.
 
 ## Configuration and recovery
 

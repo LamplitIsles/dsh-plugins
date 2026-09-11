@@ -33,6 +33,7 @@ import {
   type CompanionState,
   CompanionValidationError,
   affinityStage,
+  canonicalizeHistoryPageRead,
   canonicalizeHistoryRead,
   canonicalizeRelationshipUpdate,
   canonicalizeChangeReason,
@@ -1276,6 +1277,8 @@ export class CompanionHostController {
                   workspaceId?: unknown;
                   affinity?: unknown;
                   revision?: unknown;
+                  limit?: unknown;
+                  before?: unknown;
                 })
               : {};
           const requested =
@@ -1287,6 +1290,22 @@ export class CompanionHostController {
             if (!request) return fail("语音请求格式无效。", "invalid-input");
             return this.transcribeVoice(request, signal);
           }
+          if (endpoint === "relationship/history") {
+            if (
+              typeof payload !== "object" ||
+              payload === null ||
+              Array.isArray(payload) ||
+              typeof record.workspaceId !== "string" ||
+              !record.workspaceId.trim()
+            )
+              return fail("历史分页请求格式无效。", "invalid-input");
+            if (
+              Object.keys(record).some(
+                (key) => !["workspaceId", "limit", "before"].includes(key),
+              )
+            )
+              return fail("历史分页读取包含未知字段。", "invalid-input");
+          }
           const configured = this.configuredWorkspace(requested);
           if (!configured)
             return fail(
@@ -1296,6 +1315,29 @@ export class CompanionHostController {
           if (endpoint === VOICE_CAPABILITY_ENDPOINT)
             return ok({ available: this.voiceCapability() });
           const store = this.storeFor(configured.workspace);
+          if (endpoint === "relationship/history") {
+            let pageRequest;
+            try {
+              pageRequest = canonicalizeHistoryPageRead({
+                ...(record.limit === undefined ? {} : { limit: record.limit }),
+                ...(record.before === undefined
+                  ? {}
+                  : { before: record.before }),
+              });
+            } catch (error) {
+              if (error instanceof CompanionValidationError)
+                return fail(error.message, "invalid-input");
+              throw error;
+            }
+            try {
+              return ok(await store.readHistoryPage(pageRequest, signal));
+            } catch (error) {
+              if (signal.aborted) throw error;
+              if (error instanceof CompanionValidationError)
+                return fail(error.message, "invalid-input");
+              throw error;
+            }
+          }
           if (endpoint === "relationship/reset")
             return ok({ state: await store.resetAffinity(signal) });
           if (endpoint === "relationship/set-affinity")

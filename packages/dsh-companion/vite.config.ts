@@ -22,6 +22,7 @@ export default defineConfig({
         "@deepseek-ai/dsh-client-connection/client",
         "@deepseek-ai/dsh-client-ui-chat/client",
         "@deepseek-ai/dsh-client-ui-conversation/client",
+        "@deepseek-ai/dsh-client-ui-layout/client",
         "@deepseek-ai/dsh-client-ui-renderer/client",
         "@deepseek-ai/dsh-client-ui-settings/client",
         "@deepseek-ai/dsh-client-ui-settings-plugins/client",

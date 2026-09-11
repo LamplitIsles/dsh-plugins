@@ -7,6 +7,10 @@ This context describes how Companion keeps a private conversation coherent as it
 **Companion**:
 A one-to-one conversational agent with a stable persona, relationship state, memory, and selected capabilities. Its identity is independent of the engine used to continue the conversation.
 
+**最新对话**:
+The most recently active eligible conversation in the configured Workspace when Companion opens. It includes human-created forks and excludes archived, foreign, and subagent sessions; it does not follow a remembered Companion or DSH selection.
+_Avoid_: 记住的对话, 当前选中的对话
+
 **对话记录**:
 The human-readable record of the conversation, including messages and visible activity. It remains readable after 整理记忆 changes what the model currently sees.
 _Avoid_: 当前上下文

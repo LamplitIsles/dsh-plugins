@@ -10,6 +10,7 @@
   import { createEventDispatcher, onDestroy, onMount, tick } from "svelte";
   import { Camera, CameraErrorCode } from "@capacitor/camera";
   import ImagePlus from "lucide-svelte/icons/image-plus";
+  import History from "lucide-svelte/icons/history";
   import MessageSquareText from "lucide-svelte/icons/message-square-text";
   import PanelsTopLeft from "lucide-svelte/icons/panels-top-left";
   import Pause from "lucide-svelte/icons/pause";
@@ -33,7 +34,10 @@
     TimelineText,
     TimelineVoice,
   } from "../projection.js";
-  import type { CompanionContinuityView } from "./companion-bridge.js";
+  import type {
+    CompanionContinuityView,
+    CompanionHistoryView,
+  } from "./companion-bridge.js";
   import type { PendingSubmissionRetirement } from "@deepseek-ai/dsh-api-session-controller/client";
   import { CompanionPreControllerError } from "./admission.js";
   import {
@@ -56,6 +60,8 @@
     type CompanionImageDraft,
   } from "./image-drafts.js";
   import type { CompanionReadiness } from "./readiness.js";
+  import { companionHistoryChanges } from "../relationship-history.js";
+  import type { CompanionHistoryChange } from "../domain.js";
   import Markdown from "./Markdown.svelte";
   import relationshipBackground from "./assets/relationship-night-voyage.webp";
   import { resolveImageDisplaySize } from "../media.js";
@@ -97,6 +103,8 @@
       recording: VoiceRecording,
       signal?: AbortSignal,
     ) => Promise<CompanionVoiceTranscription>;
+    loadEarlierHistory?: () => Promise<void>;
+    retryHistory?: () => void;
   }
   export interface CompanionSessionView {
     id: string;
@@ -139,6 +147,12 @@
   export let voiceCapability: "loading" | "available" | "unavailable" =
     "unavailable";
   export let continuity: CompanionContinuityView = {};
+  export let history: CompanionHistoryView = {
+    status: "loading",
+    records: [],
+    hasEarlier: false,
+  };
+  export let onHistoryOpenChange: ((open: boolean) => void) | undefined;
 
   const dispatch = createEventDispatcher<{ advanced: void; recovery: void }>();
   const LONG_WAIT_DELAY_MS = 12_000;
@@ -165,7 +179,6 @@
   let timeline: HTMLDivElement;
   let timelineReady = false;
   let timelineRevealFrame = 0;
-  let detailAnchor: HTMLDivElement;
   let sidebarOpen = readDesktopSidebarPreference();
   let detailOpen = false;
   interface ImagePreviewTarget {
@@ -200,7 +213,7 @@
   let liveAnnouncement: string | CompanionMessage = "";
   let detailReturnFocus: HTMLElement | undefined;
   let lightboxReturnFocus: HTMLElement | undefined;
-  let detailPopover: HTMLElement;
+  let relationshipDrawer: HTMLElement;
   let lightboxDialog: HTMLDialogElement;
   let overlayHistory = false;
   let lightboxCloseFromHistory = false;
@@ -251,6 +264,12 @@
   $: effectiveWorkspaceReadiness = workspaceReadiness;
   $: effectiveSessionReadiness = sessionReadiness;
   $: effectiveRelationshipReadiness = relationshipReadiness;
+  $: if (
+    detailOpen &&
+    (effectiveWorkspaceReadiness !== "ready" ||
+      effectiveRelationshipReadiness !== "ready")
+  )
+    finishDetailClose(false);
   $: statusText =
     projection.status === "working"
       ? t("status.typing")
@@ -1272,6 +1291,56 @@
       });
     return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
   }
+  function formatHistoryDate(value: string, locale: string): string {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return value;
+    return date.toLocaleString(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }
+  function historyDimensionLabel(
+    dimension: CompanionHistoryChange["dimension"],
+  ): string {
+    switch (dimension) {
+      case "mood":
+        return t("history.mood");
+      case "affinity":
+        return t("history.affinity");
+      case "signature":
+        return t("history.signature");
+    }
+  }
+  function historyValueLabel(
+    dimension: CompanionHistoryChange["dimension"],
+    value: CompanionHistoryChange["after"],
+  ): string {
+    if (dimension === "mood") {
+      const label = t(
+        `mood.${value.value as CompanionLocaleKey}` as CompanionLocaleKey,
+      );
+      return "note" in value && value.note ? `${label} · ${value.note}` : label;
+    }
+    if (dimension === "affinity") return String(value.value);
+    return value.value ? String(value.value) : t("signature.empty");
+  }
+  function changesForHistoryRecord(index: number): CompanionHistoryChange[] {
+    const record = history.records[index];
+    if (!record) return [];
+    const predecessor =
+      history.records[index + 1] ??
+      (index === history.records.length - 1 ? history.predecessor : undefined);
+    return companionHistoryChanges(record, predecessor);
+  }
+  async function loadEarlierHistory(): Promise<void> {
+    if (!actions.loadEarlierHistory) return;
+    try {
+      await actions.loadEarlierHistory();
+    } catch {
+      // The bridge keeps the error state; avoid an unhandled event-handler
+      // rejection while leaving the retry action available in the drawer.
+    }
+  }
   async function selectSession(sessionId: string): Promise<void> {
     if (!actions.selectSession) return;
     await actions.selectSession(sessionId);
@@ -1312,65 +1381,26 @@
   function closeHistory(): void {
     if (overlayHistory) {
       overlayHistory = false;
-      history.back();
+      globalThis.history.back();
     }
   }
   function openDetail(): void {
     detailReturnFocus = document.activeElement as HTMLElement;
     detailOpen = true;
+    onHistoryOpenChange?.(true);
     void tick().then(() => {
-      const popover = detailPopover as
-        | (HTMLElement & { showPopover?: () => void })
-        | undefined;
-      popover?.showPopover?.();
-      positionDetailPopover();
-      focusFirst(() => detailPopover);
+      focusFirst(() => relationshipDrawer);
     });
-  }
-  function positionDetailPopover(): void {
-    if (!detailPopover || !detailAnchor) return;
-    const anchor = detailAnchor.getBoundingClientRect();
-    const width = Math.min(372, Math.max(240, window.innerWidth - 38));
-    const height = detailPopover.getBoundingClientRect().height;
-    const left = Math.min(
-      Math.max(12, anchor.left - 8),
-      Math.max(12, window.innerWidth - width - 12),
-    );
-    const top = Math.min(
-      anchor.bottom + 10,
-      Math.max(12, window.innerHeight - height - 12),
-    );
-    detailPopover.style.width = `${width}px`;
-    detailPopover.style.left = `${left}px`;
-    detailPopover.style.top = `${top}px`;
-  }
-  function onWindowResize(): void {
-    if (detailOpen) positionDetailPopover();
   }
   function finishDetailClose(restoreFocus = true): void {
     detailOpen = false;
+    onHistoryOpenChange?.(false);
     const target = detailReturnFocus;
     detailReturnFocus = undefined;
     if (restoreFocus) target?.focus();
   }
   function closeDetail(restoreFocus = true): void {
-    const popover = detailPopover as
-      | (HTMLElement & { hidePopover?: () => void })
-      | undefined;
-    if (popover?.matches(":popover-open")) {
-      popover.hidePopover?.();
-      return;
-    }
     finishDetailClose(restoreFocus);
-  }
-  function onDetailToggle(event: Event): void {
-    const toggle = event as ToggleEvent;
-    if (toggle.newState === "open") {
-      detailOpen = true;
-      focusFirst(() => detailPopover);
-      return;
-    }
-    finishDetailClose();
   }
   function openLightbox(item: ImagePreviewTarget): void {
     lightboxReturnFocus = document.activeElement as HTMLElement;
@@ -1412,6 +1442,15 @@
         closeContextMeter();
         return;
       }
+      if (detailOpen) {
+        event.preventDefault();
+        closeDetail();
+        return;
+      }
+      return;
+    }
+    if (detailOpen && relationshipDrawer) {
+      trapFocus(event, relationshipDrawer);
       return;
     }
     if (lightbox && lightboxDialog) trapFocus(event, lightboxDialog);
@@ -1422,7 +1461,7 @@
   }
   function pushOverlayHistory(): void {
     if (!overlayHistory) {
-      history.pushState({ companionOverlay: true }, "");
+      globalThis.history.pushState({ companionOverlay: true }, "");
       overlayHistory = true;
     }
   }
@@ -1487,7 +1526,6 @@
   on:keydown={onWindowKeydown}
   on:pointerdown={onWindowPointerDown}
   on:popstate={onPopState}
-  on:resize={onWindowResize}
 />
 
 <div
@@ -1517,81 +1555,15 @@
             aria-expanded={sidebarOpen}
             on:click={toggleSidebar}><span aria-hidden="true">☰</span></button
           >
-          <div bind:this={detailAnchor} class="companion-avatar-anchor">
-            <button
-              class="cmp-avatar cmp-avatar-placeholder companion-avatar"
-              aria-label={t("relationship.view")}
-              aria-expanded={detailOpen}
-              on:click={toggleDetail}
-            >
+          <div class="companion-avatar-anchor" aria-hidden="true">
+            <div class="cmp-avatar cmp-avatar-placeholder companion-avatar">
               <div class="companion-avatar-crop cmp-mask cmp-mask-circle">
                 {#if identity.companionAvatar}<img
                     src={identity.companionAvatar}
                     alt=""
                   />{:else}<span aria-hidden="true">✦</span>{/if}
               </div>
-            </button>
-            {#if detailOpen}
-              <div
-                bind:this={detailPopover}
-                id="companion-detail-popover"
-                popover="auto"
-                class="cmp-card companion-detail-card"
-                role="dialog"
-                aria-label={t("relationship.named", {
-                  name: identity.companionName,
-                })}
-                style={`--relationship-art: url("${relationshipBackground}")`}
-                on:toggle={onDetailToggle}
-              >
-                <div class="companion-detail-art" aria-hidden="true"></div>
-                <div class="cmp-card-body">
-                  <div class="companion-detail-head">
-                    <div
-                      class="cmp-avatar cmp-avatar-placeholder companion-detail-avatar"
-                    >
-                      <div
-                        class="companion-avatar-crop cmp-mask cmp-mask-circle"
-                      >
-                        {#if identity.companionAvatar}<img
-                            src={identity.companionAvatar}
-                            alt={identity.companionName}
-                          />{:else}<span aria-hidden="true">✦</span>{/if}
-                      </div>
-                    </div>
-                    <div>
-                      <h2 id="companion-detail-title">
-                        {identity.companionName}
-                      </h2>
-                      <span
-                        class="cmp-badge cmp-badge-sm cmp-badge-soft cmp-badge-secondary"
-                        >{identity.moodLabel}</span
-                      >
-                    </div>
-                    <button
-                      class="cmp-btn cmp-btn-ghost cmp-btn-circle cmp-btn-sm companion-detail-close"
-                      aria-label={t("relationship.close")}
-                      on:click={() => closeDetail()}>×</button
-                    >
-                  </div>
-                  <p class="companion-signature">
-                    {identity.signature || t("signature.empty")}
-                  </p>
-                  <dl class="companion-relationship-list">
-                    <dt>{t("mood.label")}</dt>
-                    <dd>{identity.moodLabel}</dd>
-                    {#if identity.moodNote}<dt>{t("mood.note")}</dt>
-                      <dd>{identity.moodNote}</dd>{/if}
-                    <dt>{t("affinity.label")}</dt>
-                    <dd>
-                      {identity.affinity === undefined
-                        ? t("loading")
-                        : `${identity.affinity} · ${identity.affinityStage}`}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            {/if}
+            </div>
           </div>
           <div class="companion-header-copy">
             <div class="companion-name">{identity.companionName}</div>
@@ -1605,18 +1577,33 @@
               ></span>{statusText} · {identity.moodLabel}
             </div>
           </div>
-          <a
-            class="cmp-btn cmp-btn-ghost companion-full-dsh"
-            href="/"
-            aria-label={t("dsh.open")}
-            title={t("dsh.open")}
-            on:click={() => dispatch("advanced")}
-            ><PanelsTopLeft
-              size={18}
-              strokeWidth={1.8}
-              aria-hidden="true"
-            /><span class="companion-full-dsh-label">{t("dsh.more")}</span></a
-          >
+          <div class="companion-header-actions">
+            <button
+              type="button"
+              class="cmp-btn cmp-btn-ghost cmp-btn-circle companion-history-toggle"
+              aria-label={t("relationship.view")}
+              aria-controls="companion-relationship-drawer"
+              aria-expanded={detailOpen}
+              on:click={toggleDetail}
+              ><History
+                size={18}
+                strokeWidth={1.8}
+                aria-hidden="true"
+              /></button
+            >
+            <a
+              class="cmp-btn cmp-btn-ghost companion-full-dsh"
+              href="/"
+              aria-label={t("dsh.open")}
+              title={t("dsh.open")}
+              on:click={() => dispatch("advanced")}
+              ><PanelsTopLeft
+                size={18}
+                strokeWidth={1.8}
+                aria-hidden="true"
+              /><span class="companion-full-dsh-label">{t("dsh.more")}</span></a
+            >
+          </div>
         </header>
 
         {#if effectiveWorkspaceReadiness === "loading"}
@@ -2434,6 +2421,159 @@
       </aside>
     </div>
   </div>
+  {#if detailOpen}
+    <div class="companion-history-backdrop">
+      <button
+        type="button"
+        tabindex="-1"
+        aria-label={t("relationship.close")}
+        on:click={() => closeDetail()}
+      ></button>
+    </div>
+    <div
+      bind:this={relationshipDrawer}
+      id="companion-relationship-drawer"
+      class="companion-history-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="companion-history-title"
+      style={`--relationship-art: url("${relationshipBackground}")`}
+      data-testid="companion-relationship-drawer"
+    >
+      <div class="companion-history-art" aria-hidden="true"></div>
+      <header class="companion-history-head">
+        <div>
+          <span class="companion-sidebar-eyebrow">{identity.companionName}</span
+          >
+          <h2 id="companion-history-title">{t("history.title")}</h2>
+        </div>
+        <button
+          type="button"
+          class="cmp-btn cmp-btn-ghost cmp-btn-circle cmp-btn-sm"
+          aria-label={t("relationship.close")}
+          on:click={() => closeDetail()}
+          ><X size={16} strokeWidth={2} aria-hidden="true" /></button
+        >
+      </header>
+      <div class="companion-history-scroll">
+        <section
+          class="companion-history-current"
+          aria-labelledby="companion-history-current-title"
+        >
+          <h3 id="companion-history-current-title">{t("history.current")}</h3>
+          <dl class="companion-history-current-list">
+            <dt>{t("mood.label")}</dt>
+            <dd>
+              {identity.moodLabel}{identity.moodNote
+                ? ` · ${identity.moodNote}`
+                : ""}
+            </dd>
+            <dt>{t("affinity.label")}</dt>
+            <dd>
+              {identity.affinity === undefined
+                ? t("loading")
+                : `${identity.affinity} · ${identity.affinityStage}`}
+            </dd>
+            <dt>{t("history.signature")}</dt>
+            <dd>{identity.signature || t("signature.empty")}</dd>
+          </dl>
+        </section>
+
+        <section
+          class="companion-history-list"
+          aria-labelledby="companion-history-list-title"
+        >
+          <h3 id="companion-history-list-title">{t("history.list")}</h3>
+          {#if history.status === "loading"}
+            <div class="companion-history-state" role="status">
+              <span
+                class="cmp-loading cmp-loading-spinner cmp-loading-sm"
+                aria-hidden="true"
+              ></span>
+              <span>{t("history.loading")}</span>
+            </div>
+          {:else if history.status === "error"}
+            <div class="companion-history-state" role="alert">
+              <p>{t("history.failed")}</p>
+              <button
+                type="button"
+                class="cmp-btn cmp-btn-ghost cmp-btn-sm"
+                on:click={() => actions.retryHistory?.()}
+                >{t("history.retry")}</button
+              >
+            </div>
+          {:else if history.records.length === 0}
+            <p class="companion-history-state">{t("history.empty")}</p>
+          {:else}
+            {#if history.hasEarlier}
+              <button
+                type="button"
+                class="cmp-btn cmp-btn-ghost cmp-btn-sm companion-history-earlier"
+                disabled={history.loadingEarlier}
+                on:click={() => void loadEarlierHistory()}
+                >{history.loadingEarlier
+                  ? t("history.loadingEarlier")
+                  : t("history.earlier")}</button
+              >
+            {/if}
+            <div class="companion-history-entries">
+              {#each history.records as record, index (`${record.at}:${index}`)}
+                {@const changes = changesForHistoryRecord(index)}
+                <article class="companion-history-entry">
+                  <time datetime={record.at}
+                    >{formatHistoryDate(record.at, locale)}</time
+                  >
+                  {#if record.changes.seed}
+                    <p class="companion-history-initial">
+                      {t("history.initial")}
+                    </p>
+                  {:else if changes.length === 0}
+                    <p class="companion-history-initial">
+                      {t("history.initial")}
+                    </p>
+                  {:else}
+                    <ul>
+                      {#each changes as change}
+                        <li>
+                          <strong
+                            >{historyDimensionLabel(change.dimension)}</strong
+                          >
+                          <div class="companion-history-values">
+                            {#if change.before}<span
+                                ><small>{t("history.before")}</small
+                                >{historyValueLabel(
+                                  change.dimension,
+                                  change.before,
+                                )}</span
+                              >{/if}
+                            <span
+                              ><small
+                                >{change.before
+                                  ? t("history.after")
+                                  : t("history.initial")}</small
+                              >{historyValueLabel(
+                                change.dimension,
+                                change.after,
+                              )}</span
+                            >
+                          </div>
+                          {#if change.reason}<p
+                              class="companion-history-reason"
+                            >
+                              {t("history.reason")}: {change.reason}
+                            </p>{/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </article>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      </div>
+    </div>
+  {/if}
   {#if lightbox}
     <dialog
       bind:this={lightboxDialog}

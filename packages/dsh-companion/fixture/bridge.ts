@@ -19,6 +19,7 @@ import type {
 } from "@deepseek-ai/dsh-client-ui-settings/client";
 import type { ClientSettings } from "../src/client/settings.js";
 import { CompanionRoot } from "../src/client/CompanionRoot.js";
+import { companionZh, type CompanionTranslate } from "../src/client/locale.js";
 import {
   VOICE_CAPABILITY_ENDPOINT,
   VOICE_TRANSCRIBE_ENDPOINT,
@@ -84,6 +85,13 @@ const settingsSnapshot: SettingsScopeSnapshot<ClientSettings> = {
   writable: false,
   mode: "memory" as const,
 };
+const fixtureTranslate: CompanionTranslate = (key, params) =>
+  companionZh[key].replace(/\{(\w+)\}/gu, (match, name: string) => {
+    const value = params?.[name];
+    return typeof value === "string" || typeof value === "number"
+      ? String(value)
+      : match;
+  });
 
 const sessionSummary = {
   id: sessionId,
@@ -280,11 +288,14 @@ export function mountBridgeFixture(target: HTMLElement): void {
     workspaces: { list: workspaceStore },
     uiConversation: { binding: () => conversation },
     connection: { state: connectionStore, rpc, isLoopback: true },
+    locale: { getSnapshot: () => ({ active: "zh-Hant" }) },
     theme: { getTheme: () => ({ active: { colorScheme: "light" } }) },
     on: () => () => undefined,
   } as unknown as ClientContext;
   const reactRoot = createRoot(target);
-  reactRoot.render(createElement(CompanionRoot, { ctx, settings }));
+  reactRoot.render(
+    createElement(CompanionRoot, { ctx, settings, t: fixtureTranslate }),
+  );
 
   const setWorkspace = (mode: "ready" | "missing" | "error"): void => {
     if (mode === "ready")

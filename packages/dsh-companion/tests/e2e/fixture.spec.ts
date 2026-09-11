@@ -95,20 +95,25 @@ test("fixture has complete media states, accessible overlays, and no duplicate i
       .getByRole("button", { name: "重试语音" })
       .locator("svg"),
   ).toHaveCount(1);
-  const avatar = page.getByRole("button", { name: "查看 Companion 关系资料" });
-  await avatar.focus();
-  await avatar.click();
-  await expect(page.getByRole("dialog")).toContainText("把平凡日子折成星星");
-  await expect(page.getByRole("dialog")).toContainText("此刻状态");
-  await expect(page.getByRole("dialog")).toContainText("柔和");
-  await expect(page.getByRole("dialog")).toContainText("状态短句");
+  const historyTrigger = page.getByRole("button", {
+    name: "查看 Companion 关系资料",
+  });
+  await historyTrigger.focus();
+  await historyTrigger.click();
+  const historyDialog = page.getByRole("dialog");
+  await expect(historyDialog).toContainText("把平凡日子折成星星");
+  await expect(historyDialog).toContainText("此刻状态");
+  await expect(historyDialog).toContainText("柔和");
+  await expect(historyDialog).toContainText("今天想慢一点");
   await expect(
-    page.getByRole("button", { name: "关闭关系资料", exact: true }),
+    historyDialog.getByRole("button", { name: "关闭关系资料", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(avatar).toBeFocused();
+  await expect(
+    historyDialog.getByRole("button", { name: "关闭关系资料", exact: true }),
+  ).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(avatar).toBeFocused();
+  await expect(historyTrigger).toBeFocused();
   await page.getByRole("button", { name: /查看大图/ }).click();
   await expect(page.getByRole("button", { name: "关闭大图" })).toBeVisible();
   await expect(page.getByRole("button", { name: "关闭大图" })).toBeFocused();
@@ -235,23 +240,43 @@ test("relationship card uses the semantic base surface in both themes", async ({
 }) => {
   await page.goto("/");
   const root = page.getByTestId("companion-root");
-  const avatar = page.getByRole("button", { name: "查看 Companion 关系资料" });
-  await avatar.click();
-  const card = page.getByRole("dialog", { name: "小灯的关系资料" });
+  const historyTrigger = page.getByRole("button", {
+    name: "查看 Companion 关系资料",
+  });
+  await historyTrigger.click();
+  const card = page.getByRole("dialog", { name: "关系变化记录" });
   await expect(card).toBeVisible();
+  const expectedLightSurface = await card.evaluate((node) => {
+    const probe = document.createElement("span");
+    probe.style.background =
+      "color-mix(in srgb,var(--color-base-100) 96%,var(--color-secondary) 4%)";
+    node.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
   await expect
     .poll(() => card.evaluate((node) => getComputedStyle(node).backgroundColor))
-    .toBe("rgb(255, 250, 243)");
-  await page.getByRole("button", { name: "关闭关系资料", exact: true }).click();
+    .toBe(expectedLightSurface);
+  await card.getByRole("button", { name: "关闭关系资料", exact: true }).click();
   await expect(card).toHaveCount(0);
 
   await page.evaluate(() => window.__companionFixture?.setTheme("dark"));
   await expect(root).toHaveAttribute("data-theme", "night-voyage");
-  await avatar.click();
+  await historyTrigger.click();
   await expect(card).toBeVisible();
+  const expectedDarkSurface = await card.evaluate((node) => {
+    const probe = document.createElement("span");
+    probe.style.background =
+      "color-mix(in srgb,var(--color-base-100) 95%,var(--color-secondary) 5%)";
+    node.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
   await expect
     .poll(() => card.evaluate((node) => getComputedStyle(node).backgroundColor))
-    .toBe("rgb(16, 24, 39)");
+    .toBe(expectedDarkSurface);
 });
 
 test("unread-message action resolves the light primary semantic contrast", async ({
@@ -1689,16 +1714,24 @@ test("chat shell has rendered Markdown, viewport scrolling, sessions, rounded fo
   expect(bubbles.incoming.tailDisplay).toBe("none");
   expect(bubbles.outgoing.tailDisplay).toBe("none");
 
-  const avatar = page.getByRole("button", { name: "查看 Companion 关系资料" });
-  const avatarBox = await avatar.boundingBox();
-  await avatar.click();
-  const detail = page.getByRole("dialog", { name: "小灯的关系资料" });
+  const historyTrigger = page.getByRole("button", {
+    name: "查看 Companion 关系资料",
+  });
+  const headerBox = await page.locator(".companion-header").boundingBox();
+  const historyTriggerBox = await historyTrigger.boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(historyTriggerBox).not.toBeNull();
+  expect(historyTriggerBox!.x).toBeGreaterThan(
+    headerBox!.x + headerBox!.width * 0.75,
+  );
+  await historyTrigger.click();
+  const detail = page.getByRole("dialog", { name: "关系变化记录" });
   await expect(detail).toBeVisible();
   const detailBox = await detail.boundingBox();
-  expect(avatarBox).not.toBeNull();
+  expect(historyTriggerBox).not.toBeNull();
   expect(detailBox).not.toBeNull();
-  expect(detailBox!.y).toBeLessThan(avatarBox!.y + 180);
-  expect(detailBox!.x).toBeLessThan(avatarBox!.x + 120);
+  expect(detailBox!.y).toBeLessThan(historyTriggerBox!.y + 180);
+  expect(detailBox!.x).toBeLessThan(historyTriggerBox!.x + 120);
 });
 
 test("Markdown renders GFM safely with aligned list levels", async ({
@@ -1810,10 +1843,12 @@ test("initial chat presentation is already at the bottom with circular avatars a
   await expect(fullDsh.locator("svg")).toHaveCount(1);
 
   await page.getByRole("button", { name: "查看 Companion 关系资料" }).click();
-  const profile = page.getByRole("dialog", { name: "小灯的关系资料" });
+  const profile = page.getByRole("dialog", { name: "关系变化记录" });
   await page.waitForTimeout(600);
   await expect(profile).toBeVisible();
-  await page.locator(".companion-header-copy").click();
+  await profile
+    .getByRole("button", { name: "关闭关系资料", exact: true })
+    .click();
   await expect(profile).toHaveCount(0);
 });
 

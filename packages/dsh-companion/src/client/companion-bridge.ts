@@ -8,6 +8,7 @@ import type { ImageAttachmentLimits } from "@deepseek-ai/dsh-attachment";
 import type { CompanionImageDraft } from "./image-drafts.js";
 import type { PendingSubmissionRetirement } from "@deepseek-ai/dsh-api-session-controller/client";
 import type { CompanionReadiness } from "./readiness.js";
+import type { CompanionStateRecord } from "../domain.js";
 import type {
   CompanionVoiceTranscription,
   VoiceRecording,
@@ -42,6 +43,8 @@ export interface CompanionActions {
     recording: VoiceRecording,
     signal?: AbortSignal,
   ) => Promise<CompanionVoiceTranscription>;
+  loadEarlierHistory?: () => Promise<void>;
+  retryHistory?: () => void;
 }
 export interface CompanionSessionView {
   id: string;
@@ -56,6 +59,16 @@ export interface CompanionContinuityView {
   contextPressure?: ContextPressureProjection;
   /** Session-scoped compaction lifecycle facts from the public view registry. */
   lifecycle?: CompanionContinuitySnapshot;
+}
+
+export interface CompanionHistoryView {
+  status: "loading" | "ready" | "error";
+  sourceWorkspaceId?: string;
+  records: readonly CompanionStateRecord[];
+  hasEarlier: boolean;
+  nextBefore?: number;
+  predecessor?: CompanionStateRecord;
+  loadingEarlier?: boolean;
 }
 
 export interface CompanionBridgeProps {
@@ -77,6 +90,8 @@ export interface CompanionBridgeProps {
   /** Optional DSH Speech capability observed by the Host RPC. */
   voiceCapability?: "loading" | "available" | "unavailable";
   continuity?: CompanionContinuityView;
+  history?: CompanionHistoryView;
+  onHistoryOpenChange?: (open: boolean) => void;
   onAdvanced?: () => void;
   onRecovery?: () => void;
 }

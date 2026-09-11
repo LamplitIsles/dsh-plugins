@@ -24,10 +24,14 @@ import type {
   ConnectionHandle,
 } from "@deepseek-ai/dsh-client-connection/client";
 import CompanionBridge from "./CompanionBridge.svelte";
-import type { CompanionBridgeProps } from "./companion-bridge.js";
+import type {
+  CompanionBridgeProps,
+  CompanionHistoryView,
+} from "./companion-bridge.js";
 import {
   affinityStage,
   companionSessionList,
+  resolveCompanionSessionSelection,
   selectCompanionSession,
 } from "./relationship.js";
 import { projectConversation } from "../projection.js";
@@ -74,10 +78,53 @@ export interface CompanionRootInjected {
 }
 
 interface RelationshipView {
+  sourceWorkspaceId?: string;
   identity?: ClientSettings;
   state?: { mood: string; note?: string; affinity: number; signature: string };
   workspacePresent: boolean;
   revision: number;
+}
+
+const NEUTRAL_RELATIONSHIP: RelationshipView = {
+  workspacePresent: false,
+  revision: 0,
+};
+const LOADING_HISTORY: CompanionHistoryView = {
+  status: "loading",
+  records: [],
+  hasEarlier: false,
+};
+
+function historyPageFrom(
+  value: unknown,
+): Omit<CompanionHistoryView, "status" | "loadingEarlier"> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error("history-invalid");
+  const page = value as {
+    records?: unknown;
+    hasEarlier?: unknown;
+    nextBefore?: unknown;
+    predecessor?: unknown;
+  };
+  if (!Array.isArray(page.records) || typeof page.hasEarlier !== "boolean")
+    throw new Error("history-invalid");
+  if (
+    page.nextBefore !== undefined &&
+    (typeof page.nextBefore !== "number" ||
+      !Number.isSafeInteger(page.nextBefore) ||
+      page.nextBefore < 0)
+  )
+    throw new Error("history-invalid");
+  return {
+    records: page.records as CompanionHistoryView["records"],
+    hasEarlier: page.hasEarlier,
+    ...(page.nextBefore === undefined ? {} : { nextBefore: page.nextBefore }),
+    ...(page.predecessor === undefined
+      ? {}
+      : {
+          predecessor: page.predecessor as CompanionHistoryView["predecessor"],
+        }),
+  };
 }
 
 function useSnapshot<T>(
@@ -101,46 +148,6 @@ function workspaceFor(
   );
   if (!item) return undefined;
   return { id: item.workspaceId, sessionIds: item.sessionIds };
-}
-
-function sessionStorageKey(workspaceId: string): string {
-  return `dsh-companion:session:${encodeURIComponent(workspaceId)}`;
-}
-
-function readRememberedSession(
-  workspaceId: string,
-  candidates: readonly { id: string }[],
-): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const value = window.localStorage.getItem(sessionStorageKey(workspaceId));
-    return value && candidates.some((candidate) => candidate.id === value)
-      ? value
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function mostRecentSession(
-  list: SessionListState,
-  workspace: { id: string; sessionIds: readonly string[] },
-  archivedSessionIds: readonly string[],
-): string | undefined {
-  const rows = list.byId as Record<
-    string,
-    (typeof list.byId)[keyof typeof list.byId] | undefined
-  >;
-  const candidates = workspace.sessionIds
-    .map((id) => rows[id])
-    .filter((summary): summary is NonNullable<typeof summary> =>
-      Boolean(summary),
-    );
-  const remembered = readRememberedSession(workspace.id, candidates);
-  return selectCompanionSession(candidates, remembered, {
-    sessionIds: workspace.sessionIds,
-    archivedSessionIds,
-  });
 }
 
 function imageUrl(session: ISession, attachment: unknown): Promise<string> {
@@ -206,9 +213,6 @@ export function CompanionRoot({
       : settingsSnapshot.status === "unavailable"
         ? "error"
         : resolveWorkspaceReadiness(configured?.workspaceId, workspaceList);
-  const remembered = workspace
-    ? mostRecentSession(list, workspace, workspaceList.archivedSessionIds)
-    : undefined;
   const workspaceRows = useMemo(() => {
     if (!workspace) return [];
     const rows = list.byId as Record<
@@ -234,22 +238,103 @@ export function CompanionRoot({
         : [],
     [workspace, workspaceList.archivedSessionIds, workspaceRows, t],
   );
+  const entryCandidate = useMemo(
+    () =>
+      workspace && workspaceList.phase === "ready" && list.phase === "ready"
+        ? selectCompanionSession(workspaceRows, {
+            sessionIds: workspace.sessionIds,
+            archivedSessionIds: workspaceList.archivedSessionIds,
+          })
+        : undefined,
+    [
+      list.phase,
+      workspace,
+      workspaceList.archivedSessionIds,
+      workspaceList.phase,
+      workspaceRows,
+    ],
+  );
+  const entryWorkspaceId = workspace?.id;
   const [selected, setSelected] = useState<{
     workspaceId: string;
     sessionId: string;
   }>();
-  const selectedSessionId =
-    workspace &&
-    selected?.workspaceId === workspace.id &&
-    availableSessions.some((item) => item.id === selected.sessionId)
-      ? selected.sessionId
-      : remembered;
+  const [entrySelection, setEntrySelection] = useState<{
+    workspaceId: string;
+    sessionId?: string;
+  }>();
+  useEffect(() => {
+    if (
+      entryWorkspaceId === undefined ||
+      workspaceList.phase !== "ready" ||
+      list.phase !== "ready"
+    ) {
+      // A Workspace can disappear and later reappear without remounting the
+      // route. Treat that as a fresh entry so a newly active conversation is
+      // selected again instead of reviving an obsolete entry snapshot.
+      if (entryWorkspaceId === undefined) {
+        // oxlint-disable-next-line react/set-state-in-effect -- clear an explicit selection when its Workspace disappears.
+        setSelected((current) => (current === undefined ? current : undefined));
+      }
+      setEntrySelection((current) =>
+        current === undefined ? current : undefined,
+      );
+      return;
+    }
+    // Capture the first settled selection for this Workspace. Later list
+    // updates may reorder rows, but must not steal an explicit selection.
+    setEntrySelection((current) =>
+      current?.workspaceId === entryWorkspaceId
+        ? current
+        : {
+            workspaceId: entryWorkspaceId,
+            ...(entryCandidate === undefined
+              ? {}
+              : { sessionId: entryCandidate }),
+          },
+    );
+  }, [entryCandidate, entryWorkspaceId, list.phase, workspaceList.phase]);
+  const initialSessionId =
+    entrySelection && entrySelection.workspaceId === workspace?.id
+      ? entrySelection.sessionId
+      : entryCandidate;
+  const selectedSessionId = resolveCompanionSessionSelection(
+    workspace?.id,
+    selected,
+    availableSessions,
+    initialSessionId,
+  );
   const [relationship, setRelationship] = useState<RelationshipView>({
     workspacePresent: false,
     revision: 0,
   });
   const [relationshipReadiness, setRelationshipReadiness] =
     useState<CompanionReadiness>("loading");
+  const [history, setHistory] = useState<CompanionHistoryView>({
+    status: "loading",
+    records: [],
+    hasEarlier: false,
+  });
+  const historyRef = useRef(history);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+  const historyGeneration = useRef(0);
+  const historyRequestController = useRef<AbortController>();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const cancelHistoryRequest = useCallback(() => {
+    historyGeneration.current += 1;
+    historyRequestController.current?.abort();
+    historyRequestController.current = undefined;
+  }, []);
+  const onHistoryOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) cancelHistoryRequest();
+      setHistoryOpen(open);
+    },
+    [cancelHistoryRequest],
+  );
+  const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const [voiceCapability, setVoiceCapability] = useState<
     "loading" | "available" | "unavailable"
   >("unavailable");
@@ -270,6 +355,17 @@ export function CompanionRoot({
     ? ctx.sessions.binding(selectedSessionId as never)?.session
     : undefined;
   const workspaceId = workspace?.id;
+  const relationshipOwnedByWorkspace =
+    workspaceId !== undefined && relationship.sourceWorkspaceId === workspaceId;
+  const historyOwnedByWorkspace =
+    workspaceId !== undefined && history.sourceWorkspaceId === workspaceId;
+  const visibleRelationship = relationshipOwnedByWorkspace
+    ? relationship
+    : NEUTRAL_RELATIONSHIP;
+  const visibleRelationshipReadiness = relationshipOwnedByWorkspace
+    ? relationshipReadiness
+    : "loading";
+  const visibleHistory = historyOwnedByWorkspace ? history : LOADING_HISTORY;
   const hasActiveSession = Boolean(session);
   const sessionSnapshot = useSnapshot<SessionSnapshot>(
     session,
@@ -342,6 +438,11 @@ export function CompanionRoot({
       setRelationshipReadiness("missing");
       return () => controller.abort();
     }
+    setRelationship((current) =>
+      current.sourceWorkspaceId === workspaceId
+        ? current
+        : { ...NEUTRAL_RELATIONSHIP, sourceWorkspaceId: workspaceId },
+    );
     setRelationshipReadiness("loading");
     const run = async (): Promise<void> => {
       try {
@@ -356,7 +457,11 @@ export function CompanionRoot({
             throw new Error(
               result.error?.message ?? "relationship-unavailable",
             );
-          const next = result.value as RelationshipView;
+          if (controller.signal.aborted) return;
+          const next = {
+            ...(result.value as RelationshipView),
+            sourceWorkspaceId: workspaceId,
+          };
           setRelationship(next);
           setRelationshipReadiness(next.workspacePresent ? "ready" : "missing");
           result = await connection.rpc.call(
@@ -381,6 +486,85 @@ export function CompanionRoot({
     connectionState,
     recoveryKey,
     settingsSnapshot.status,
+  ]);
+
+  useEffect(() => {
+    cancelHistoryRequest();
+    if (
+      !historyOpen ||
+      workspaceReadiness !== "ready" ||
+      !workspaceId ||
+      !relationshipOwnedByWorkspace ||
+      relationshipReadiness !== "ready"
+    ) {
+      // No configured/settled Workspace has no readable history yet.
+      // oxlint-disable-next-line react/set-state-in-effect -- synchronize an external relationship source.
+      setHistory({ status: "ready", records: [], hasEarlier: false });
+      return cancelHistoryRequest;
+    }
+    const generation = historyGeneration.current;
+    const controller = new AbortController();
+    historyRequestController.current = controller;
+    setHistory({
+      status: "loading",
+      sourceWorkspaceId: workspaceId,
+      records: [],
+      hasEarlier: false,
+    });
+    void connection.rpc
+      .call(
+        "/dsh-companion",
+        "relationship/history",
+        { workspaceId, limit: 10 },
+        controller.signal,
+      )
+      .then((result) => {
+        if (
+          controller.signal.aborted ||
+          generation !== historyGeneration.current ||
+          !historyOpen
+        )
+          return;
+        if (!result.ok)
+          throw new Error(result.error?.message ?? "history-unavailable");
+        const page = historyPageFrom(result.value);
+        setHistory({
+          status: "ready",
+          sourceWorkspaceId: workspaceId,
+          ...page,
+          loadingEarlier: false,
+        });
+      })
+      .catch(() => {
+        if (
+          controller.signal.aborted ||
+          generation !== historyGeneration.current ||
+          !historyOpen
+        )
+          return;
+        setHistory({
+          status: "error",
+          sourceWorkspaceId: workspaceId,
+          records: [],
+          hasEarlier: false,
+        });
+      })
+      .finally(() => {
+        if (historyRequestController.current === controller)
+          historyRequestController.current = undefined;
+      });
+    return cancelHistoryRequest;
+  }, [
+    cancelHistoryRequest,
+    connection,
+    connectionState,
+    historyRetryKey,
+    historyOpen,
+    relationshipOwnedByWorkspace,
+    relationshipReadiness,
+    relationship.revision,
+    workspaceReadiness,
+    workspaceId,
   ]);
 
   useEffect(() => {
@@ -429,19 +613,6 @@ export function CompanionRoot({
       if (typeof dispose === "function") dispose();
     };
   }, [ctx]);
-
-  useEffect(() => {
-    if (!workspaceId || !selectedSessionId || typeof window === "undefined")
-      return;
-    try {
-      window.localStorage.setItem(
-        sessionStorageKey(workspaceId),
-        selectedSessionId,
-      );
-    } catch {
-      /* storage may be unavailable in private browsing */
-    }
-  }, [workspaceId, selectedSessionId]);
 
   useEffect(() => {
     // A new session-opening plan clears the previous attempt's error.
@@ -522,8 +693,8 @@ export function CompanionRoot({
     ? "error"
     : resolvedSessionReadiness;
   const identity = useMemo(() => {
-    const state = relationship.state;
-    const source = relationship.identity ?? configured;
+    const state = visibleRelationship.state;
+    const source = visibleRelationship.identity ?? configured;
     return {
       companionName: source?.companionName ?? "Companion",
       companionAvatar: source?.companionAvatar?.data,
@@ -537,7 +708,7 @@ export function CompanionRoot({
       affinity: state?.affinity,
       affinityStage: state ? affinityStage(state.affinity, t) : undefined,
     };
-  }, [relationship, configured, t]);
+  }, [configured, t, visibleRelationship]);
   const actions = useMemo(() => {
     const rpc: ClientConnectionRpc = connection.rpc;
     return {
@@ -564,19 +735,94 @@ export function CompanionRoot({
           throw new Error(result.error?.message ?? "cancel-rejected");
       },
       async selectSession(sessionId: string): Promise<void> {
-        if (!workspace || !workspace.sessionIds.includes(sessionId))
+        if (
+          !workspace ||
+          !availableSessions.some((item) => item.id === sessionId)
+        )
           throw new Error("session-not-in-companion-workspace");
         setSelected({ workspaceId: workspace.id, sessionId });
-        if (typeof window !== "undefined") {
-          try {
-            window.localStorage.setItem(
-              sessionStorageKey(workspace.id),
-              sessionId,
-            );
-          } catch {
-            /* storage may be unavailable */
-          }
+      },
+      async loadEarlierHistory(): Promise<void> {
+        const current = historyRef.current;
+        const before = current.nextBefore;
+        if (
+          !historyOpen ||
+          workspaceReadiness !== "ready" ||
+          !workspaceId ||
+          !relationshipOwnedByWorkspace ||
+          relationshipReadiness !== "ready" ||
+          !historyOwnedByWorkspace ||
+          current.sourceWorkspaceId !== workspaceId ||
+          !current.hasEarlier ||
+          before === undefined ||
+          current.loadingEarlier
+        )
+          return;
+        cancelHistoryRequest();
+        const generation = historyGeneration.current;
+        const controller = new AbortController();
+        historyRequestController.current = controller;
+        setHistory((value) => ({ ...value, loadingEarlier: true }));
+        try {
+          const result = await rpc.call(
+            "/dsh-companion",
+            "relationship/history",
+            { workspaceId, limit: 10, before },
+            controller.signal,
+          );
+          if (
+            controller.signal.aborted ||
+            generation !== historyGeneration.current ||
+            !historyOpen ||
+            workspaceReadiness !== "ready" ||
+            !relationshipOwnedByWorkspace ||
+            relationshipReadiness !== "ready" ||
+            !historyOwnedByWorkspace ||
+            historyRef.current.sourceWorkspaceId !== workspaceId ||
+            historyRef.current.nextBefore !== before
+          )
+            return;
+          if (!result.ok)
+            throw new Error(result.error?.message ?? "history-unavailable");
+          const page = historyPageFrom(result.value);
+          setHistory((value) => {
+            const next: CompanionHistoryView = {
+              status: "ready",
+              sourceWorkspaceId: workspaceId,
+              records: [...value.records, ...page.records],
+              hasEarlier: page.hasEarlier,
+              loadingEarlier: false,
+            };
+            if (page.nextBefore !== undefined)
+              next.nextBefore = page.nextBefore;
+            if (page.predecessor !== undefined)
+              next.predecessor = page.predecessor;
+            return next;
+          });
+        } catch (error) {
+          if (
+            controller.signal.aborted ||
+            generation !== historyGeneration.current ||
+            !historyOpen ||
+            workspaceReadiness !== "ready" ||
+            !relationshipOwnedByWorkspace ||
+            relationshipReadiness !== "ready" ||
+            !historyOwnedByWorkspace
+          )
+            return;
+          setHistory((value) => ({
+            ...value,
+            status: "error",
+            loadingEarlier: false,
+          }));
+          throw error;
+        } finally {
+          if (historyRequestController.current === controller)
+            historyRequestController.current = undefined;
         }
+      },
+      retryHistory(): void {
+        setHistoryRetryKey((value) => value + 1);
       },
       async loadOlder(): Promise<void> {
         await session?.loadOlder();
@@ -640,6 +886,16 @@ export function CompanionRoot({
     session,
     submissionHandoff,
     ttsCache,
+    availableSessions,
+    historyRef,
+    workspaceId,
+    historyGeneration,
+    historyOpen,
+    cancelHistoryRequest,
+    historyOwnedByWorkspace,
+    relationshipOwnedByWorkspace,
+    relationshipReadiness,
+    workspaceReadiness,
     workspace,
   ]);
 
@@ -660,16 +916,19 @@ export function CompanionRoot({
     actions,
     sessions,
     workspaceReadiness,
-    relationshipReadiness,
+    relationshipReadiness: visibleRelationshipReadiness,
     sessionReadiness,
     sessionId: selectedSessionId,
     imageLimits,
     voiceCapability,
+    history: visibleHistory,
+    onHistoryOpenChange,
     onAdvanced: () => {
       window.location.assign("/");
     },
     onRecovery: () => setRecoveryKey((value) => value + 1),
   };
+  // oxlint-disable-next-line react/refs -- action callbacks read request guards only after render.
   return createElement(SvelteMount, { props: svelteProps });
 }
 

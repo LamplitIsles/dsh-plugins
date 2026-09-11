@@ -4,6 +4,7 @@ import type { Context as ClientContext } from "@deepseek-ai/cordis";
 import { mountBridgeFixture } from "./bridge.js";
 import CompanionBridge from "../src/client/CompanionBridge.svelte";
 import type { CompanionBridgeProps } from "../src/client/companion-bridge.js";
+import { companionZh, type CompanionTranslate } from "../src/client/locale.js";
 import { companionStyles } from "../src/client/theme.js";
 import daisyStyles from "../src/client/daisy.css?inline";
 import settingsCardStyles from "../src/client/CompanionSettingsCard.module.css?inline";
@@ -72,6 +73,13 @@ const query = new URLSearchParams(location.search);
 const root = document.getElementById("fixture")!;
 const bridgeMode = query.get("bridge") === "1";
 if (bridgeMode) mountBridgeFixture(root);
+const fixtureTranslate: CompanionTranslate = (key, params) =>
+  companionZh[key].replace(/\{(\w+)\}/gu, (match, name: string) => {
+    const value = params?.[name];
+    return typeof value === "string" || typeof value === "number"
+      ? String(value)
+      : match;
+  });
 const now = Date.now();
 const readiness = (key: string): CompanionReadiness => {
   const value = query.get(key);
@@ -313,6 +321,8 @@ URL.revokeObjectURL = (url: string) => {
   revokeObjectUrl(url);
 };
 const fixtureProps: CompanionBridgeProps = {
+  t: fixtureTranslate,
+  locale: "zh-Hant",
   projection,
   scheme: query.get("theme") === "dark" ? "dark" : "light",
   sessions: [

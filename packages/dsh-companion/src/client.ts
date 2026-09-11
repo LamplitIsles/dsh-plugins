@@ -7,6 +7,7 @@ import type {} from "@deepseek-ai/dsh-api-session-controller/client";
 import type {} from "@deepseek-ai/dsh-api-workspace-controller/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {} from "@deepseek-ai/dsh-client-ui-chat/client";
+import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-renderer/client";
 import type {} from "@deepseek-ai/dsh-client-ui-session/client";
 import type {} from "@deepseek-ai/dsh-client-ui-settings/client";
@@ -14,14 +15,18 @@ import type {} from "@deepseek-ai/dsh-client-ui-settings-plugins/client";
 import type {} from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-theme/client";
 import { CompanionRoot } from "./client/CompanionRoot.js";
+import { CompanionEntry } from "./client/CompanionEntry.js";
 import { CompanionSettingsCard } from "./client/CompanionSettingsCard.js";
 import { decodeClientSettings } from "./client/settings.js";
 import { companionStyles } from "./client/theme.js";
 import daisyStyles from "./client/daisy.css?inline";
+import katexStyles from "katex/dist/katex.min.css?inline";
+import entryStyles from "./client/CompanionEntry.module.css?inline";
 import settingsCardStyles from "./client/CompanionSettingsCard.module.css?inline";
 import {
   APPLICATION_STYLESHEET_ID,
   mountStyleSheet,
+  ENTRY_STYLESHEET_ID,
   SETTINGS_STYLESHEET_ID,
 } from "./client/styles.js";
 import { registerCompanionContinuity } from "./continuity.js";
@@ -47,7 +52,7 @@ function onCompanionPath(pathname: string): boolean {
 export function installStyles(ctx: ClientContext): void {
   mountStyleSheet(
     ctx,
-    `${daisyStyles}\n${companionStyles}`,
+    `${daisyStyles}\n${companionStyles}\n${katexStyles}`,
     APPLICATION_STYLESHEET_ID,
     "dsh-companion: application stylesheet",
   );
@@ -59,6 +64,15 @@ export function installSettingsStyles(ctx: ClientContext): void {
     settingsCardStyles,
     SETTINGS_STYLESHEET_ID,
     "dsh-companion: settings stylesheet",
+  );
+}
+
+export function installEntryStyles(ctx: ClientContext): void {
+  mountStyleSheet(
+    ctx,
+    entryStyles,
+    ENTRY_STYLESHEET_ID,
+    "dsh-companion: homepage entry stylesheet",
   );
 }
 
@@ -150,6 +164,23 @@ export function apply(ctx: ClientContext): void {
       CompanionSettingsCard as never,
     ),
   );
+  if (
+    typeof window !== "undefined" &&
+    !onCompanionPath(window.location.pathname)
+  ) {
+    installEntryStyles(ctx);
+    ctx.slots.inject("shell.overlay" as never, () =>
+      ctx.slots.register(
+        {
+          name: "shell.overlay",
+          id: "dsh-companion-entry",
+          order: 100,
+          locale: SETTINGS_NAMESPACE,
+        } as never,
+        CompanionEntry as never,
+      ),
+    );
+  }
   if (
     typeof window === "undefined" ||
     !onCompanionPath(window.location.pathname)

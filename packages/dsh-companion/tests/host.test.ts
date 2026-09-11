@@ -610,6 +610,59 @@ describe("Host accepted-turn relationship contract", () => {
       affinity: 69,
       signature: "旧签名",
     });
+    await expect(
+      handler(
+        "relationship/history",
+        { workspaceId: "workspace-a", limit: 2 },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        records: [
+          { changes: { mood: { value: "bright" } } },
+          { changes: { mood: { value: "tender" } } },
+        ],
+        hasEarlier: true,
+      },
+    });
+    await expect(
+      handler(
+        "relationship/history",
+        { workspaceId: "workspace-a", limit: 0 },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-input" } });
+    await expect(
+      handler(
+        "relationship/history",
+        { workspaceId: "workspace-a", before: 1, extra: true },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid-input" } });
+    for (const payload of [
+      null,
+      [],
+      { workspaceId: 42 },
+      { workspaceId: "" },
+      { workspaceId: "workspace-a", before: null },
+    ]) {
+      await expect(
+        handler("relationship/history", payload, new AbortController().signal),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "invalid-input" },
+      });
+    }
+    const canceled = new AbortController();
+    canceled.abort();
+    await expect(
+      handler(
+        "relationship/history",
+        { workspaceId: "workspace-a" },
+        canceled.signal,
+      ),
+    ).rejects.toBeDefined();
     const watch = handler(
       "relationship/watch",
       { workspaceId: "workspace-a", revision: initial.value.revision },
