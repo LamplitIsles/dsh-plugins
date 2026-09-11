@@ -69,8 +69,12 @@ sibling checkout is required. See
 exact release, asset URLs, and checksums.
 
 It verifies npm login, runs the declared frozen install, workspace checks,
-packing, real DSH artifact smoke, registry preflight, and selected-package
-release preparation in the temporary workspace. It then asks before publishing
+packing, registry preflight, and selected-package release preparation in the
+temporary workspace. Release preparation runs the real DSH artifact smoke once
+for the selected package; bootstrap does not also smoke every unrelated package.
+Smoke profiles reuse the invoking pnpm installation while keeping their homes,
+credentials, dependency caches, and runtime state in temporary directories, so
+each profile does not download pnpm again. It then asks before publishing
 the verified tarball publicly under `beta`. Only the selected package is
 published. Registry errors stop execution; an exact version that already exists
 skips completed validation/publication. A successful publish is followed by

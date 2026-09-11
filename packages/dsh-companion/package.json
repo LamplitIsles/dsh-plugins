@@ -1,6 +1,6 @@
 {
   "name": "@lamplitisles/dsh-companion",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "A calm, one-to-one Svelte companion surface for DeepSeek Harness",
   "license": "Apache-2.0",
   "repository": {

@@ -1,6 +1,6 @@
 {
   "name": "@lamplitisles/dsh-nanocodex",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Nanocodex Node/WASM engine adapter for DeepSeek Harness",
   "license": "Apache-2.0",
   "repository": {

@@ -17,6 +17,7 @@ export function dshInvocation(entry: string): DshInvocation;
 export function isolatedEnvironment(
   temp: string,
   dshHome: string,
+  parent?: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv;
 export function linkDshDependencies(
   directory: string,

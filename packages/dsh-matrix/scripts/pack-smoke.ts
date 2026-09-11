@@ -1,3 +1,4 @@
+import { isolatedEnvironment } from "../../../scripts/dsh-web-smoke.mjs";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -76,38 +77,6 @@ async function dshVersion(
   } catch (error) {
     throw new Error(`pack-smoke requires DSH 0.1.2-rc.1: ${String(error)}`);
   }
-}
-
-function isolatedEnvironment(temp: string, dshHome: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const name of [
-    "PATH",
-    "SystemRoot",
-    "WINDIR",
-    "PATHEXT",
-    "COMSPEC",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "LANG",
-    "LC_ALL",
-  ]) {
-    if (process.env[name] !== undefined) env[name] = process.env[name];
-  }
-  const testHome = join(temp, "home");
-  return {
-    ...env,
-    HOME: testHome,
-    USERPROFILE: testHome,
-    DSH_HOME: dshHome,
-    DSH_TELEMETRY_DISABLED: "1",
-    npm_config_store_dir: join(temp, "pnpm-store"),
-    npm_config_cache: join(temp, "npm-cache"),
-    XDG_CACHE_HOME: join(temp, "cache"),
-    XDG_CONFIG_HOME: join(temp, "config"),
-    XDG_DATA_HOME: join(temp, "data"),
-    XDG_STATE_HOME: join(temp, "state"),
-  };
 }
 
 async function startRuntime(

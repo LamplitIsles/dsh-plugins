@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { symlink } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 
 export const DSH_RC_VERSION = "0.1.2-rc.1";
@@ -31,7 +31,11 @@ export function dshInvocation(entry) {
  * temporary directory. In particular, do not pass user credentials or the
  * operator's live DSH_HOME to the child process.
  */
-export function isolatedEnvironment(temp, dshHome) {
+export function isolatedEnvironment(temp, dshHome, parent = process.env) {
+  const pnpm = parent.npm_execpath;
+  if (!pnpm || !isAbsolute(pnpm)) {
+    throw new Error("Run packed smoke through the repository's pnpm scripts.");
+  }
   const inherited = {};
   for (const name of [
     "PATH",
@@ -45,11 +49,15 @@ export function isolatedEnvironment(temp, dshHome) {
     "TMP",
     "TEMP",
   ]) {
-    if (process.env[name] !== undefined) inherited[name] = process.env[name];
+    if (parent[name] !== undefined) inherited[name] = parent[name];
   }
   const home = join(temp, "home");
   return {
     ...inherited,
+    // Reuse the running pnpm installation, bypassing the Corepack shim whose
+    // cache disappears with the isolated HOME. All mutable state stays below temp.
+    PATH: [dirname(pnpm), inherited.PATH].filter(Boolean).join(delimiter),
+    npm_execpath: pnpm,
     HOME: home,
     USERPROFILE: home,
     DSH_HOME: dshHome,

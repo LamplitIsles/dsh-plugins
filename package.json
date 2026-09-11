@@ -18,7 +18,7 @@
     "typecheck": "pnpm run typecheck:root && pnpm --filter \"./packages/*\" run typecheck",
     "typecheck:root": "tsc --noEmit",
     "test": "pnpm --filter \"./packages/*\" run test && pnpm run test:release",
-    "test:release": "vitest run tests/release.test.ts tests/build-declarations.test.ts tests/npm-bootstrap.test.ts tests/dev-deploy.test.ts tests/session-polling.test.ts",
+    "test:release": "vitest run tests/release.test.ts tests/build-declarations.test.ts tests/npm-bootstrap.test.ts tests/dev-deploy.test.ts tests/session-polling.test.ts tests/dsh-smoke-environment.test.ts",
     "test:e2e": "pnpm --filter @lamplitisles/dsh-companion run test:e2e",
     "build": "pnpm --filter \"./packages/*\" run build",
     "lint": "oxlint .",

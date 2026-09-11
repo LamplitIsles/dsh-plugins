@@ -1,4 +1,7 @@
-import { linkDshDependencies } from "../../../scripts/dsh-web-smoke.mjs";
+import {
+  isolatedEnvironment,
+  linkDshDependencies,
+} from "../../../scripts/dsh-web-smoke.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
@@ -24,38 +27,6 @@ if (
   !existsSync(join(root, "dist", "client.js"))
 ) {
   throw new Error("pack-smoke requires a fresh `pnpm build`");
-}
-
-function isolatedEnvironment(temp, dshHome) {
-  const env = {};
-  for (const name of [
-    "PATH",
-    "SystemRoot",
-    "WINDIR",
-    "PATHEXT",
-    "COMSPEC",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "LANG",
-    "LC_ALL",
-  ]) {
-    if (process.env[name] !== undefined) env[name] = process.env[name];
-  }
-  const testHome = join(temp, "home");
-  return {
-    ...env,
-    HOME: testHome,
-    USERPROFILE: testHome,
-    DSH_HOME: dshHome,
-    DSH_TELEMETRY_DISABLED: "1",
-    npm_config_cache: join(temp, "npm-cache"),
-    npm_config_store_dir: join(temp, "pnpm-store"),
-    XDG_CACHE_HOME: join(temp, "cache"),
-    XDG_CONFIG_HOME: join(temp, "config"),
-    XDG_DATA_HOME: join(temp, "data"),
-    XDG_STATE_HOME: join(temp, "state"),
-  };
 }
 
 function dshEntry(env) {

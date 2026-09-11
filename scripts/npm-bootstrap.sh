@@ -365,7 +365,6 @@ NODE
     corepack pnpm run test
     corepack pnpm run build
     corepack pnpm run pack:check
-    corepack pnpm run artifact:smoke
     BOOTSTRAP_STATUS=$(registry_status "$BOOTSTRAP_VERSION")
     if [[ $BOOTSTRAP_STATUS == missing ]]; then
       corepack pnpm exec tsx scripts/publish-preflight.ts "$PACKAGE_NAME" "v$BOOTSTRAP_VERSION"

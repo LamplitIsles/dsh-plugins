@@ -336,9 +336,16 @@ it("publishes only the temporary beta artifact without a pre-merge GitHub fetch"
       "pnpm run test",
       "pnpm run build",
       "pnpm run pack:check",
-      "pnpm run artifact:smoke",
     ]),
   );
+  expect(checks.some((event) => event.args.includes("artifact:smoke"))).toBe(
+    false,
+  );
+  const preparations = checks.filter((event) =>
+    event.args.includes("release:prepare"),
+  );
+  expect(preparations).toHaveLength(1);
+  expect(preparations[0].args).toContain("@lamplitisles/dsh-tabletop");
   expect(
     (await readdir(support)).some((name) =>
       name.startsWith("dsh-npm-bootstrap."),
