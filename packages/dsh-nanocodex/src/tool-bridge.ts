@@ -19,12 +19,14 @@ export interface ToolBridgeCallbacks {
     readonly id: string;
     readonly name: string;
     readonly arguments: string;
-  }): SessionSeq;
+    readonly parentCallId?: string;
+  }): SessionSeq | undefined | Promise<SessionSeq | undefined>;
   onResult(call: {
     readonly id: string;
-    readonly callSeq: SessionSeq;
+    readonly callSeq: SessionSeq | undefined;
     readonly result: ToolExecutionResult;
-  }): void;
+    readonly parentCallId?: string;
+  }): void | Promise<void>;
 }
 
 export interface ToolBridgeContext {
@@ -110,10 +112,11 @@ function makeTool(
             })()
           : input;
       const argumentsValue = normalizedArguments(canonicalInput);
-      const callSeq = context.callbacks.onCall({
+      const callSeq = await context.callbacks.onCall({
         id,
         name: definition.name,
         arguments: argumentsValue.text,
+        ...(call.parentCallId ? { parentCallId: call.parentCallId } : {}),
       });
       const parentCallId = call.parentCallId;
       if (parentCallId) {
@@ -144,7 +147,12 @@ function makeTool(
         result = executionFailure(error);
       }
       try {
-        context.callbacks.onResult({ id, callSeq, result });
+        await context.callbacks.onResult({
+          id,
+          callSeq,
+          result,
+          ...(parentCallId ? { parentCallId } : {}),
+        });
       } finally {
         if (parentCallId) {
           context.agent.session.append("tool/code-dispatch", {

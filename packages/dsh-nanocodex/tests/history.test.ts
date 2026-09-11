@@ -14,10 +14,12 @@ import {
   ToolCallId,
 } from "@deepseek-ai/dsh-llm";
 import { describe, expect, it } from "vitest";
+import { Agent, Transport } from "nanocodex/node";
 import {
   buildHistoryProjection,
   buildHistorySeed,
   buildPromptInput,
+  historyToolCallId,
 } from "../src/history.js";
 
 const imageRef: ImageAttachmentRef = {
@@ -38,6 +40,15 @@ function attachments(): AttachmentStore {
 }
 
 describe("Nanocodex history projection", () => {
+  it.each([
+    ["call_one|ctc_two", "call_one"],
+    ["call:one___|fc_two", "call_one"],
+    ["a😀b|fc_two", "a__b"],
+    ["a".repeat(80), "a".repeat(64)],
+  ])("normalizes imported call IDs like Pi: %s", (id, expected) => {
+    expect(historyToolCallId(id)).toBe(expected);
+  });
+
   it("hydrates active text, image, tool call, and tool result without execution", async () => {
     const callId = ToolCallId("call-1");
     const messages = [
@@ -110,6 +121,69 @@ describe("Nanocodex history projection", () => {
     expect(seed.history[0]).toMatchObject({ role: "user" });
   });
 
+  it("projects bounded, stable wire IDs without merging historical tool pairs", async () => {
+    const ids = [
+      `call_${"a".repeat(24)}|ctc_${"b".repeat(50)}`,
+      `call_${"c".repeat(24)}|fc_${"b".repeat(50)}`,
+      "c".repeat(64),
+    ];
+    const messages = ids.flatMap((id, index) => [
+      createAssistantMessage({
+        content: [
+          {
+            type: "tool-call",
+            id: ToolCallId(id),
+            name: index === 0 ? "apply_patch" : "roll_dice",
+            arguments:
+              index === 0
+                ? JSON.stringify({ patch: "*** Begin Patch\n*** End Patch\n" })
+                : "{}",
+          },
+        ],
+        source: { provider: "openai", model: "gpt-5.6-sol" },
+      }),
+      createToolResultMessage({
+        callId: ToolCallId(id),
+        content: [{ type: "text", text: "Completed." }],
+        isError: false,
+      }),
+    ]);
+    const original = structuredClone(messages);
+    const seed = await buildHistorySeed(messages, {
+      attachments: attachments(),
+    });
+    const wireIds = seed.history.map((item) =>
+      "call_id" in item ? item.call_id : undefined,
+    );
+    for (const id of wireIds) expect(id).toMatch(/^[A-Za-z0-9_-]{1,64}$/u);
+    expect(new Set(wireIds).size).toBe(ids.length);
+    expect(wireIds[0]).toBe(wireIds[1]);
+    expect(wireIds[0]).toBe(`call_${"a".repeat(24)}`);
+    expect(wireIds[2]).toBe(wireIds[3]);
+    expect(wireIds[2]).toBe(`call_${"c".repeat(24)}`);
+    expect(wireIds[4]).toBe(ids[2]);
+    expect(wireIds[5]).toBe(ids[2]);
+    await expect(
+      buildHistorySeed(messages, { attachments: attachments() }),
+    ).resolves.toEqual(seed);
+    expect(messages).toEqual(original);
+  });
+
+  it("rejects stored calls that collapse to the same Responses call ID", async () => {
+    const message = createAssistantMessage({
+      content: ["call_shared|fc_first", "call_shared|fc_second"].map((id) => ({
+        type: "tool-call",
+        id: ToolCallId(id),
+        name: "roll_dice",
+        arguments: "{}",
+      })),
+      source: { provider: "openai", model: "gpt-5.6-sol" },
+    });
+    await expect(
+      buildHistorySeed([message], { attachments: attachments() }),
+    ).rejects.toThrow('duplicate tool call "call_shared"');
+  });
+
   it("hydrates apply_patch as a raw custom call without executing it", async () => {
     const patchCallId = ToolCallId("patch-call");
     const messages = [
@@ -136,6 +210,31 @@ describe("Nanocodex history projection", () => {
     const projection = await buildHistoryProjection(messages, {
       attachments: attachments(),
     });
+    const agent = await Agent.create({
+      model: "gpt-5.6-sol",
+      transport: Transport.openAi({
+        apiKey: "unused-offline-fixture",
+        apiBaseUrl: "http://127.0.0.1:1/v1",
+        websocketWarmup: false,
+      }),
+      subagents: false,
+      historySeed: {
+        history: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "Apply the patch." }],
+          },
+          ...projection.history,
+        ],
+      },
+    });
+    try {
+      expect((await agent.session.snapshot()).history).toBeDefined();
+    } finally {
+      await agent.session.shutdown();
+      agent.dispose();
+    }
     expect(projection.history).toEqual([
       {
         type: "custom_tool_call",
@@ -145,7 +244,6 @@ describe("Nanocodex history projection", () => {
       },
       {
         type: "custom_tool_call_output",
-        name: "apply_patch",
         call_id: "patch-call",
         output: "Applied 1 file.",
       },
@@ -280,13 +378,91 @@ describe("Nanocodex history projection", () => {
     expect(injected.content[0]).toMatchObject({ type: "text" });
   });
 
-  it("rejects retained reasoning blocks instead of silently changing context", async () => {
+  it("resumes visible assistant content without replaying provider reasoning", async () => {
     const message = createAssistantMessage({
-      content: [{ type: "reasoning", text: "private reasoning" }],
+      content: [
+        { type: "reasoning", text: "private reasoning" },
+        { type: "text", text: "The answer is four." },
+      ],
       source: { provider: "openai", model: "gpt-5.6-sol" },
     });
-    await expect(
-      buildHistorySeed([message], { attachments: attachments() }),
-    ).rejects.toThrow(/cannot hydrate assistant content block.*reasoning/iu);
+    const projection = await buildHistoryProjection([message], {
+      attachments: attachments(),
+    });
+    expect(projection.history).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "The answer is four." }],
+        id: String(message.id),
+        status: "completed",
+      },
+    ]);
+    expect(projection.items[0]?.message).toBe(message);
+    expect(message.content[0]).toEqual({
+      type: "reasoning",
+      text: "private reasoning",
+    });
+  });
+
+  it("skips reasoning-only messages and keeps tool exchanges in order", async () => {
+    const callId = ToolCallId("legacy-tool-call");
+    const source = { provider: "openai", model: "gpt-5.6-sol" };
+    const messages = [
+      createAssistantMessage({
+        content: [{ type: "reasoning", text: "reasoning without an answer" }],
+        source,
+      }),
+      createAssistantMessage({
+        content: [
+          { type: "text", text: "Checking." },
+          { type: "reasoning", text: "reasoning before the tool" },
+          { type: "tool-call", id: callId, name: "roll_dice", arguments: "{}" },
+          { type: "reasoning", text: "reasoning after the tool" },
+        ],
+        source,
+      }),
+      createToolResultMessage({
+        callId,
+        content: [{ type: "text", text: "4" }],
+        isError: false,
+      }),
+      createAssistantMessage({
+        content: [{ type: "text", text: "Four." }],
+        source,
+      }),
+    ];
+    const projection = await buildHistoryProjection(messages, {
+      attachments: attachments(),
+    });
+    expect(projection.history).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Checking." }],
+        id: String(messages[1]!.id),
+        status: "completed",
+      },
+      {
+        type: "function_call",
+        name: "roll_dice",
+        arguments: "{}",
+        call_id: String(callId),
+      },
+      { type: "function_call_output", call_id: String(callId), output: "4" },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Four." }],
+        id: String(messages[3]!.id),
+        status: "completed",
+      },
+    ]);
+    expect(projection.items.map(({ message }) => message.id)).toEqual([
+      messages[1]!.id,
+      messages[1]!.id,
+      messages[2]!.id,
+      messages[3]!.id,
+    ]);
   });
 });

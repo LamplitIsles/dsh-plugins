@@ -51,8 +51,17 @@ calls are hydrated as raw custom calls and are never executed again during
 resume or compaction; their results retain diff metadata for the Host.
 
 Existing sessions are continued from DSH's active surface through typed
-`historySeed` hydration. After each successful turn, the adapter also appends a
-versioned `nanocodexCheckpoint` to DSH's `request/context` event and awaits the
+`historySeed` hydration. Text-only reasoning blocks remain in the DSH transcript
+but are omitted from the model history: they are not portable provider reasoning
+items. Visible answers and tool exchanges retain their order, and reasoning-only
+messages do not create empty model messages.
+Pi-style `call_id|item_id` tool identities are split before replay: calls and
+results share the sanitized, at-most-64-character call part. DSH keeps the full
+original identity, including during compaction; ambiguous projected call IDs
+are rejected instead of merging tool exchanges.
+
+After each successful turn, the adapter also appends a versioned
+`nanocodexCheckpoint` to DSH's `request/context` event and awaits the
 session flush. The record includes the Nanocodex snapshot and an exact active
 surface boundary (replacement generation, surface sequence list, message count,
 and fingerprint). A new Host uses a checkpoint only when its route and boundary

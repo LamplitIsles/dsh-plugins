@@ -14,7 +14,6 @@ import {
   type Session,
 } from "@deepseek-ai/dsh-session";
 import {
-  createAssistantMessage,
   createToolResultMessage,
   ToolCallId,
   createUserMessage,
@@ -22,7 +21,6 @@ import {
   type GenerateOptions,
   type Message,
   type ToolSchema,
-  type TokenUsage,
   type UserMessage,
 } from "@deepseek-ai/dsh-llm";
 import {
@@ -47,7 +45,6 @@ import {
   type HistoryItem,
   type ToolDefinition as NanocodexToolDefinition,
   type SessionSnapshot,
-  type TurnUsage,
 } from "nanocodex/node";
 import { newQuickJSAsyncWASMModuleFromVariant } from "quickjs-emscripten-core";
 import {
@@ -55,12 +52,14 @@ import {
   APPLY_PATCH_GRAMMAR,
   APPLY_PATCH_NAME,
   isSupportedModel,
+  MODEL_CONTEXT_WINDOW,
   type NanocodexModel,
 } from "./constants.js";
 import {
   buildHistoryProjection,
   buildHistorySeed,
   buildPromptInput,
+  historyToolCallId,
   plainText,
 } from "./history.js";
 import { normalizeNanocodexSessionId } from "./session-id.js";
@@ -70,18 +69,12 @@ import {
   type SettingsContext,
 } from "./settings.js";
 import { createToolBridge, type ToolBridge } from "./tool-bridge.js";
+import { NanocodexOutput } from "./output.js";
 import { observeTransportFallback } from "./transport-diagnostic.js";
 
 interface ActiveTurn {
-  readonly agent: Agent;
-  readonly turn: number;
-  readonly step: number;
-  readonly signal: AbortSignal;
-  readonly provider: string;
-  readonly model: string;
-  text: string;
-  chunkSeqs: SessionSeq[];
-  streamStarted: boolean;
+  readonly output: NanocodexOutput;
+  readonly drain: () => Promise<void>;
 }
 
 export interface NanocodexCompactionResult {
@@ -118,7 +111,6 @@ export interface NanocodexCompactionSelection {
 export interface EngineRunResult {
   readonly provider: string;
   readonly model: NanocodexModel;
-  readonly usage?: TokenUsage;
   /** The exact public Nanocodex snapshot at the successful DSH boundary. */
   readonly snapshot: SessionSnapshot;
   /**
@@ -182,39 +174,6 @@ const RAW_APPLICATION_DEFINITIONS: ReadonlyMap<
 // Agent handle itself is replaced or wrapped during Host routing.
 function runtimeKey(agent: Agent): string {
   return String(agent.session.id);
-}
-
-function payloadText(event: AgentEvent): string | undefined {
-  const value = event.payload.text;
-  return typeof value === "string" ? value : undefined;
-}
-
-function toUsage(value: TurnUsage): TokenUsage | undefined {
-  if (
-    !Number.isFinite(value.input_tokens) ||
-    !Number.isFinite(value.output_tokens)
-  ) {
-    return undefined;
-  }
-  return {
-    inputTokens: value.input_tokens,
-    outputTokens: value.output_tokens,
-    ...(Number.isFinite(value.total_tokens)
-      ? { totalTokens: value.total_tokens }
-      : {}),
-    ...(Number.isFinite(value.cached_input_tokens) &&
-    value.cached_input_tokens > 0
-      ? { cacheReadTokens: value.cached_input_tokens }
-      : {}),
-    ...(Number.isFinite(value.cache_write_input_tokens) &&
-    value.cache_write_input_tokens > 0
-      ? { cacheWriteTokens: value.cache_write_input_tokens }
-      : {}),
-    ...(Number.isFinite(value.reasoning_output_tokens) &&
-    value.reasoning_output_tokens > 0
-      ? { reasoningTokens: value.reasoning_output_tokens }
-      : {}),
-  };
 }
 
 function messageText(message: UserMessage): string {
@@ -888,7 +847,7 @@ function codeDispatchCallMatches(
   return (
     (call?.type === "function_call" || call?.type === "custom_tool_call") &&
     callFields !== undefined &&
-    callFields.call_id === child.subCallId &&
+    callFields.call_id === historyToolCallId(child.subCallId) &&
     callFields.name === child.name &&
     expectedInput !== undefined &&
     callFields.input === expectedInput &&
@@ -915,7 +874,7 @@ function codeDispatchResultMatches(
     (output?.type === "function_call_output" ||
       output?.type === "custom_tool_call_output") &&
     outputFields !== undefined &&
-    outputFields.call_id === child.subCallId &&
+    outputFields.call_id === historyToolCallId(child.subCallId) &&
     tool !== undefined &&
     tool.calls.length === 1 &&
     tool.results.length === 1 &&
@@ -1082,6 +1041,7 @@ export class NanocodexEngine {
     turn: number,
     step: number,
     signal: AbortSignal,
+    advanceStep: () => number,
   ): Promise<EngineRunResult> {
     signal.throwIfAborted();
     const route = await resolveNanocodexRoute(
@@ -1110,17 +1070,16 @@ export class NanocodexEngine {
     const quickJs = await this.quickJs();
     signal.throwIfAborted();
 
-    let active: ActiveTurn = {
+    const output = new NanocodexOutput(
       agent,
+      route.provider,
+      route.model,
       turn,
       step,
-      signal,
-      provider: route.provider,
-      model: route.model,
-      text: "",
-      chunkSeqs: [],
-      streamStarted: false,
-    };
+      advanceStep,
+    );
+    let projection = Promise.resolve();
+    const active: ActiveTurn = { output, drain: () => projection };
     const visibleToolNames = new Set(assembly.tools.map((tool) => tool.name));
     const toolKey = JSON.stringify(assembly.tools);
     const key = runtimeKey(agent);
@@ -1145,38 +1104,40 @@ export class NanocodexEngine {
         signal,
         customDefinitions: RAW_APPLICATION_DEFINITIONS,
         callbacks: {
-          onCall: ({ id, name, arguments: argumentsText }) => {
+          onCall: async ({
+            id,
+            name,
+            arguments: argumentsText,
+            parentCallId,
+          }) => {
             const current = runtime?.active;
             if (current === undefined)
               throw new Error("Nanocodex tool call has no active DSH step");
-            this.flushAssistant(current, [
-              {
-                type: "tool-call",
-                id: ToolCallId(id),
-                name,
-                arguments: argumentsText,
-              },
-            ]);
+            await current.drain();
+            if (parentCallId !== undefined) return undefined;
             return agent.session.append("tool/call", {
-              turn: current.turn,
-              step: current.step,
+              ...current.output.coordinates,
               callId: ToolCallId(id),
               name,
               arguments: argumentsText,
             }).seq;
           },
-          onResult: ({ id, callSeq, result }) => {
+          onResult: async ({ id, callSeq, result }) => {
             const current = runtime?.active;
-            if (current === undefined)
-              throw new Error("Nanocodex tool result has no active DSH step");
-            this.appendToolResult(
-              agent,
-              current.turn,
-              current.step,
-              id,
-              callSeq,
-              result,
-            );
+            if (current !== undefined) await current.drain();
+            if (callSeq !== undefined) {
+              const call = agent.session.eventAt(callSeq);
+              if (call?.type !== "tool/call")
+                throw new Error("Nanocodex tool result has no durable call");
+              this.appendToolResult(
+                agent,
+                call.data.turn,
+                call.data.step,
+                id,
+                callSeq,
+                result,
+              );
+            }
             for (const context of result.additionalContexts ?? []) {
               agent.inject(context);
             }
@@ -1225,10 +1186,8 @@ export class NanocodexEngine {
     const nodeAgent = runtime.nodeAgent;
     const watcher = nodeAgent.events.watch();
     const removeListener = watcher.onEvent((event) => {
-      if (event.type === "assistant.delta") {
-        const text = payloadText(event);
-        if (text) this.appendAssistantDelta(active, text);
-      } else {
+      projection = projection.then(async () => {
+        await output.accept(event);
         const replaced = parseCompactionReplacedEvent(event);
         if (
           replaced !== undefined &&
@@ -1245,7 +1204,10 @@ export class NanocodexEngine {
                 : [...agent.session.surface.nodes],
           });
         }
-      }
+      });
+      // The event source cannot await listeners. Retain the error for drain()
+      // and stop generation rather than accumulating an unrecordable turn.
+      void projection.catch(() => modelTurn.cancel().catch(() => undefined));
     });
     const removeTransportFallback = observeTransportFallback(
       this.ctx,
@@ -1267,23 +1229,13 @@ export class NanocodexEngine {
       await modelTurn.accepted();
       const result = await modelTurn.result();
       try {
+        await projection;
         signal.throwIfAborted();
-        const finalText = active.text || result.finalMessage;
-        if (finalText) {
-          if (!active.text) this.appendAssistantDelta(active, finalText);
-          this.flushAssistant(active);
-        }
-        let usage: TokenUsage | undefined;
-        try {
-          usage = toUsage(await result.usage());
-        } catch {
-          usage = undefined;
-        }
+        output.finish(result.finalMessage);
         const snapshot = await result.snapshot();
         return {
           provider: route.provider,
           model: route.model,
-          ...(usage ? { usage } : {}),
           snapshot,
           automaticCompactions,
         };
@@ -1292,9 +1244,8 @@ export class NanocodexEngine {
       }
     } catch (error) {
       discardRuntime = true;
-      if (signal.aborted && active.text) {
-        this.flushAssistant(active, [], true);
-      }
+      await projection.catch(() => undefined);
+      output.interrupt();
       throw error;
     } finally {
       signal.removeEventListener("abort", abort);
@@ -1303,12 +1254,6 @@ export class NanocodexEngine {
       removeTransportFallback();
       modelTurn.dispose();
       runtime.active = undefined;
-      active = {
-        ...active,
-        text: "",
-        chunkSeqs: [],
-        streamStarted: false,
-      };
       if (discardRuntime) {
         this.runtimes.delete(key);
         await this.closeRuntime(runtime).catch(() => undefined);
@@ -1439,6 +1384,11 @@ export class NanocodexEngine {
       );
     }
     const directPatchCallIds = validateRetainedApplyPatchPairs(retainedContext);
+    const surfaceCustomCallIds = new Set(
+      projected.flatMap(({ item }) =>
+        item.type === "custom_tool_call" ? [item.call_id] : [],
+      ),
+    );
 
     let firstIndex = -1;
     const firstIdentityPosition = retained.findIndex((identity, index) => {
@@ -1508,15 +1458,17 @@ export class NanocodexEngine {
       const contextItem = retainedContext[retainedPosition]!;
       const contextCallId =
         "call_id" in contextItem ? contextItem.call_id : undefined;
-      const directPatch =
-        contextCallId !== undefined && directPatchCallIds.has(contextCallId);
+      const surfaceCustom =
+        contextCallId !== undefined &&
+        (directPatchCallIds.has(contextCallId) ||
+          surfaceCustomCallIds.has(contextCallId));
       const dshBacked =
         identity.kind === "message" ||
         identity.kind === "function_call" ||
         identity.kind === "function_call_output" ||
-        directPatch;
+        surfaceCustom;
       const engineTool =
-        !directPatch &&
+        !surfaceCustom &&
         (identity.kind === "custom_tool_call" ||
           identity.kind === "custom_tool_call_output");
       if (!dshBacked && !engineTool) {
@@ -1695,6 +1647,7 @@ export class NanocodexEngine {
     } = {
       provider,
       model,
+      contextWindow: MODEL_CONTEXT_WINDOW,
       nanocodexCheckpoint: checkpoint,
     };
     session.append("request/context", context);
@@ -1896,76 +1849,19 @@ export class NanocodexEngine {
       session,
       session.surface.replaceGeneration,
     );
-    const requestContext = { provider, model };
+    const requestContext = {
+      provider,
+      model,
+      contextWindow: MODEL_CONTEXT_WINDOW,
+    };
     const previousContext = session.requestContext();
     if (
       previousContext?.provider !== requestContext.provider ||
-      previousContext.model !== requestContext.model
+      previousContext.model !== requestContext.model ||
+      previousContext.contextWindow !== requestContext.contextWindow
     ) {
       session.append("request/context", requestContext);
     }
-  }
-
-  private appendAssistantDelta(active: ActiveTurn, text: string): void {
-    if (!active.streamStarted) {
-      active.streamStarted = true;
-      active.chunkSeqs.push(
-        active.agent.session.append("assistant/chunk", {
-          turn: active.turn,
-          step: active.step,
-          chunk: { type: "block-start", index: 0, blockType: "text" },
-        }).seq,
-      );
-    }
-    active.text += text;
-    active.chunkSeqs.push(
-      active.agent.session.append("assistant/chunk", {
-        turn: active.turn,
-        step: active.step,
-        chunk: { type: "text-delta", index: 0, text },
-      }).seq,
-    );
-  }
-
-  private flushAssistant(
-    active: ActiveTurn,
-    extra: ContentBlock[] = [],
-    interrupted = false,
-  ): void {
-    if (!active.text && extra.length === 0) return;
-    if (active.streamStarted) {
-      active.chunkSeqs.push(
-        active.agent.session.append("assistant/chunk", {
-          turn: active.turn,
-          step: active.step,
-          chunk: {
-            type: "block-end",
-            index: 0,
-            block: { type: "text", text: active.text },
-          },
-        }).seq,
-      );
-    }
-    const content: ContentBlock[] = [
-      ...(active.text ? [{ type: "text" as const, text: active.text }] : []),
-      ...extra,
-    ];
-    active.agent.session.append(
-      "assistant/message",
-      {
-        turn: active.turn,
-        step: active.step,
-        message: createAssistantMessage({
-          content,
-          source: { provider: active.provider, model: active.model },
-        }),
-        ...(interrupted ? { interrupted: true as const } : {}),
-      },
-      { surfaceOp: "append", sourceEventSeqs: active.chunkSeqs },
-    );
-    active.text = "";
-    active.chunkSeqs = [];
-    active.streamStarted = false;
   }
 
   private appendToolResult(

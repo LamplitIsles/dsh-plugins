@@ -474,131 +474,142 @@ describe("Nanocodex compaction history mapping", () => {
     }
   });
 
-  it("maps a direct apply_patch custom exchange without replaying it", async () => {
-    const root = new Context();
-    const sessions = root.plugin(SessionStore);
-    await sessions;
-    const preparation = SessionPreparation.create(
-      root.sessions.prepare(SessionId("018f1f9a-7b3c-7a10-8000-000000000308")),
-    );
-    try {
-      const session = preparation.session;
-      session.append(
-        "user/message",
-        createUserMessage({
-          content: [{ type: "text", text: "old prefix" }],
-          source: { kind: "user" },
-        }),
-        { surfaceOp: "append" },
+  it.each(["apply_patch", "exec"])(
+    "maps a surfaced %s custom exchange without replaying it",
+    async (name) => {
+      const root = new Context();
+      const sessions = root.plugin(SessionStore);
+      await sessions;
+      const preparation = SessionPreparation.create(
+        root.sessions.prepare(
+          SessionId("018f1f9a-7b3c-7a10-8000-000000000308"),
+        ),
       );
-      session.append(
-        "user/message",
-        createUserMessage({
-          content: [{ type: "text", text: "update the file" }],
-          source: { kind: "user" },
-        }),
-        { surfaceOp: "append" },
-      );
-      const patchCallId = ToolCallId("direct-patch-call");
-      const patchArguments = JSON.stringify({
-        patch: "*** Begin Patch\n*** End Patch\n",
-      });
-      const callEvent = session.append(
-        "assistant/message",
-        {
+      try {
+        const session = preparation.session;
+        session.append(
+          "user/message",
+          createUserMessage({
+            content: [{ type: "text", text: "old prefix" }],
+            source: { kind: "user" },
+          }),
+          { surfaceOp: "append" },
+        );
+        session.append(
+          "user/message",
+          createUserMessage({
+            content: [{ type: "text", text: "update the file" }],
+            source: { kind: "user" },
+          }),
+          { surfaceOp: "append" },
+        );
+        const patchCallId = ToolCallId("direct-patch-call");
+        const input =
+          name === "exec"
+            ? 'text("Applied 1 file.");'
+            : "*** Begin Patch\n*** End Patch\n";
+        const patchArguments = JSON.stringify({
+          [name === "exec" ? "code" : "patch"]: input,
+        });
+        const callEvent = session.append(
+          "assistant/message",
+          {
+            turn: 1,
+            step: 1,
+            message: createAssistantMessage({
+              content: [
+                {
+                  type: "tool-call",
+                  id: patchCallId,
+                  name,
+                  arguments: patchArguments,
+                },
+              ],
+              source: { provider: "openai", model: "gpt-5.6-sol" },
+            }),
+          },
+          { surfaceOp: "append" },
+        );
+        session.append("tool/call", {
           turn: 1,
           step: 1,
-          message: createAssistantMessage({
-            content: [
-              {
-                type: "tool-call",
-                id: patchCallId,
-                name: "apply_patch",
-                arguments: patchArguments,
-              },
-            ],
-            source: { provider: "openai", model: "gpt-5.6-sol" },
-          }),
-        },
-        { surfaceOp: "append" },
-      );
-      session.append("tool/call", {
-        turn: 1,
-        step: 1,
-        callId: patchCallId,
-        name: "apply_patch",
-        arguments: patchArguments,
-      });
-      session.append(
-        "tool/result",
-        {
-          turn: 1,
-          step: 1,
-          message: createToolResultMessage({
-            callId: patchCallId,
-            content: [{ type: "text", text: "Applied 1 file." }],
-            isError: false,
-          }),
-        },
-        { surfaceOp: "append", sourceEventSeqs: [callEvent.seq] },
-      );
+          callId: patchCallId,
+          name,
+          arguments: patchArguments,
+        });
+        session.append(
+          "tool/result",
+          {
+            turn: 1,
+            step: 1,
+            message: createToolResultMessage({
+              callId: patchCallId,
+              content: [{ type: "text", text: "Applied 1 file." }],
+              isError: false,
+            }),
+          },
+          { surfaceOp: "append", sourceEventSeqs: [callEvent.seq] },
+        );
 
-      const outcome = outcomeFor(
-        [
-          { index: 1, kind: "message", id: "engine-user", call_id: null },
-          {
-            index: 2,
-            kind: "custom_tool_call",
-            id: "engine-patch-call",
-            call_id: "direct-patch-call",
-          },
-          {
-            index: 3,
-            kind: "custom_tool_call_output",
-            id: null,
-            call_id: "direct-patch-call",
-          },
-        ],
-        [
-          {
-            type: "message",
-            role: "developer",
-            content: [{ type: "input_text", text: "private fixture summary" }],
-          },
-          {
-            type: "message",
-            role: "user",
-            id: "engine-user",
-            content: [{ type: "input_text", text: "update the file" }],
-          },
-          {
-            type: "custom_tool_call",
-            id: "engine-patch-call",
-            call_id: "direct-patch-call",
-            name: "apply_patch",
-            input: "*** Begin Patch\n*** End Patch\n",
-          },
-          {
-            type: "custom_tool_call_output",
-            call_id: "direct-patch-call",
-            name: "apply_patch",
-            output: "Applied 1 file.",
-          },
-        ],
-      );
+        const outcome = outcomeFor(
+          [
+            { index: 1, kind: "message", id: "engine-user", call_id: null },
+            {
+              index: 2,
+              kind: "custom_tool_call",
+              id: "engine-patch-call",
+              call_id: "direct-patch-call",
+            },
+            {
+              index: 3,
+              kind: "custom_tool_call_output",
+              id: null,
+              call_id: "direct-patch-call",
+            },
+          ],
+          [
+            {
+              type: "message",
+              role: "developer",
+              content: [
+                { type: "input_text", text: "private fixture summary" },
+              ],
+            },
+            {
+              type: "message",
+              role: "user",
+              id: "engine-user",
+              content: [{ type: "input_text", text: "update the file" }],
+            },
+            {
+              type: "custom_tool_call",
+              id: "engine-patch-call",
+              call_id: "direct-patch-call",
+              name,
+              input,
+            },
+            {
+              type: "custom_tool_call_output",
+              call_id: "direct-patch-call",
+              name,
+              output: "Applied 1 file.",
+            },
+          ],
+        );
 
-      const engine = new NanocodexEngine(root);
-      const selection = await engine.mapCompactionOutcome(
-        { session },
-        outcome,
-        new AbortController().signal,
-      );
-      expect(selection.shadowedSeqs).toEqual([session.surface.nodes[0]]);
-    } finally {
-      preparation[Symbol.dispose]();
-      await sessions.dispose();
-    }
-  });
+        const engine = new NanocodexEngine(root);
+        const selection = await engine.mapCompactionOutcome(
+          { session },
+          outcome,
+          new AbortController().signal,
+        );
+        expect(selection.shadowedSeqs).toEqual([session.surface.nodes[0]]);
+      } finally {
+        preparation[Symbol.dispose]();
+        await sessions.dispose();
+      }
+    },
+  );
 
   it("maps parallel direct patches and rejects a dangling retained pair", async () => {
     const root = new Context();
@@ -782,7 +793,9 @@ describe("Nanocodex compaction history mapping", () => {
     );
     try {
       const session = preparation.session;
-      const childCallId = ToolCallId("call-exec-child-patch");
+      const childCallId = ToolCallId(
+        `call-exec-child-patch|ctc_${"a".repeat(50)}`,
+      );
       const patch = "*** Begin Patch\n*** End Patch\n";
       for (const text of ["old prefix", "apply a patch"]) {
         session.append(

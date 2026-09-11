@@ -21,6 +21,8 @@ export const DEFAULT_MAX_PATCH_CHARS = 4_000_000;
 export const DEFAULT_MAX_PATCH_FILES = 64;
 export const DEFAULT_MAX_PATCH_FILE_BYTES = 4_000_000;
 
+export const MODEL_CONTEXT_WINDOW = 200_000;
+
 export const SUPPORTED_MODELS = [
   "gpt-5.6-sol",
   "gpt-5.6-terra",

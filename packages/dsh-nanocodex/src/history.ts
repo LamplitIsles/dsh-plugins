@@ -2,7 +2,7 @@ import type {
   AttachmentStore,
   ImageAttachmentRef,
 } from "@deepseek-ai/dsh-attachment";
-import type { ContentBlock, Message, ToolCallId } from "@deepseek-ai/dsh-llm";
+import type { ContentBlock, Message } from "@deepseek-ai/dsh-llm";
 import { isCompactCheckpointSource } from "@deepseek-ai/dsh-compaction";
 import type {
   HistoryContentItem,
@@ -104,16 +104,22 @@ function textOfCheckpoint(message: Message): string {
     .join("\n");
 }
 
-function callId(value: ToolCallId): string {
-  return String(value);
+/** Pi Responses IDs store call_id|item_id; only the call part pairs results. */
+export function historyToolCallId(value: string): string {
+  return value
+    .split("|", 1)[0]!
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 64)
+    .replace(/_+$/u, "");
 }
 
-function rawApplyPatch(argumentsText: string): string {
+function rawCustomInput(name: string, argumentsText: string): string {
+  const key = name === APPLY_PATCH_NAME ? "patch" : "code";
   let value: unknown;
   try {
     value = JSON.parse(argumentsText);
   } catch (error) {
-    throw new Error("Nanocodex cannot hydrate an invalid apply_patch call", {
+    throw new Error(`Nanocodex cannot hydrate an invalid ${name} call`, {
       cause: error,
     });
   }
@@ -121,14 +127,14 @@ function rawApplyPatch(argumentsText: string): string {
     value === null ||
     typeof value !== "object" ||
     Array.isArray(value) ||
-    typeof (value as { patch?: unknown }).patch !== "string" ||
+    typeof (value as Record<string, unknown>)[key] !== "string" ||
     Object.keys(value).length !== 1
   ) {
     throw new Error(
-      "Nanocodex cannot hydrate apply_patch without canonical {patch} arguments",
+      `Nanocodex cannot hydrate ${name} without canonical {${key}} arguments`,
     );
   }
-  return (value as { patch: string }).patch;
+  return (value as Record<string, string>)[key]!;
 }
 
 function validateToolPairs(
@@ -139,7 +145,7 @@ function validateToolPairs(
     if (message.role !== "assistant") continue;
     for (const block of message.content) {
       if (block.type !== "tool-call") continue;
-      const id = callId(block.id);
+      const id = historyToolCallId(block.id);
       if (toolNames.has(id)) {
         throw new Error(
           `Nanocodex cannot hydrate duplicate tool call ${JSON.stringify(id)}`,
@@ -154,26 +160,26 @@ function validateToolPairs(
   for (const message of messages) {
     for (const block of message.content) {
       if (message.role === "assistant" && block.type === "tool-call") {
-        seenCalls.add(callId(block.id));
+        seenCalls.add(historyToolCallId(block.id));
         continue;
       }
       if (block.type !== "tool-result") continue;
-      const id = callId(block.toolCallId);
+      const id = historyToolCallId(block.toolCallId);
       const name = toolNames.get(id);
       if (name === undefined) {
         throw new Error(
           `Nanocodex cannot hydrate a tool result for foreign call ${JSON.stringify(id)}`,
         );
       }
-      if (name !== APPLY_PATCH_NAME) continue;
+      if (name !== APPLY_PATCH_NAME && name !== "exec") continue;
       if (!seenCalls.has(id)) {
         throw new Error(
-          `Nanocodex cannot hydrate apply_patch output before call ${JSON.stringify(id)}`,
+          `Nanocodex cannot hydrate ${name} output before call ${JSON.stringify(id)}`,
         );
       }
       if (resultIds.has(id)) {
         throw new Error(
-          `Nanocodex cannot hydrate duplicate apply_patch output ${JSON.stringify(id)}`,
+          `Nanocodex cannot hydrate duplicate ${name} output ${JSON.stringify(id)}`,
         );
       }
       resultIds.add(id);
@@ -181,9 +187,9 @@ function validateToolPairs(
   }
 
   for (const [id, name] of toolNames) {
-    if (name === APPLY_PATCH_NAME && !resultIds.has(id)) {
+    if ((name === APPLY_PATCH_NAME || name === "exec") && !resultIds.has(id)) {
       throw new Error(
-        `Nanocodex cannot hydrate apply_patch call without a result ${JSON.stringify(id)}`,
+        `Nanocodex cannot hydrate ${name} call without a result ${JSON.stringify(id)}`,
       );
     }
   }
@@ -231,13 +237,13 @@ export async function buildHistoryProjection(
       message.content.length === 1 &&
       toolResult?.type === "tool-result"
     ) {
-      const id = callId(toolResult.toolCallId);
+      const id = historyToolCallId(toolResult.toolCallId);
       const name = toolNames.get(id);
       const output = await toolOutput(ctx, toolResult.content, signal);
       push(
         message,
-        name === APPLY_PATCH_NAME
-          ? { type: "custom_tool_call_output", name, call_id: id, output }
+        name === APPLY_PATCH_NAME || name === "exec"
+          ? { type: "custom_tool_call_output", call_id: id, output }
           : { type: "function_call_output", call_id: id, output },
       );
       continue;
@@ -246,6 +252,10 @@ export async function buildHistoryProjection(
     if (message.role === "assistant") {
       const output: HistoryContentItem[] = [];
       for (const block of message.content) {
+        // DSH's text-only reasoning is a transcript record, not a resumable
+        // provider reasoning item. Keep it in DSH without turning it into an
+        // answer or rejecting the rest of this historical message.
+        if (block.type === "reasoning") continue;
         if (block.type === "tool-call") {
           if (output.length > 0) {
             push(message, {
@@ -256,12 +266,12 @@ export async function buildHistoryProjection(
               status: "completed",
             });
           }
-          const id = callId(block.id);
-          if (block.name === APPLY_PATCH_NAME) {
+          const id = historyToolCallId(block.id);
+          if (block.name === APPLY_PATCH_NAME || block.name === "exec") {
             push(message, {
               type: "custom_tool_call",
               name: block.name,
-              input: rawApplyPatch(block.arguments),
+              input: rawCustomInput(block.name, block.arguments),
               call_id: id,
             });
           } else {

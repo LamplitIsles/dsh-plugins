@@ -366,6 +366,12 @@ export class NanocodexAgent implements Agent {
             turn,
             step,
             signal,
+            () => {
+              this.session.append("step/end", { turn, step: phase.step });
+              phase.step += 1;
+              this.session.append("step/start", { turn, step: phase.step });
+              return phase.step;
+            },
           );
           if (engineResult.automaticCompactions.length > 0) {
             const compaction = this.loopCtx.compaction as
@@ -396,7 +402,7 @@ export class NanocodexAgent implements Agent {
             throw error;
           }
         } finally {
-          this.session.append("step/end", { turn, step });
+          this.session.append("step/end", { turn, step: phase.step });
         }
         reason = { kind: "completed" };
         signal.throwIfAborted();

@@ -11,6 +11,7 @@ import {
 import { Agent as NodeAgent, Transport, type TurnUsage } from "nanocodex/node";
 import {
   isSupportedModel,
+  MODEL_CONTEXT_WINDOW,
   SUPPORTED_MODELS,
   type NanocodexModel,
 } from "./constants.js";
@@ -33,8 +34,6 @@ const REASONING_EFFORTS = [
   ["max", "Maximum"],
   ["pro", "Pro"],
 ] as const;
-
-const MODEL_CONTEXT_WINDOW = 200_000;
 
 function usage(value: TurnUsage) {
   return {

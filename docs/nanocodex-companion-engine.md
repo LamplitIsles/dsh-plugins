@@ -172,9 +172,10 @@ Build end-to-end slices. Reuse existing tests and add only checks for new runtim
    DSH session boundary. Rendered Companion/advanced-surface acceptance remains
    an Owner browser gate.
 3. **Existing-session continuation:** history tests cover prior compaction,
-   complete tool pairs, supported images, and explicit rejection of unsupported
-   retained reasoning. The adapter hydrates the active DSH surface without
-   executing historical tools.
+   complete tool pairs, supported images, and text-only reasoning retained in
+   the DSH transcript but omitted from model history. The adapter hydrates the
+   active DSH surface without executing historical tools or treating reasoning
+   as visible assistant answers.
 4. **Continuity and restart:** the packed smoke exercises Nanocodex's real
    automatic context compaction, exact DSH surface replacement, a flushed
    versioned engine checkpoint, a fresh Host resume, and a deliberately changed

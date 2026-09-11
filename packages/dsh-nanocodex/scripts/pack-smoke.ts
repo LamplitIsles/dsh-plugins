@@ -54,6 +54,7 @@ function completedResponse(
   id: string,
   output: JsonObject[],
   totalTokens = 24,
+  cachedTokens = 0,
 ): JsonObject {
   return {
     type: "response.completed",
@@ -63,7 +64,10 @@ function completedResponse(
       output,
       usage: {
         input_tokens: Math.max(0, totalTokens - 6),
-        input_tokens_details: { cached_tokens: 0 },
+        input_tokens_details: {
+          cached_tokens: cachedTokens,
+          cache_write_tokens: 0,
+        },
         output_tokens: 6,
         output_tokens_details: { reasoning_tokens: 0 },
         total_tokens: totalTokens,
@@ -130,6 +134,9 @@ function runnerSource({
   loaderUrl,
   agentUrl,
   sessionUrl,
+  tokenMeterUrl,
+  tokenMeterClientUrl,
+  sessionProjectionUrl,
   systemPromptUrl,
   toolsUrl,
   llmUrl,
@@ -151,6 +158,9 @@ function runnerSource({
   loaderUrl: string;
   agentUrl: string;
   sessionUrl: string;
+  tokenMeterUrl: string;
+  tokenMeterClientUrl: string;
+  sessionProjectionUrl: string;
   systemPromptUrl: string;
   toolsUrl: string;
   llmUrl: string;
@@ -172,9 +182,12 @@ import LocalFileSystem from ${JSON.stringify(fsLocalUrl)};
 import { apply as applyFsObservationPolicy, name as fsObservationPolicyName } from ${JSON.stringify(fsObservationUrl)};
 import AgentRegistry, { assembleContextFor, installModelSelection } from ${JSON.stringify(agentUrl)};
 import SessionStore, { SessionId, SessionPreparation } from ${JSON.stringify(sessionUrl)};
+import TokenMeter from ${JSON.stringify(tokenMeterUrl)};
+import { deriveTurnTokenUsage } from ${JSON.stringify(tokenMeterClientUrl)};
+import SessionProjectionRegistry from ${JSON.stringify(sessionProjectionUrl)};
 import SystemPrompt, { renderPrompt } from ${JSON.stringify(systemPromptUrl)};
 import ToolRuntime from ${JSON.stringify(toolsUrl)};
-import LlmRuntime, { createAssistantMessage, createUserMessage, ToolCallId } from ${JSON.stringify(llmUrl)};
+import LlmRuntime, { createAssistantMessage, createToolResultMessage, createUserMessage, ToolCallId } from ${JSON.stringify(llmUrl)};
 import { buildModelCatalog } from ${JSON.stringify(sessionControllerUrl)};
 import JsonlSessionPersistence from ${JSON.stringify(persistenceJsonlUrl)};
 import CommandRuntime from ${JSON.stringify(commandsUrl)};
@@ -240,6 +253,10 @@ async function createHost() {
   await tools;
   const sessions = root.plugin(SessionStore);
   await sessions;
+  const projections = root.plugin(SessionProjectionRegistry);
+  await projections;
+  const tokenMeter = root.plugin(TokenMeter);
+  await tokenMeter;
   const persistence = root.plugin(JsonlSessionPersistence, {
     root: ${JSON.stringify(persistenceRoot)},
     compression: "none",
@@ -309,6 +326,8 @@ assert.equal(selected.model, "gpt-5.6-terra");
     agentsHandle: agents,
     persistenceHandle: persistence,
     sessionsHandle: sessions,
+    projectionsHandle: projections,
+    tokenMeterHandle: tokenMeter,
     toolsHandle: tools,
     fsHandle,
     fsObservationHandle,
@@ -331,6 +350,8 @@ assert.equal(selected.model, "gpt-5.6-terra");
   await agents.dispose();
   await commands.dispose();
   await persistence.dispose();
+  await tokenMeter.dispose();
+  await projections.dispose();
   await sessions.dispose();
   await tools.dispose();
   await llmPlugin.dispose();
@@ -348,6 +369,8 @@ async function disposeHost(host) {
   await host.agentsHandle.dispose();
   await host.commandsHandle.dispose();
   await host.persistenceHandle.dispose();
+  await host.tokenMeterHandle.dispose();
+  await host.projectionsHandle.dispose();
   await host.sessionsHandle.dispose();
   await host.toolsHandle.dispose();
   await host.fsObservationHandle.dispose();
@@ -507,20 +530,40 @@ assert.deepEqual(rawPatchResult.data.meta, {
   ],
 });
 const events = firstAgent.session.snapshotEvents();
-assert.deepEqual(
-  events
-    .map((event) => event.type)
-    .filter((type) => type !== "agent/inbox/spliced"),
-  [
-    "turn/start", "step/start", "user/message", "request/header",
-    "request/context", "assistant/message",
-    "tool/call", "tool/code-dispatch-start", "tool/result",
-    "tool/code-dispatch", "assistant/message", "tool/call", "tool/result",
-    "assistant/chunk", "assistant/chunk", "assistant/chunk", "assistant/message",
-    "request/context",
-    "step/end", "turn/end",
-  ],
+const modelSteps = events.filter((event) => event.type === "step/start");
+const modelMessages = events.filter((event) => event.type === "assistant/message");
+assert.deepEqual(modelSteps.map((event) => event.data.step), [1, 2]);
+assert.deepEqual(modelMessages.map((event) => event.data.step), [1, 2]);
+assert.equal(modelMessages[0].data.message.content[0].text, "I will roll the die, then report the result.");
+assert.deepEqual(modelMessages[0].data.message.content.filter((block) => block.type === "tool-call").map((block) => block.name), ["exec", "apply_patch"]);
+const parentCalls = events.filter((event) => event.type === "tool/call");
+const parentResults = events.filter((event) => event.type === "tool/result");
+assert.equal(parentCalls.length, 2);
+assert.equal(parentResults.length, 2);
+assert.ok(parentCalls.every((event) => event.seq > modelMessages[0].seq));
+assert.ok(parentResults.every((event) => event.seq < modelMessages[1].seq));
+assert.equal(events.filter((event) => event.type === "tool/code-dispatch").length, 1);
+const firstTurnStart = events.findIndex((event) => event.type === "turn/start");
+const firstTurnEnd = events.findIndex((event) => event.type === "turn/end");
+assert.ok(firstTurnStart >= 0 && firstTurnEnd > firstTurnStart);
+assert.deepEqual(deriveTurnTokenUsage(events.slice(firstTurnStart, firstTurnEnd + 1)), {
+  uncachedInputTokens: 24, outputTokens: 12, totalTokens: 48,
+  cacheReadTokens: 12, cacheWriteTokens: 0, reasoningTokens: 0,
+  routes: [{ provider: "openai", model: "gpt-5.6-terra" }],
+});
+const usageChunks = events.filter(
+  (event) => event.type === "assistant/chunk" && event.data.chunk.type === "usage",
 );
+assert.equal(usageChunks.length, 2, "each model request must publish usage, excluding warmup");
+assert.deepEqual(usageChunks.map((event) => event.data.chunk.usage.inputTokens), [18, 6]);
+assert.deepEqual(usageChunks.map((event) => event.data.chunk.usage.cacheReadTokens), [0, 12]);
+for (const event of events.filter((event) => event.type === "request/context")) {
+  assert.equal(event.data.contextWindow, 200_000, "checkpoints must preserve the model window");
+}
+const pressure = firstHost.root.sessionProjections.snapshot(firstAgent.session).values.contextPressure;
+assert.equal(pressure.contextWindow, 200_000);
+assert.equal(pressure.pressureTokens, 18, "context pressure must use the latest request, not the turn total");
+assert.ok(pressure.projectedTokens > 0, "both clients must receive a visible context meter value");
 const checkpointContexts = events.filter(
   (event) =>
     event.type === "request/context" &&
@@ -533,7 +576,7 @@ assert.deepEqual(
 );
 const messages = firstAgent.session.deriveMessages();
 const assistantMessages = messages.filter((message) => message.role === "assistant");
-assert.equal(assistantMessages.length, 3);
+assert.equal(assistantMessages.length, 2);
 assert.equal(
   assistantMessages.at(-1)?.content[0]?.type,
   "text",
@@ -548,7 +591,7 @@ const toolResult = messages.find((message) => message.role === "user" && message
 assert.ok(toolResult);
 if (toolResult?.content[0]?.type !== "tool-result") throw new Error("missing tabletop result");
 assert.equal(toolResult.content[0].isError, false);
-assert.match(toolResult.content[0].content[0]?.type === "text" ? toolResult.content[0].content[0].text : "", /rolls/iu);
+assert.match(toolResult.content[0].content.filter((part) => part.type === "text").map((part) => part.text).join(""), /rolls/iu);
 assert.equal(firstHost.root.agents.get(firstAgent.id), firstAgent);
 firstAgent.followup(createUserMessage({
   content: [{
@@ -636,7 +679,7 @@ assert.equal(
 );
 await firstHost.sessions.flush(firstAgent.session);
 const firstToolCalls = firstAgent.session.snapshotEvents().filter((event) => event.type === "tool/call").length;
-assert.equal(firstToolCalls, 2);
+assert.equal(firstToolCalls, 3);
 assert.equal(
   firstAgent.session.snapshotEvents().filter((event) => event.type === "compaction/summary").length,
   2,
@@ -671,6 +714,10 @@ const loadedCheckpoint = resumedAgent.session
       event.data.nanocodexCheckpoint !== undefined,
   );
 assert.ok(loadedCheckpoint, "cold Host must load the persisted Nanocodex checkpoint");
+const resumedPressure = resumedHost.root.sessionProjections.snapshot(resumedAgent.session).values.contextPressure;
+assert.equal(resumedPressure.contextWindow, 200_000);
+assert.ok(resumedPressure.pressureTokens > 0, "cold replay must retain the usage anchor");
+assert.ok(resumedPressure.projectedTokens > 0, "cold replay must retain a visible meter");
 assert.equal(
   loadedCheckpoint.data.nanocodexCheckpoint.boundary.messageCount,
   resumedAgent.session.deriveMessages().length,
@@ -690,6 +737,41 @@ resumedAgent.session.append("user/message", createUserMessage({
   content: [{ type: "text", text: "Checkpoint boundary changed before cold resume." }],
   source: { kind: "user" },
 }), { surfaceOp: "append" });
+const legacyAssistant = createAssistantMessage({
+  content: [
+    { type: "reasoning", text: "legacy private reasoning fixture" },
+    { type: "text", text: "Legacy visible answer survives hydration." },
+    {
+      type: "tool-call",
+      id: ToolCallId("call_" + "p".repeat(24) + "|ctc_" + "p".repeat(50)),
+      name: "apply_patch",
+      arguments: JSON.stringify({ patch: "*** Begin Patch\\n*** End Patch\\n" }),
+    },
+  ],
+  source: { provider: "openai", model: "gpt-5.6-sol" },
+});
+resumedAgent.session.append("assistant/message", {
+  turn: 0,
+  step: 0,
+  message: legacyAssistant,
+}, { surfaceOp: "append" });
+const historicalPatch = legacyAssistant.content.find((block) => block.type === "tool-call");
+const historicalCall = resumedAgent.session.append("tool/call", {
+  turn: 0,
+  step: 0,
+  callId: historicalPatch.id,
+  name: historicalPatch.name,
+  arguments: historicalPatch.arguments,
+});
+resumedAgent.session.append("tool/result", {
+  turn: 0,
+  step: 0,
+  message: createToolResultMessage({
+    callId: historicalPatch.id,
+    content: [{ type: "text", text: "Historical patch completed." }],
+    isError: false,
+  }),
+}, { surfaceOp: "append", sourceEventSeqs: [historicalCall.seq] });
 await resumedHost.sessions.flush(resumedAgent.session);
 await disposeHost({ ...resumedHost, handle: resumedHandle });
 
@@ -705,6 +787,11 @@ const changedHandle = await changedHost.root.agents.resume({
   },
 });
 const changedAgent = changedHandle.agent;
+assert.deepEqual(
+  changedAgent.session.deriveMessages().find((message) => message.id === legacyAssistant.id)?.content,
+  legacyAssistant.content,
+  "cold resume must preserve the original DSH reasoning record",
+);
 changedAgent.followup(createUserMessage({
   content: [{ type: "text", text: "Continue after a cold Host restart." }],
   source: { kind: "user" },
@@ -714,9 +801,9 @@ await changedHost.sessions.flush(changedAgent.session);
 assert.equal(changedAgent.id, firstSessionId);
 assert.equal(
   changedAgent.session.snapshotEvents().filter((event) => event.type === "tool/call").length,
-  firstToolCalls,
+  firstToolCalls + 1,
 );
-assert.equal(changedAgent.session.snapshotEvents().filter((event) => event.type === "tool/result").length, 2);
+assert.equal(changedAgent.session.snapshotEvents().filter((event) => event.type === "tool/result").length, 4);
 
 const changedNodes = [...changedAgent.session.surface.nodes];
 const changedMessages = changedAgent.session.deriveMessages();
@@ -843,6 +930,11 @@ async function handleProviderRequest(
       });
     } else {
       modelRequestCount += 1;
+      for (const item of request.input ?? []) {
+        if (typeof item.call_id === "string") {
+          assert.match(item.call_id, /^[a-zA-Z0-9_-]{1,64}$/u);
+        }
+      }
       if (modelRequestCount < 12) {
         assert.equal(request.client_metadata?.thread_id, normalizedSessionId);
       } else {
@@ -860,6 +952,17 @@ async function handleProviderRequest(
         await sendSse(
           response,
           completedResponse("pack-tool", [
+            {
+              type: "message",
+              id: "message-before-tools",
+              role: "assistant",
+              content: [
+                {
+                  type: "output_text",
+                  text: "I will roll the die, then report the result.",
+                },
+              ],
+            },
             {
               type: "custom_tool_call",
               id: "tool-exec",
@@ -882,19 +985,24 @@ async function handleProviderRequest(
         assert.match(JSON.stringify(request.input), /rolls/iu);
         await sendSse(
           response,
-          completedResponse("pack-final", [
-            {
-              type: "message",
-              id: "message-final",
-              role: "assistant",
-              content: [
-                {
-                  type: "output_text",
-                  text: "The tabletop tool worked and state was stored.",
-                },
-              ],
-            },
-          ]),
+          completedResponse(
+            "pack-final",
+            [
+              {
+                type: "message",
+                id: "message-final",
+                role: "assistant",
+                content: [
+                  {
+                    type: "output_text",
+                    text: "The tabletop tool worked and state was stored.",
+                  },
+                ],
+              },
+            ],
+            24,
+            12,
+          ),
         );
       } else if (modelRequestCount === 3) {
         assert.equal(request.previous_response_id, undefined);
@@ -1064,6 +1172,26 @@ async function handleProviderRequest(
         assert.match(
           JSON.stringify(request.input),
           /checkpoint boundary changed/iu,
+        );
+        assert.match(
+          JSON.stringify(request.input),
+          /Legacy visible answer survives hydration/u,
+        );
+        assert.match(
+          JSON.stringify(request.input),
+          /Historical patch completed/u,
+        );
+        const historicalCallId = "call_" + "p".repeat(24);
+        const historicalPair = request.input.filter(
+          (item: JsonObject) => item.call_id === historicalCallId,
+        );
+        assert.deepEqual(
+          historicalPair.map((item: JsonObject) => item.type),
+          ["custom_tool_call", "custom_tool_call_output"],
+        );
+        assert.doesNotMatch(
+          JSON.stringify(request.input),
+          /legacy private reasoning fixture/u,
         );
         await sendSse(
           response,
@@ -1320,6 +1448,9 @@ try {
       loaderUrl: resolver("@deepseek-ai/cordis-plugin-loader"),
       agentUrl: resolver("@deepseek-ai/dsh-agent"),
       sessionUrl: resolver("@deepseek-ai/dsh-session"),
+      tokenMeterUrl: resolver("@deepseek-ai/dsh-token-meter"),
+      tokenMeterClientUrl: resolver("@deepseek-ai/dsh-token-meter/client"),
+      sessionProjectionUrl: resolver("@deepseek-ai/dsh-session-projection"),
       systemPromptUrl: resolver("@deepseek-ai/dsh-system-prompt"),
       toolsUrl: resolver("@deepseek-ai/dsh-tools"),
       llmUrl: resolver("@deepseek-ai/dsh-llm"),
