@@ -23,9 +23,32 @@ changes together; this plugin has no bridge-side model default or compatibility
 fallback. The model policy is changed in the DSH settings card rather than in
 the bridge.
 
+## Image naming
+
+Every generation or edit call requires an agent-selected `filename` and a
+nonblank English `prompt`. Filename language is independent of the prompt, so
+the agent may use English or Chinese, including spaces:
+
+```json
+{
+  "prompt": "A watercolor painting of a beach at dusk with warm sunset light.",
+  "filename": "海边日落.png"
+}
+```
+
+The filename is one name, not a directory or arbitrary path. Surrounding
+whitespace is trimmed, `.png` is appended when omitted, and a case-insensitive
+`.PNG` suffix is normalized to `.png`. Other extensions, path separators,
+traversal names, control characters, and names unsuitable for cross-platform
+downloads are rejected in English before the provider is called.
+
 Every generated image is saved under `.dsh/kepos-imagegen/` in the active
-workspace. The returned relative path can be used in a later image-edit call;
-the DSH tool card also provides a preview and PNG download.
+workspace. Existing files are never overwritten: the first available name is
+`海边日落.png`, followed by `海边日落-1.png`, then `海边日落-2.png`, and so on.
+Numeric suffixes already present in the requested name are not parsed. The
+returned relative path is the actual saved path and can be used in a later
+image-edit call; the attachment and its PNG download use that same saved
+filename.
 
 ## Development and packed verification
 

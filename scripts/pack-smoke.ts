@@ -50,7 +50,7 @@ function imagegenRunnerSource({
   return `
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { lstat, mkdir, readFile, stat } from "node:fs/promises";
 import { relative, resolve as resolvePath } from "node:path";
 import { Context } from ${JSON.stringify(cordisUrl)};
 import Loader from ${JSON.stringify(loaderUrl)};
@@ -102,6 +102,14 @@ const fs = {
   contains: (parent, child) => {
     const childRelative = relative(parent.targetKey, child.targetKey);
     return childRelative === "" || (!childRelative.startsWith("..") && !childRelative.startsWith("/"));
+  },
+  lstat: async (path, options = {}) => {
+    try {
+      const details = await lstat(targetPath(options.cwd ?? workspace, path));
+      return { type: details.isFile() ? "file" : details.isDirectory() ? "directory" : "other" };
+    } catch {
+      return undefined;
+    }
   },
   stat: async (target) => {
     try {
@@ -171,15 +179,16 @@ try {
   assert.equal(registeredTools[0].name, "kepos_image_generate");
 
   const result = await registeredTools[0].execute(
-    { prompt: "pack smoke image" },
+    { prompt: "pack smoke image", filename: "pack-smoke-image" },
     { agent: { session: { header: { cwd: workspace } } }, signal: new AbortController().signal },
   );
   if (bridgeFailure) throw bridgeFailure;
   assert.equal(requests.length, 1);
-  assert.match(result.path, /^\\.dsh\\/kepos-imagegen\\/[0-9a-f-]+\\.png$/u);
+  assert.equal(result.path, ".dsh/kepos-imagegen/pack-smoke-image.png");
   assert.deepEqual([...await readFile(resolvePath(workspace, result.path))], [...png]);
   assert.equal(result.attachment.attachmentId, "pack-smoke-image");
   assert.equal(result.attachment.mediaType, "image/png");
+  assert.equal(result.attachment.name, "pack-smoke-image.png");
   console.log("imagegen-loader: packed Host activated through real Loader and generated a PNG through the test-owned HTTP bridge");
 } finally {
   if (entryId !== undefined) await root.loader.remove(entryId);

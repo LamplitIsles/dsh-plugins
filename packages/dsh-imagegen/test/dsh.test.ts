@@ -6,9 +6,17 @@ import {
 import { DEFAULT_BRIDGE_URL, MAX_BRIDGE_JSON_BYTES } from "../src/core.js";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { SettingsProvider } from "@deepseek-ai/dsh-settings";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  lstat as lstatPath,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   assertSupportedJsonSchema,
   validateJsonSchemaValue,
@@ -22,6 +30,7 @@ import {
   generateWithDsh,
   inject,
   normalizeImagegenSettings,
+  normalizeImageFilename,
   validOrDefault,
   writeGeneratedImage,
   type DshAttachments,
@@ -83,6 +92,7 @@ function fakeFileSystem(
     type?: string;
     bytes?: Uint8Array;
     processPath?: string;
+    lstatType?: string;
   } = {},
 ): DshFileSystem & { limits: number[]; processPaths: string[] } {
   const limits: number[] = [];
@@ -101,6 +111,11 @@ function fakeFileSystem(
         `${(parent as Target).targetKey}/`,
       );
     },
+    async lstat() {
+      return options.lstatType === undefined
+        ? undefined
+        : { type: options.lstatType };
+    },
     async stat() {
       return { type: options.type ?? "file" };
     },
@@ -112,6 +127,61 @@ function fakeFileSystem(
       const path = options.processPath ?? (target as Target).targetKey;
       processPaths.push(path);
       return path;
+    },
+  };
+}
+
+function stubWriter(filename: string): Promise<string> {
+  return Promise.resolve(`${GENERATED_IMAGES_DIRECTORY}/${filename}`);
+}
+
+function localFileSystem(root: string): DshFileSystem {
+  const targetPath = (path: string, cwd = root) => resolve(cwd, path);
+  return {
+    async resolve(path, options) {
+      return { targetKey: targetPath(path, options?.cwd ?? root) };
+    },
+    contains(parent, child) {
+      const childRelative = relative(
+        (parent as Target).targetKey,
+        (child as Target).targetKey,
+      );
+      return (
+        childRelative === "" ||
+        (!childRelative.startsWith("..") && !isAbsolute(childRelative))
+      );
+    },
+    async lstat(path, options) {
+      try {
+        const info = await lstatPath(targetPath(path, options?.cwd ?? root));
+        return {
+          type: info.isSymbolicLink()
+            ? "symlink"
+            : info.isFile()
+              ? "file"
+              : info.isDirectory()
+                ? "directory"
+                : "other",
+        };
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
+    async stat() {
+      throw new Error("stat is not used by output-only test filesystem");
+    },
+    async readBytes() {
+      throw new Error("readBytes is not used by output-only test filesystem");
+    },
+    processPath(target) {
+      return (target as Target).targetKey;
     },
   };
 }
@@ -205,6 +275,62 @@ describe("DSH image adapter", () => {
     }
   });
 
+  it("normalizes descriptive Unicode filenames and rejects unsafe names", () => {
+    expect(normalizeImageFilename("  海边日落  ")).toBe("海边日落.png");
+    expect(normalizeImageFilename("beach-sunset.PNG")).toBe("beach-sunset.png");
+    expect(normalizeImageFilename("beach-sunset")).toBe("beach-sunset.png");
+
+    for (const filename of [
+      undefined,
+      "",
+      "   ",
+      ".",
+      "..",
+      "../escape",
+      "nested/name",
+      "nested\\name",
+      "unsafe?.png",
+      "unsafe\nname.png",
+      "beach.jpg",
+      "CON.png",
+      "name .png",
+    ]) {
+      expect(() => normalizeImageFilename(filename)).toThrow(
+        /filename|PNG|device name/u,
+      );
+    }
+  });
+
+  it("rejects missing or invalid filenames before calling the image provider", async () => {
+    let calls = 0;
+    const services = {
+      fs: fakeFileSystem(),
+      attachments: fakeAttachments(),
+      fetch: (async () => {
+        calls += 1;
+        return new Response();
+      }) as typeof fetch,
+      getSettings: () => imagegenSettings(),
+      writeGeneratedImage: stubWriter,
+    };
+
+    for (const args of [
+      { prompt: "generate" },
+      { prompt: "generate", filename: " " },
+      { prompt: "generate", filename: "../escape.png" },
+      { prompt: "generate", filename: "photo.jpg" },
+    ]) {
+      await expect(
+        generateWithDsh(
+          args,
+          { agent: { session: { header: { cwd: "/workspace" } } } },
+          services,
+        ),
+      ).rejects.toThrow(/filename|PNG/u);
+    }
+    expect(calls).toBe(0);
+  });
+
   it("edits workspace-relative images, saves a workspace PNG, and returns a durable native result", async () => {
     const fs = fakeFileSystem();
     const attachments = fakeAttachments();
@@ -213,7 +339,11 @@ describe("DSH image adapter", () => {
     const controller = new AbortController();
 
     const result = await generateWithDsh(
-      { prompt: "make it watercolor", images: ["source.png"] },
+      {
+        prompt: "make it watercolor",
+        filename: "  watercolor-edit.PNG  ",
+        images: ["source.png"],
+      },
       {
         signal: controller.signal,
         agent: { session: { header: { cwd: "/workspace" } } },
@@ -227,8 +357,10 @@ describe("DSH image adapter", () => {
             bridgeUrl: "https://bridge.example/",
             editModel: "precise-edit-model",
           }),
-        writeGeneratedImage: async (path, data, _fs, cwd) => {
+        writeGeneratedImage: async (filename, data, _fs, cwd) => {
+          const path = `${GENERATED_IMAGES_DIRECTORY}/${filename}`;
           writes.push({ path, data, cwd });
+          return path;
         },
       },
     );
@@ -248,10 +380,10 @@ describe("DSH image adapter", () => {
       bytes: png.byteLength,
       width: 1,
       height: 1,
-      name: "kepos-image.png",
+      name: "watercolor-edit.png",
     });
     expect(result.path).toMatch(
-      new RegExp(`^${GENERATED_IMAGES_DIRECTORY}/.+\\.png$`),
+      new RegExp(`^${GENERATED_IMAGES_DIRECTORY}/watercolor-edit\\.png$`),
     );
     expect(result.message).toBe(`Generated image saved to ${result.path}.`);
     expect(writes).toEqual([
@@ -267,12 +399,16 @@ describe("DSH image adapter", () => {
       attachments: fakeAttachments(),
       fetch: bridgeFetch(calls),
       getSettings: () => imagegenSettings(),
-      writeGeneratedImage: async () => undefined,
+      writeGeneratedImage: stubWriter,
     };
     const exec = { agent: { session: { header: { cwd: "/workspace" } } } };
 
     await generateWithDsh(
-      { prompt: "edit", images: ["1.png", "2.png", "3.png", "4.png", "5.png"] },
+      {
+        prompt: "edit",
+        filename: "five-sources",
+        images: ["1.png", "2.png", "3.png", "4.png", "5.png"],
+      },
       exec,
       services,
     );
@@ -281,7 +417,11 @@ describe("DSH image adapter", () => {
       images: expect.any(Array),
     });
     expect(JSON.parse(requestBody(calls[0]?.init)).images).toHaveLength(5);
-    await generateWithDsh({ prompt: "generate" }, exec, services);
+    await generateWithDsh(
+      { prompt: "generate", filename: "generated" },
+      exec,
+      services,
+    );
     expect(JSON.parse(requestBody(calls[1]?.init))).toEqual({
       model: DEFAULT_GENERATION_MODEL,
       prompt: "generate",
@@ -290,6 +430,7 @@ describe("DSH image adapter", () => {
       generateWithDsh(
         {
           prompt: "edit",
+          filename: "six-sources",
           images: ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"],
         },
         exec,
@@ -297,7 +438,11 @@ describe("DSH image adapter", () => {
       ),
     ).rejects.toThrow("between one and five");
     await expect(
-      generateWithDsh({ prompt: "   " }, {}, services),
+      generateWithDsh(
+        { prompt: "   ", filename: "blank-prompt" },
+        {},
+        services,
+      ),
     ).rejects.toThrow("nonblank");
   });
 
@@ -317,11 +462,15 @@ describe("DSH image adapter", () => {
         settingsReads += 1;
         return settings;
       },
-      writeGeneratedImage: async () => undefined,
+      writeGeneratedImage: stubWriter,
     };
     const exec = { agent: { session: { header: { cwd: "/workspace" } } } };
 
-    await generateWithDsh({ prompt: "configured generation" }, exec, services);
+    await generateWithDsh(
+      { prompt: "configured generation", filename: "configured-generation" },
+      exec,
+      services,
+    );
     expect(JSON.parse(requestBody(calls[0]?.init))).toEqual({
       model: "configured-generation",
       prompt: "configured generation",
@@ -329,7 +478,11 @@ describe("DSH image adapter", () => {
     expect(settingsReads).toBe(1);
 
     await generateWithDsh(
-      { prompt: "configured edit", images: ["source.png"] },
+      {
+        prompt: "configured edit",
+        filename: "configured-edit",
+        images: ["source.png"],
+      },
       exec,
       services,
     );
@@ -345,7 +498,7 @@ describe("DSH image adapter", () => {
     const fs = fakeFileSystem();
     await expect(
       generateWithDsh(
-        { prompt: "edit", images: ["source.png"] },
+        { prompt: "edit", filename: "invalid-model", images: ["source.png"] },
         { agent: { session: { header: { cwd: "/workspace" } } } },
         {
           fs,
@@ -353,7 +506,7 @@ describe("DSH image adapter", () => {
           fetch: bridgeFetch([]),
           getSettings: () =>
             imagegenSettings({ editModel: " " }) as ImagegenSettings,
-          writeGeneratedImage: async () => undefined,
+          writeGeneratedImage: stubWriter,
         },
       ),
     ).rejects.toThrow("nonblank image model");
@@ -365,34 +518,58 @@ describe("DSH image adapter", () => {
       attachments: fakeAttachments(),
       fetch: bridgeFetch([]),
       getSettings: () => imagegenSettings(),
-      writeGeneratedImage: async () => undefined,
+      writeGeneratedImage: stubWriter,
     };
     const exec = { agent: { session: { header: { cwd: "/workspace" } } } };
     const failures = [
-      generateWithDsh({ prompt: "edit", images: ["/etc/passwd"] }, exec, {
-        ...baseServices,
-        fs: fakeFileSystem(),
-      }),
-      generateWithDsh({ prompt: "edit", images: ["link.png"] }, exec, {
-        ...baseServices,
-        fs: fakeFileSystem({ outside: true }),
-      }),
-      generateWithDsh({ prompt: "edit", images: ["pipe.png"] }, exec, {
-        ...baseServices,
-        fs: fakeFileSystem({ type: "other" }),
-      }),
-      generateWithDsh({ prompt: "edit", images: ["source.txt"] }, exec, {
-        ...baseServices,
-        fs: fakeFileSystem(),
-      }),
-      generateWithDsh({ prompt: "edit", images: ["source.png"] }, exec, {
-        ...baseServices,
-        fs: fakeFileSystem({
-          bytes: new Uint8Array([137, 80, 78, 71, 0, 0, 0, 0]),
-        }),
-      }),
       generateWithDsh(
-        { prompt: "edit", images: ["source.png"] },
+        {
+          prompt: "edit",
+          filename: "absolute-source",
+          images: ["/etc/passwd"],
+        },
+        exec,
+        {
+          ...baseServices,
+          fs: fakeFileSystem(),
+        },
+      ),
+      generateWithDsh(
+        { prompt: "edit", filename: "outside-source", images: ["link.png"] },
+        exec,
+        {
+          ...baseServices,
+          fs: fakeFileSystem({ outside: true }),
+        },
+      ),
+      generateWithDsh(
+        { prompt: "edit", filename: "special-source", images: ["pipe.png"] },
+        exec,
+        {
+          ...baseServices,
+          fs: fakeFileSystem({ type: "other" }),
+        },
+      ),
+      generateWithDsh(
+        { prompt: "edit", filename: "text-source", images: ["source.txt"] },
+        exec,
+        {
+          ...baseServices,
+          fs: fakeFileSystem(),
+        },
+      ),
+      generateWithDsh(
+        { prompt: "edit", filename: "invalid-source", images: ["source.png"] },
+        exec,
+        {
+          ...baseServices,
+          fs: fakeFileSystem({
+            bytes: new Uint8Array([137, 80, 78, 71, 0, 0, 0, 0]),
+          }),
+        },
+      ),
+      generateWithDsh(
+        { prompt: "edit", filename: "no-workspace", images: ["source.png"] },
         {},
         {
           ...baseServices,
@@ -412,12 +589,9 @@ describe("DSH image adapter", () => {
     const output = join(root, GENERATED_IMAGES_DIRECTORY, "result.png");
     try {
       const fs = fakeFileSystem({ processPath: output });
-      await writeGeneratedImage(
-        `${GENERATED_IMAGES_DIRECTORY}/result.png`,
-        png,
-        fs,
-        "/workspace",
-      );
+      await expect(
+        writeGeneratedImage("result.png", png, fs, "/workspace"),
+      ).resolves.toBe(`${GENERATED_IMAGES_DIRECTORY}/result.png`);
       await expect(readFile(output)).resolves.toEqual(Buffer.from(png));
       expect(fs.processPaths).toEqual([output]);
     } finally {
@@ -425,18 +599,153 @@ describe("DSH image adapter", () => {
     }
   });
 
+  it("keeps existing files unchanged while numbering ordinary and pre-suffixed collisions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dsh-imagegen-collision-test-"));
+    const directory = join(root, GENERATED_IMAGES_DIRECTORY);
+    const original = Uint8Array.of(1, 2, 3);
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "beach-sunset.png"), original);
+      await writeFile(join(directory, "beach-sunset-1.png"), Uint8Array.of(4));
+
+      await expect(
+        writeGeneratedImage("beach-sunset", png, localFileSystem(root), root),
+      ).resolves.toBe(`${GENERATED_IMAGES_DIRECTORY}/beach-sunset-2.png`);
+      await expect(
+        readFile(join(directory, "beach-sunset.png")),
+      ).resolves.toEqual(Buffer.from(original));
+
+      await expect(
+        writeGeneratedImage(
+          "beach-sunset-1.png",
+          png,
+          localFileSystem(root),
+          root,
+        ),
+      ).resolves.toBe(`${GENERATED_IMAGES_DIRECTORY}/beach-sunset-1-1.png`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips an existing symlink without following or replacing its target", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dsh-imagegen-symlink-test-"));
+    const directory = join(root, GENERATED_IMAGES_DIRECTORY);
+    const target = join(root, "protected.png");
+    const link = join(directory, "linked.png");
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(target, Uint8Array.of(9));
+      await symlink(target, link);
+
+      await expect(
+        writeGeneratedImage("linked.png", png, localFileSystem(root), root),
+      ).resolves.toBe(`${GENERATED_IMAGES_DIRECTORY}/linked-1.png`);
+      await expect(readFile(target)).resolves.toEqual(Buffer.from([9]));
+      expect((await lstatPath(link)).isSymbolicLink()).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses exclusive creation for concurrent calls and does not repeat provider generation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dsh-imagegen-concurrent-test-"));
+    const fs = localFileSystem(root);
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const attachments = fakeAttachments();
+    try {
+      const exec = { agent: { session: { header: { cwd: root } } } };
+      const services = {
+        fs,
+        attachments,
+        fetch: bridgeFetch(calls),
+        getSettings: () => imagegenSettings(),
+        writeGeneratedImage,
+      };
+      const results = await Promise.all([
+        generateWithDsh(
+          { prompt: "first", filename: "concurrent-image" },
+          exec,
+          services,
+        ),
+        generateWithDsh(
+          { prompt: "second", filename: "concurrent-image" },
+          exec,
+          services,
+        ),
+      ]);
+
+      expect(calls).toHaveLength(2);
+      expect(new Set(results.map((result) => result.path))).toEqual(
+        new Set([
+          `${GENERATED_IMAGES_DIRECTORY}/concurrent-image.png`,
+          `${GENERATED_IMAGES_DIRECTORY}/concurrent-image-1.png`,
+        ]),
+      );
+      expect(results.map((result) => result.attachment.name)).toEqual(
+        expect.arrayContaining([
+          "concurrent-image.png",
+          "concurrent-image-1.png",
+        ]),
+      );
+      for (const result of results) {
+        await expect(readFile(join(root, result.path))).resolves.toEqual(
+          Buffer.from(png),
+        );
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves filesystem cancellation during collision probing", async () => {
+    const fs = fakeFileSystem();
+    let probes = 0;
+    fs.lstat = async () => {
+      probes += 1;
+      if (probes === 1) return { type: "file" };
+      throw Object.assign(new Error("filesystem operation aborted"), {
+        code: "FS_ABORTED",
+      });
+    };
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+
+    await expect(
+      generateWithDsh(
+        { prompt: "generate", filename: "cancelled-collision" },
+        {
+          signal: new AbortController().signal,
+          agent: { session: { header: { cwd: "/workspace" } } },
+        },
+        {
+          fs,
+          attachments: fakeAttachments(),
+          fetch: bridgeFetch(calls),
+          getSettings: () => imagegenSettings(),
+          writeGeneratedImage,
+        },
+      ),
+    ).rejects.toThrow("Image generation was cancelled.");
+    expect(probes).toBe(2);
+    expect(calls).toHaveLength(1);
+  });
+
   it("stops before a read when the dynamic bridge budget is exhausted", async () => {
     const fs = fakeFileSystem();
     await expect(
       generateWithDsh(
-        { prompt: "x".repeat(MAX_BRIDGE_JSON_BYTES), images: ["source.png"] },
+        {
+          prompt: "x".repeat(MAX_BRIDGE_JSON_BYTES),
+          filename: "oversized-prompt",
+          images: ["source.png"],
+        },
         { agent: { session: { header: { cwd: "/workspace" } } } },
         {
           fs,
           attachments: fakeAttachments(),
           fetch: bridgeFetch([]),
           getSettings: () => imagegenSettings(),
-          writeGeneratedImage: async () => undefined,
+          writeGeneratedImage: stubWriter,
         },
       ),
     ).rejects.toThrow("too large");
@@ -470,7 +779,13 @@ describe("DSH image adapter", () => {
       properties: {
         prompt: {
           type: "string",
-          description: "Required nonblank image-generation prompt.",
+          description:
+            "Required nonblank English image-generation prompt. Pair it with a descriptive English or Chinese filename.",
+        },
+        filename: {
+          type: "string",
+          description:
+            "Required descriptive English or Chinese filename, not a path; use .png or omit the extension.",
         },
         images: {
           type: "array",
@@ -479,11 +794,14 @@ describe("DSH image adapter", () => {
             "Optional one to five nonblank paths relative to the active workspace.",
         },
       },
-      required: ["prompt"],
+      required: ["prompt", "filename"],
       additionalProperties: false,
     });
     expect(
-      validateJsonSchemaValue(tool.parameters, { prompt: "generate" }),
+      validateJsonSchemaValue(tool.parameters, {
+        prompt: "generate",
+        filename: "generated",
+      }),
     ).toEqual([]);
     expect(
       validateJsonSchemaValue(tool.parameters, { images: [] }),
@@ -491,6 +809,7 @@ describe("DSH image adapter", () => {
     expect(
       validateJsonSchemaValue(tool.parameters, {
         prompt: "generate",
+        filename: "generated",
         unexpected: true,
       }),
     ).not.toEqual([]);
