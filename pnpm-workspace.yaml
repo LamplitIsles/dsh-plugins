@@ -1,9 +1,8 @@
 packages:
   - packages/*
-  # The local nanocodex package keeps its platform-neutral tool package as a
-  # workspace dependency. This development link is replaced by the packed
-  # artifact preparation documented by dsh-nanocodex.
-  - ../nanocodex/js/nanocodex-tools
+
+overrides:
+  "nanocodex>nanocodex-tools": file:.cache/nanocodex/nanocodex-tools.tgz
 
 allowBuilds:
   "@google/genai": true
@@ -47,6 +46,7 @@ catalog:
   "@deepseek-ai/dsh-session-persistence": 0.1.2-rc.1
   "@deepseek-ai/dsh-scope": 0.1.2-rc.1
   "@deepseek-ai/dsh-settings": 0.1.2-rc.1
+  "@deepseek-ai/dsh-storage-domain": 0.1.2-rc.1
   "@deepseek-ai/dsh-system-prompt": 0.1.2-rc.1
   "@deepseek-ai/dsh-token-meter": 0.1.2-rc.1
   "@deepseek-ai/dsh-tools": 0.1.2-rc.1

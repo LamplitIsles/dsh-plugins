@@ -47,5 +47,6 @@
           systemPrompt,
           tools,
           fs,
+          storageDomain,
           llm,
         ]

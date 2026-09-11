@@ -3,7 +3,7 @@ import type {} from "@deepseek-ai/dsh-settings";
 import type {} from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-fs";
 import { NanocodexCompactionEngine } from "./compaction-engine.js";
-import { NanocodexEngine } from "./engine.js";
+import { NanocodexEngine, nanocodexCheckpointDomain } from "./engine.js";
 import { NanocodexFactory } from "./factory.js";
 import {
   configuredNanocodexProviders,
@@ -26,10 +26,13 @@ export const inject = [
   "systemPrompt",
   "tools",
   "fs",
+  "storageDomain",
 ] as const;
 
 /** Install the selected Nanocodex AgentFactory and private compaction owner. */
-export function apply(ctx: Context): void {
+export async function apply(ctx: Context): Promise<void> {
+  const checkpoints = await ctx.storageDomain.open(nanocodexCheckpointDomain);
+  ctx.effect(() => () => checkpoints.close(), "dsh-nanocodex.checkpoints");
   const settings = ctx.settings.register(
     SETTINGS_NAMESPACE,
     NanocodexSettingsSchema,
@@ -72,7 +75,7 @@ export function apply(ctx: Context): void {
     "cwd",
     (context) => context.agent?.session.header.cwd,
   );
-  const engine = new NanocodexEngine(ctx);
+  const engine = new NanocodexEngine(ctx, checkpoints.table("sessions"));
   const patchProgress = new WeakMap<
     object,
     { readonly outcome: import("./apply-patch/tool.js").ApplyPatchOutcome }

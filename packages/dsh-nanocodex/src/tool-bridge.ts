@@ -87,14 +87,29 @@ function makeTool(
   customDefinition: NanocodexToolDefinition | undefined,
 ): NamedTool {
   const custom = customDefinition?.type === "custom";
+  let outputSchema = structuredClone(definition.output.schema) as Record<
+    string,
+    unknown
+  >;
+  let description = definition.description;
+  if (definition.name === "read_image") {
+    description +=
+      '\nIn Code Mode, display the loaded image with image(await tools.read_image({file_path: "picture.png"})). The result contains path and image_url (a data URL); image(result) emits the image to the model. A bare return does not emit output.';
+    outputSchema = {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Resolved image file path." },
+        image_url: { type: "string", description: "Loaded image data URL." },
+      },
+      required: ["path", "image_url"],
+      additionalProperties: false,
+    };
+  }
   return {
     name: definition.name,
-    description: definition.description,
+    description,
     parameters: structuredClone(definition.parameters),
-    outputSchema: structuredClone(definition.output.schema) as Record<
-      string,
-      unknown
-    >,
+    outputSchema,
     ...(customDefinition === undefined
       ? {}
       : { definition: structuredClone(customDefinition) }),
@@ -165,6 +180,19 @@ function makeTool(
             content: result.content,
           });
         }
+      }
+      if (!result.isError && definition.name === "read_image") {
+        const image = result.content.find((block) => block.type === "image");
+        if (image?.type !== "image")
+          throw new Error("read_image returned no image attachment");
+        const stored = await context.agent.ctx.attachments.readImage(
+          image.attachment,
+          call.signal,
+        );
+        return {
+          path: (result.value as { path: string }).path,
+          image_url: `data:${stored.ref.mediaType};base64,${Buffer.from(stored.data).toString("base64")}`,
+        };
       }
       return modelValue(result, custom);
     },

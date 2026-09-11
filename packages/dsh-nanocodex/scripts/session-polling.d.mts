@@ -5,6 +5,7 @@ export interface SessionPage {
 }
 
 export function waitForFinalizedAssistant(options: {
+  readonly isIdle: () => Promise<boolean>;
   readonly loadPage: () => Promise<SessionPage>;
   readonly expectedText: string;
   readonly timeoutMs?: number;

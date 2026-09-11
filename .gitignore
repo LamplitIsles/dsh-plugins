@@ -11,6 +11,5 @@ playwright-report/
 .pnpm-store/
 scripts/release-shared.d.ts*
 packages/dsh-nanocodex/.prepack-manifest.json
-packages/dsh-nanocodex/.prepack-vendor/
 packages/dsh-nanocodex/.prepack-dist/
 packages/dsh-nanocodex/vendor/

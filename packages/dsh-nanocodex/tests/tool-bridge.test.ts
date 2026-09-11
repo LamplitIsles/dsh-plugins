@@ -1,4 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
+import { AttachmentId } from "@deepseek-ai/dsh-attachment";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
@@ -12,6 +13,95 @@ import { APPLY_PATCH_NAME } from "../src/constants.js";
 import { createToolBridge } from "../src/tool-bridge.js";
 
 describe("Nanocodex tool bridge", () => {
+  it("exposes read_image bytes to Code Mode while retaining DSH attachment content", async () => {
+    const root = new Context();
+    const sessions = root.plugin(SessionStore);
+    await sessions;
+    const preparation = SessionPreparation.create(
+      root.sessions.prepare(SessionId("018f1f9a-7b3c-7a10-8000-000000000319")),
+    );
+    const ref = {
+      attachmentId: AttachmentId("sha256:fixture"),
+      mediaType: "image/png" as const,
+      bytes: 3,
+      width: 1,
+      height: 1,
+    };
+    const value = { path: "/fixture.png", image: ref };
+    const result = {
+      isError: false as const,
+      value,
+      content: [{ type: "image" as const, attachment: ref }],
+    };
+    let admitted: unknown;
+    let readSignal: AbortSignal | undefined;
+    root.provide("attachments", {
+      readImage: async (image: unknown, signal: AbortSignal) => {
+        expect(image).toEqual(ref);
+        readSignal = signal;
+        return { ref, data: new Uint8Array([1, 2, 3]) };
+      },
+    });
+    const definition = {
+      name: "read_image",
+      description: "Read an image",
+      parameters: { type: "object", properties: {} },
+      output: {
+        schema: {
+          type: "object",
+          properties: { path: { type: "string" }, image: { type: "object" } },
+          required: ["path", "image"],
+        },
+      },
+    };
+    const signal = new AbortController().signal;
+    try {
+      const [tool] = createToolBridge({
+        tools: {
+          schemas: () => [definition],
+          get: () => definition,
+          execute: async () => result,
+        } as unknown as ToolRuntime,
+        agent: { ctx: root, session: preparation.session } as unknown as Agent,
+        callbacks: {
+          onCall: () => SessionSeq(0),
+          onResult: ({ result }) => {
+            admitted = result;
+          },
+        },
+        signal,
+      });
+      const output = await tool!.handler(
+        { file_path: "/fixture.png" },
+        {
+          callId: "image-call",
+          parentCallId: "outer-exec",
+          sessionId: String(preparation.session.id),
+          model: "gpt-5.6-sol",
+          signal,
+        },
+      );
+      expect(output).toEqual({
+        path: value.path,
+        image_url: "data:image/png;base64,AQID",
+      });
+      expect(tool!.outputSchema).toEqual({
+        type: "object",
+        properties: {
+          path: { type: "string", description: expect.any(String) },
+          image_url: { type: "string", description: expect.any(String) },
+        },
+        required: ["path", "image_url"],
+        additionalProperties: false,
+      });
+      expect(admitted).toBe(result);
+      expect(readSignal).toBe(signal);
+    } finally {
+      preparation[Symbol.dispose]();
+      await sessions.dispose();
+    }
+  });
+
   it("persists the public parent-child dispatch relation", async () => {
     const root = new Context();
     const sessions = root.plugin(SessionStore);

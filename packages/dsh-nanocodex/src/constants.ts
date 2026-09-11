@@ -1,3 +1,6 @@
+export const INTERRUPTED_TOOL_OUTPUT =
+  "Tool execution was interrupted before a complete result was recorded. It may have had side effects; inspect the current state before retrying.";
+
 export const PLUGIN_NAME = "dsh-nanocodex" as const;
 
 export const APPLY_PATCH_NAME = "apply_patch" as const;

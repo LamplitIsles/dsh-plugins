@@ -209,6 +209,9 @@ catalogs:
     '@deepseek-ai/dsh-settings':
       specifier: 0.1.2-rc.1
       version: 0.1.2-rc.1
+    '@deepseek-ai/dsh-storage-domain':
+      specifier: 0.1.2-rc.1
+      version: 0.1.2-rc.1
     '@deepseek-ai/dsh-system-prompt':
       specifier: 0.1.2-rc.1
       version: 0.1.2-rc.1
@@ -258,6 +261,9 @@ catalogs:
       specifier: 8.2.2
       version: 8.2.2
 
+overrides:
+  nanocodex>nanocodex-tools: file:.cache/nanocodex/nanocodex-tools.tgz
+
 importers:
 
   .:
@@ -289,37 +295,6 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
-
-  ../nanocodex/js/nanocodex-tools:
-    dependencies:
-      '@microsoft/dev-tunnels-ssh':
-        specifier: 3.12.40
-        version: 3.12.40
-      '@microsoft/dev-tunnels-ssh-keys':
-        specifier: 3.12.40
-        version: 3.12.40
-      buffer:
-        specifier: 6.0.3
-        version: 6.0.3
-      hyparquet:
-        specifier: 1.28.2
-        version: 1.28.2
-      hyparquet-compressors:
-        specifier: 1.1.1
-        version: 1.1.1
-      isomorphic-git:
-        specifier: ^1.41.5
-        version: 1.41.9
-      just-bash:
-        specifier: ^3.4.0
-        version: 3.4.2
-      modern-tar:
-        specifier: 0.7.7
-        version: 0.7.7
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
 
   packages/dsh-companion:
     dependencies:
@@ -866,14 +841,17 @@ importers:
         specifier: 0.32.0
         version: 0.32.0
       nanocodex:
-        specifier: file:../../../nanocodex/js/nanocodex
-        version: file:../nanocodex/js/nanocodex(express@5.2.1)(hono@4.13.7)(react@18.3.1)(typescript@7.0.2)(zod@4.5.4)
+        specifier: file:../../.cache/nanocodex/nanocodex.tgz
+        version: file:.cache/nanocodex/nanocodex.tgz(express@5.2.1)(hono@4.13.7)(react@18.3.1)(typescript@7.0.2)(zod@4.5.4)
       nanocodex-tools:
-        specifier: file:../../../nanocodex/js/nanocodex-tools
-        version: link:../../../nanocodex/js/nanocodex-tools
+        specifier: file:../../.cache/nanocodex/nanocodex-tools.tgz
+        version: file:.cache/nanocodex/nanocodex-tools.tgz
       quickjs-emscripten-core:
         specifier: 0.32.0
         version: 0.32.0
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@deepseek-ai/cordis-plugin-include':
         specifier: 'catalog:'
@@ -893,6 +871,9 @@ importers:
       '@deepseek-ai/dsh-fs':
         specifier: 'catalog:'
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-brand@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-invariants@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-llm@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-sandbox@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-session@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)))))
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: 'catalog:'
+        version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-storage@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))
       '@deepseek-ai/dsh-token-meter':
         specifier: 'catalog:'
         version: 0.1.2-rc.1(33cefa37a09563da6f42092b18e29755)
@@ -4428,8 +4409,14 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  nanocodex@file:../nanocodex/js/nanocodex:
-    resolution: {directory: ../nanocodex/js/nanocodex, type: directory}
+  nanocodex-tools@file:.cache/nanocodex/nanocodex-tools.tgz:
+    resolution: {integrity: sha512-UJj2pv7I1mwQBa0vaca+SBXxWEm45RY+9XyLbKlVHeGzEREE7qBu9XzryniT2UCGJV7gVktyBbIKMKabEsaxjw==, tarball: file:.cache/nanocodex/nanocodex-tools.tgz}
+    version: 0.1.0
+    engines: {node: '>=22.13.0'}
+
+  nanocodex@file:.cache/nanocodex/nanocodex.tgz:
+    resolution: {integrity: sha512-bxucLqkUrB5CjOZd7sT6BYESHI6kTl6yLftQdje+RjsgsWYBr3/O8SVGcrIlE4nBsgcquSm7VhPXWoCv8qrYVw==, tarball: file:.cache/nanocodex/nanocodex.tgz}
+    version: 0.5.0
     engines: {node: '>=22.13.0'}
 
   nanoid@3.3.18:
@@ -5039,11 +5026,6 @@ packages:
   typed-array-buffer@1.0.3:
     resolution: {integrity: sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==}
     engines: {node: '>= 0.4'}
-
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
-    engines: {node: '>=14.17'}
-    hasBin: true
 
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
@@ -8407,7 +8389,20 @@ snapshots:
 
   ms@2.1.3: {}
 
-  nanocodex@file:../nanocodex/js/nanocodex(express@5.2.1)(hono@4.13.7)(react@18.3.1)(typescript@7.0.2)(zod@4.5.4):
+  nanocodex-tools@file:.cache/nanocodex/nanocodex-tools.tgz:
+    dependencies:
+      '@microsoft/dev-tunnels-ssh': 3.12.40
+      '@microsoft/dev-tunnels-ssh-keys': 3.12.40
+      buffer: 6.0.3
+      hyparquet: 1.28.2
+      hyparquet-compressors: 1.1.1
+      isomorphic-git: 1.41.9
+      just-bash: 3.4.2
+      modern-tar: 0.7.7
+    transitivePeerDependencies:
+      - supports-color
+
+  nanocodex@file:.cache/nanocodex/nanocodex.tgz(express@5.2.1)(hono@4.13.7)(react@18.3.1)(typescript@7.0.2)(zod@4.5.4):
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@eduoj/wasm-clang': 1.0.0
@@ -8419,7 +8414,7 @@ snapshots:
       isomorphic-git: 1.41.9
       minisearch: 7.2.0
       mppx: 0.9.1(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.4))(express@5.2.1)(hono@4.13.7)(typescript@7.0.2)(viem@2.55.13(typescript@7.0.2)(zod@4.5.4))
-      nanocodex-tools: link:../nanocodex/js/nanocodex-tools
+      nanocodex-tools: file:.cache/nanocodex/nanocodex-tools.tgz
       ox: 1.6.2(typescript@7.0.2)
       pako: 2.1.0
       pyodide: 314.0.5
@@ -9179,8 +9174,6 @@ snapshots:
       call-bound: 1.0.4
       es-errors: 1.3.0
       is-typed-array: 1.1.15
-
-  typescript@5.9.3: {}
 
   typescript@7.0.2:
     optionalDependencies:

@@ -5,13 +5,14 @@ Nanocodex Node/WASM engine. DSH remains the owner of session events, settings,
 credentials, workspace policy, and tool execution; Nanocodex owns model
 execution, Code Mode, QuickJS, and model-context compaction.
 
-The package currently consumes the merged Nanocodex checkout through a local
-`file:` dependency during development. The dependency must be prepared from
-the sibling checkout before installing this workspace; no sibling checkout is
-required by the packed artifact: `prepack` copies the Nanocodex and
-`nanocodex-tools` tarballs into `vendor/`, rewrites their internal imports, and
-removes the local dependency entries from the packed manifest. The exact source
-revision is recorded in `docs/IMPORTS.md` and
+The workspace install hook downloads the Nanocodex SDK and tools from the
+GitHub release pinned in `engine-release.json`, verifies their SHA-256 hashes,
+and caches them under the repository's `.cache/nanocodex/`. Local development
+and CI use these same archives without a sibling checkout. During packing,
+`prepack` copies both archives into `vendor/`, rewrites their internal imports,
+and removes the local dependency entries from the packed manifest. The packed
+plugin includes the release pin and runs without downloading engine artifacts.
+Source provenance is recorded in `docs/IMPORTS.md` and
 `docs/nanocodex-companion-engine.md`.
 
 ## Supported route
@@ -50,6 +51,25 @@ enforces workspace containment, and performs guarded writes. Historical patch
 calls are hydrated as raw custom calls and are never executed again during
 resume or compaction; their results retain diff metadata for the Host.
 
+For local images, use DSH's official `read_image` tool and emit its adapted
+Code Mode result:
+
+```js
+image(await tools.read_image({ file_path: "picture.png" }));
+```
+
+The Code Mode result contains only `path` and `image_url`; the DSH result
+keeps its durable attachment reference. Call `image(result)` to emit the image;
+a bare `return result` completes the script without emitting it. Reading images
+through bash output is unnecessary and can truncate binary data.
+
+At a stopped driver boundary, interrupted calls receive an explicit error
+result. Agent activation also closes missing results left by an earlier failed
+turn, preserving the original calls and completed child operations. Recovery
+never re-executes tools or assumes their side effects were rolled back. A
+projection failure retains its original cause instead of reporting only the
+cancellation used to stop generation.
+
 Existing sessions are continued from DSH's active surface through typed
 `historySeed` hydration. Text-only reasoning blocks remain in the DSH transcript
 but are omitted from the model history: they are not portable provider reasoning
@@ -60,13 +80,16 @@ results share the sanitized, at-most-64-character call part. DSH keeps the full
 original identity, including during compaction; ambiguous projected call IDs
 are rejected instead of merging tool exchanges.
 
-After each successful turn, the adapter also appends a versioned
-`nanocodexCheckpoint` to DSH's `request/context` event and awaits the
-session flush. The record includes the Nanocodex snapshot and an exact active
+After each successful turn, the adapter replaces that session's checkpoint in
+DSH's private `nanocodex_checkpoints` storage domain and awaits persistence.
+The record includes the Nanocodex snapshot and an exact active
 surface boundary (replacement generation, surface sequence list, message count,
 and fingerprint). A new Host uses a checkpoint only when its route and boundary
 match; otherwise it hydrates the current DSH surface and never lets stale engine
-state override newer facts. No private sidecar or separate transcript is used.
+state override newer facts. Browser-visible `request/context` events contain
+only route and context-window metadata; image-heavy engine snapshots never
+travel in history pages. The private domain closes with the plugin and retains
+one latest checkpoint per session across Host restarts.
 
 ## Compaction ownership
 

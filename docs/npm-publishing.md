@@ -60,6 +60,14 @@ manifest such as `0.1.0`, it asks before changing **only that temporary copy** t
 be committed locally first. The selected package must be part of that commit.
 The original checkout, versions, and Git state remain unchanged.
 
+The temporary workspace obtains Nanocodex from the same pinned GitHub Release
+as local development and CI. The root `pnpm:devPreinstall` hook downloads and
+SHA-256-verifies the two engine tarballs before dependency resolution. It uses
+the public GitHub API with environment proxy support; no GitHub credential or
+sibling checkout is required. See
+[`engine-release.json`](../packages/dsh-nanocodex/engine-release.json) for the
+exact release, asset URLs, and checksums.
+
 It verifies npm login, runs the declared frozen install, workspace checks,
 packing, real DSH artifact smoke, registry preflight, and selected-package
 release preparation in the temporary workspace. It then asks before publishing

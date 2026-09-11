@@ -16,6 +16,7 @@ import {
 import type { SessionSeq } from "@deepseek-ai/dsh-session";
 import type { AgentEvent } from "nanocodex/node";
 import { APPLY_PATCH_NAME } from "./constants.js";
+import { closeInterruptedToolCalls } from "./interrupted-tools.js";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -325,7 +326,8 @@ export class NanocodexOutput {
     if (this.blocks.length > 0) this.commit();
   }
 
-  interrupt(): void {
+  interrupt(error: unknown): void {
     if (!this.committed && this.blocks.length > 0) this.commit(undefined, true);
+    closeInterruptedToolCalls(this.agent.session, error);
   }
 }

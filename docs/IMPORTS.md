@@ -38,19 +38,19 @@ metadata points to its public GitHub mirror for npm provenance:
 this workspace; it has no imported source snapshot.
 
 `packages/dsh-nanocodex` (`@lamplitisles/dsh-nanocodex`) was authored directly
-in this workspace as the DSH adapter for the sibling Nanocodex engine checkout.
-The original engine merge landed at
-`3dc3910af5ccb17d62f664dc03ea11789de339fd`. The Owner-accepted
-host-compaction artifact is built from sibling source
-`32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2` against baseline
-`e855ab2329a41824bf2d486bb0f259003f4f605d`; its Nanocodex `0.5.0` tarball
-SHA-256 is
-`8b8fbab2d0ec68de9a7f09d050c8ddd388f6b3e59a2de71b0dca573823bcccf0`, and its
-generated pkg-web WASM SHA-256 is
-`1c56d2a6439f292761f112b17c79245b33d8cf9c3c5244faeb717106a8271c4e`.
-The packed artifact vendors the Nanocodex runtime and `nanocodex-tools` `0.1.0`
-closure; the sibling checkout is a development-time source and packing input
-only.
+in this workspace as the DSH adapter for our Nanocodex fork. It consumes
+[GitHub Release `v0.5.0-lamplit.1`](https://github.com/LamplitIsles/nanocodex/releases/tag/v0.5.0-lamplit.1),
+whose source commit is `f598d5714d9ed1ab25b53d32c6047dd10171cb88`.
+The accepted build revision `32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2`
+and the squash-merged source commit have the same Git tree. The SDK's
+publication refreshes only its build provenance record; executable code,
+types, and WASM are unchanged from the accepted artifact.
+
+[`engine-release.json`](../packages/dsh-nanocodex/engine-release.json) pins the
+`nanocodex` `0.5.0` and `nanocodex-tools` `0.1.0` release asset URLs and SHA-256
+checksums. Local installation, CI, and vendor prepack use those same verified
+tarballs. The final plugin contains the expanded runtime and tools; neither
+building nor installing it requires a sibling engine checkout.
 
 Companion continuity remains owned by the original `dsh-companion` middleware.
 The Nanocodex adapter selects that middleware through a non-generating

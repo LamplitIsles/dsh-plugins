@@ -14,6 +14,7 @@
     "node": ">=24.11.0"
   },
   "scripts": {
+    "pnpm:devPreinstall": "node --use-env-proxy packages/dsh-nanocodex/scripts/engine-artifacts.ts",
     "typecheck": "pnpm run typecheck:root && pnpm --filter \"./packages/*\" run typecheck",
     "typecheck:root": "tsc --noEmit",
     "test": "pnpm --filter \"./packages/*\" run test && pnpm run test:release",

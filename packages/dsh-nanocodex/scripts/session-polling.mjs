@@ -3,10 +3,11 @@ const defaultSleep = (milliseconds) =>
 
 /**
  * Wait for the durable assistant event that follows a provider response.
- * Provider receipt alone is not evidence that DSH has finalized the reply.
+ * A durable reply can precede driver cleanup; compaction also requires idle.
  */
 export async function waitForFinalizedAssistant({
   loadPage,
+  isIdle,
   expectedText,
   timeoutMs = 10_000,
   intervalMs = 20,
@@ -23,11 +24,11 @@ export async function waitForFinalizedAssistant({
           JSON.stringify(record.event).includes(expectedText),
       )
     ) {
-      return page;
+      if (await isIdle()) return page;
     }
     await sleep(intervalMs);
   }
   throw new Error(
-    `timed out waiting for finalized assistant message ${JSON.stringify(expectedText)}`,
+    `timed out waiting for idle after finalized assistant message ${JSON.stringify(expectedText)}`,
   );
 }

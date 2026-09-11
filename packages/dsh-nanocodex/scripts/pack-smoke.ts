@@ -145,6 +145,9 @@ function runnerSource({
   commandsUrl,
   commandCompactActivationUrl,
   persistenceRoot,
+  storageUrl,
+  storageJsonUrl,
+  storageDomainUrl,
   workspaceA,
   workspaceB,
   baseUrl,
@@ -169,6 +172,9 @@ function runnerSource({
   commandsUrl: string;
   commandCompactActivationUrl: string;
   persistenceRoot: string;
+  storageUrl: string;
+  storageJsonUrl: string;
+  storageDomainUrl: string;
   workspaceA: string;
   workspaceB: string;
   baseUrl: string;
@@ -191,6 +197,9 @@ import LlmRuntime, { createAssistantMessage, createToolResultMessage, createUser
 import { buildModelCatalog } from ${JSON.stringify(sessionControllerUrl)};
 import JsonlSessionPersistence from ${JSON.stringify(persistenceJsonlUrl)};
 import CommandRuntime from ${JSON.stringify(commandsUrl)};
+import Storage from ${JSON.stringify(storageUrl)};
+import { JsonStorageBackend } from ${JSON.stringify(storageJsonUrl)};
+import { DomainFacility } from ${JSON.stringify(storageDomainUrl)};
 
 const websocketUrl = ${JSON.stringify(baseUrl)};
 const workspaceA = ${JSON.stringify(workspaceA)};
@@ -211,6 +220,12 @@ let settingsValue = nativeSettingsValue;
 async function createHost() {
   let registeredSettings;
   const root = new Context();
+  const storage = root.plugin(Storage);
+  await storage;
+  const backend = new JsonStorageBackend(${JSON.stringify(persistenceRoot)} + "-checkpoints");
+  const unregisterBackend = root.storage.backend.register("checkpoint-fixture", backend);
+  const domainFacility = new DomainFacility(root, { backend: "checkpoint-fixture" });
+  root.provide("storageDomain", domainFacility);
   const fsHandle = root.plugin(LocalFileSystem, { cwd: workspaceA });
   await fsHandle;
   const fsObservationHandle = root.plugin({
@@ -283,7 +298,7 @@ try {
   engineId = await root.loader.create({
     id: "dsh-nanocodex",
     name: ${JSON.stringify(activationUrl)},
-    inject: ["agents", "sessions", "settings", "credentials", "attachments", "systemPrompt", "tools", "fs", "llm"],
+    inject: ["agents", "sessions", "settings", "credentials", "attachments", "systemPrompt", "tools", "fs", "llm", "storageDomain"],
   });
   commandCompactId = await root.loader.create({
     id: "dsh-command-compact",
@@ -323,6 +338,12 @@ assert.equal(selected.model, "gpt-5.6-terra");
     llmPlugin: root.llm,
     tools: root.tools,
     loaderHandle: loader,
+    async closeStorage() {
+      await domainFacility.closeAll();
+      unregisterBackend();
+      await backend.close();
+      await storage.dispose();
+    },
     agentsHandle: agents,
     persistenceHandle: persistence,
     sessionsHandle: sessions,
@@ -356,6 +377,10 @@ assert.equal(selected.model, "gpt-5.6-terra");
   await tools.dispose();
   await llmPlugin.dispose();
   await systemPrompt.dispose();
+  await domainFacility.closeAll();
+  unregisterBackend();
+  await backend.close();
+  await storage.dispose();
   throw error;
 }
 }
@@ -377,6 +402,7 @@ async function disposeHost(host) {
   await host.fsHandle.dispose();
   await host.llmHandle.dispose();
   await host.systemPromptHandle.dispose();
+  await host.closeStorage();
 }
 
 const firstHost = await createHost();
@@ -564,16 +590,11 @@ const pressure = firstHost.root.sessionProjections.snapshot(firstAgent.session).
 assert.equal(pressure.contextWindow, 200_000);
 assert.equal(pressure.pressureTokens, 18, "context pressure must use the latest request, not the turn total");
 assert.ok(pressure.projectedTokens > 0, "both clients must receive a visible context meter value");
-const checkpointContexts = events.filter(
-  (event) =>
-    event.type === "request/context" &&
-    event.data.nanocodexCheckpoint !== undefined,
-);
-assert.equal(checkpointContexts.length, 1);
-assert.deepEqual(
-  checkpointContexts[0]?.data.nanocodexCheckpoint.boundary.surfaceSeqs,
-  firstAgent.session.surface.nodes,
-);
+const checkpointStore = firstHost.root.storageDomain.get("nanocodex_checkpoints").table("sessions");
+const firstCheckpoint = checkpointStore.get(firstAgent.session.id);
+assert.ok(firstCheckpoint);
+assert.ok(events.filter(event => event.type === "request/context").every(event => JSON.stringify(event).length < 1024), "browser context events must exclude private snapshots");
+assert.deepEqual(firstCheckpoint.boundary.surfaceSeqs, firstAgent.session.surface.nodes);
 const messages = firstAgent.session.deriveMessages();
 const assistantMessages = messages.filter((message) => message.role === "assistant");
 assert.equal(assistantMessages.length, 2);
@@ -622,29 +643,21 @@ assert.equal(
   "success",
   JSON.stringify(manualCompaction),
 );
-const manualCheckpoint = firstAgent.session
-  .snapshotEvents()
-  .slice()
-  .reverse()
-  .find(
-    (event) =>
-      event.type === "request/context" &&
-      event.data.nanocodexCheckpoint !== undefined,
-  );
+const manualCheckpoint = checkpointStore.get(firstAgent.session.id);
 assert.ok(
   manualCheckpoint,
   "manual compaction must persist an engine checkpoint before continuation",
 );
 assert.deepEqual(
-  manualCheckpoint.data.nanocodexCheckpoint.boundary.surfaceSeqs,
+  manualCheckpoint.boundary.surfaceSeqs,
   firstAgent.session.surface.nodes,
 );
 assert.equal(
-  manualCheckpoint.data.nanocodexCheckpoint.boundary.messageCount,
+  manualCheckpoint.boundary.messageCount,
   firstAgent.session.deriveMessages().length,
 );
 assert.ok(
-  manualCheckpoint.data.nanocodexCheckpoint.snapshot.history.some(
+  manualCheckpoint.snapshot.history.some(
     (item) => JSON.stringify(item).includes("Manual compaction preserved"),
   ),
   "manual checkpoint must be the engine-owned post-replacement snapshot",
@@ -704,22 +717,14 @@ const resumedHandle = await resumedHost.root.agents.resume({
   },
 });
 const resumedAgent = resumedHandle.agent;
-const loadedCheckpoint = resumedAgent.session
-  .snapshotEvents()
-  .slice()
-  .reverse()
-  .find(
-    (event) =>
-      event.type === "request/context" &&
-      event.data.nanocodexCheckpoint !== undefined,
-  );
+const loadedCheckpoint = resumedHost.root.storageDomain.get("nanocodex_checkpoints").table("sessions").get(resumedAgent.session.id);
 assert.ok(loadedCheckpoint, "cold Host must load the persisted Nanocodex checkpoint");
 const resumedPressure = resumedHost.root.sessionProjections.snapshot(resumedAgent.session).values.contextPressure;
 assert.equal(resumedPressure.contextWindow, 200_000);
 assert.ok(resumedPressure.pressureTokens > 0, "cold replay must retain the usage anchor");
 assert.ok(resumedPressure.projectedTokens > 0, "cold replay must retain a visible meter");
 assert.equal(
-  loadedCheckpoint.data.nanocodexCheckpoint.boundary.messageCount,
+  loadedCheckpoint.boundary.messageCount,
   resumedAgent.session.deriveMessages().length,
 );
 resumedAgent.followup(createUserMessage({
@@ -1459,6 +1464,9 @@ try {
         "@deepseek-ai/dsh-session-persistence-jsonl",
       ),
       commandsUrl: resolver("@deepseek-ai/dsh-commands"),
+      storageUrl: resolver("@deepseek-ai/dsh-storage"),
+      storageJsonUrl: resolver("@deepseek-ai/dsh-storage-json"),
+      storageDomainUrl: resolver("@deepseek-ai/dsh-storage-domain"),
       commandCompactActivationUrl: pathToFileURL(commandCompactActivation).href,
       persistenceRoot: join(temporaryDirectory, "session-logs"),
       workspaceA,

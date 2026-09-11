@@ -1,6 +1,10 @@
+import { memoryCheckpoints } from "./checkpoint-store-fixture.js";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent as DshAgent } from "@deepseek-ai/dsh-agent";
-import type { AttachmentStore } from "@deepseek-ai/dsh-attachment";
+import {
+  AttachmentError,
+  type AttachmentStore,
+} from "@deepseek-ai/dsh-attachment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
@@ -36,7 +40,10 @@ const tool = {
 
 type ReplayMode = "deltas" | "completed-messages" | "completed-response";
 
-async function replay(mode: ReplayMode) {
+async function replay(
+  mode: ReplayMode,
+  failure?: "cancelled" | "invalid-image",
+) {
   const root = new Context();
   const sessions = root.plugin(SessionStore);
   await sessions;
@@ -51,6 +58,14 @@ async function replay(mode: ReplayMode) {
     value: "tool result",
     content: [{ type: "text", text: "tool result" }],
   }));
+  root.provide("attachments", {
+    saveImages: async () => {
+      throw new AttachmentError(
+        "Unsupported or malformed image data.",
+        "INVALID_IMAGE",
+      );
+    },
+  });
   root.provide("tools", {
     schemas: () => [tool],
     get: () => tool,
@@ -75,6 +90,10 @@ async function replay(mode: ReplayMode) {
     for (const listener of listeners) listener(event);
   };
   let options: Parameters<typeof Agent.create>[0];
+  let cancelTurn!: () => void;
+  const cancelled = new Promise<void>((resolve) => {
+    cancelTurn = resolve;
+  });
   const create = vi.mocked(Agent.create).mockImplementation(async (value) => {
     options = value;
     return {
@@ -90,6 +109,9 @@ async function replay(mode: ReplayMode) {
       turn: {
         prompt: () => ({
           accepted: async () => {},
+          cancel: async () => {
+            cancelTurn();
+          },
           dispose() {},
           result: async () => {
             for (const [index, text] of texts.entries()) {
@@ -174,6 +196,23 @@ async function replay(mode: ReplayMode) {
                     );
                   }
                 }
+                if (failure === "cancelled")
+                  throw new Error("the turn was cancelled");
+                if (failure === "invalid-image") {
+                  emit("tool.result", {
+                    call_id: parent.call_id,
+                    tool: "exec",
+                    status: "completed",
+                    result: [
+                      {
+                        type: "input_image",
+                        image_url: "data:image/png;base64,dHJ1bmNhdGVk",
+                      },
+                    ],
+                  });
+                  await cancelled;
+                  throw new Error("the turn was cancelled");
+                }
                 emit("tool.result", {
                   call_id: parent.call_id,
                   tool: "exec",
@@ -195,7 +234,7 @@ async function replay(mode: ReplayMode) {
       dispose() {},
     } as unknown as Awaited<ReturnType<typeof Agent.create>>;
   });
-  const engine = new NanocodexEngine(root);
+  const engine = new NanocodexEngine(root, memoryCheckpoints());
   const agent = {
     id: session.id,
     session,
@@ -210,33 +249,40 @@ async function replay(mode: ReplayMode) {
   session.append("step/start", { turn: 1, step: 1 });
   session.append("user/message", user, { surfaceOp: "append" });
   let step = 1;
+  let runError: unknown;
   try {
-    await engine.run(
-      agent,
-      [],
-      [user],
-      {
-        sections: [],
-        contexts: [],
-        tools: [tool],
-        variables: {},
-      },
-      1,
-      1,
-      new AbortController().signal,
-      () => {
-        session.append("step/end", { turn: 1, step });
-        step += 1;
-        session.append("step/start", { turn: 1, step });
-        return step;
-      },
-    );
+    await engine
+      .run(
+        agent,
+        [],
+        [user],
+        {
+          sections: [],
+          contexts: [],
+          tools: [tool],
+          variables: {},
+        },
+        1,
+        1,
+        new AbortController().signal,
+        () => {
+          session.append("step/end", { turn: 1, step });
+          step += 1;
+          session.append("step/start", { turn: 1, step });
+          return step;
+        },
+      )
+      .catch((error: unknown) => {
+        runError = error;
+      });
+    if (failure === undefined && runError !== undefined) throw runError;
     session.append("step/end", { turn: 1, step });
     session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     return {
       events: session.snapshotEvents(),
       messages: session.deriveMessages(),
       executions: execute.mock.calls.length,
+      runError,
     };
   } finally {
     await engine.invalidate(agent);
@@ -291,3 +337,36 @@ it("gives the official turn disclosure complete totals and cache buckets", async
     routes: [{ provider: "openai", model: "gpt-5.6-sol" }],
   });
 });
+
+it.each(["cancelled", "invalid-image"] as const)(
+  "keeps a failed exec recoverable without replaying its completed children: %s",
+  async (failure) => {
+    const { messages, events, executions, runError } = await replay(
+      "completed-response",
+      failure,
+    );
+    expect(runError).toBeInstanceOf(Error);
+    expect((runError as Error).message).toBe(
+      failure === "invalid-image"
+        ? "Unsupported or malformed image data."
+        : "the turn was cancelled",
+    );
+    expect(executions).toBe(2);
+    const results = events.filter((event) => event.type === "tool/result");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.data.message.content).toMatchObject([
+      { type: "tool-result", toolCallId: "exec_0", isError: true },
+    ]);
+    await expect(
+      buildHistorySeed(messages, {} as { attachments: AttachmentStore }),
+    ).resolves.toMatchObject({
+      history: expect.arrayContaining([
+        {
+          type: "custom_tool_call_output",
+          call_id: "exec_0",
+          output: expect.stringMatching(/interrupted|failed/i),
+        },
+      ]),
+    });
+  },
+);

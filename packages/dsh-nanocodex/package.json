@@ -30,6 +30,7 @@
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
+    "engine-release.json",
     "presets",
     "vendor"
   ],
@@ -61,22 +62,24 @@
     "@deepseek-ai/dsh-session": "catalog:",
     "@deepseek-ai/dsh-session-persistence": "catalog:",
     "@deepseek-ai/dsh-settings": "catalog:",
+    "@deepseek-ai/dsh-storage-domain": "catalog:",
     "@deepseek-ai/dsh-system-prompt": "catalog:",
     "@deepseek-ai/dsh-tools": "catalog:",
     "@deepseek-ai/schemastery": "catalog:"
   },
   "dependencies": {
     "@jitl/quickjs-wasmfile-release-asyncify": "0.32.0",
-    "nanocodex": "file:../../../nanocodex/js/nanocodex",
-    "nanocodex-tools": "file:../../../nanocodex/js/nanocodex-tools",
-    "quickjs-emscripten-core": "0.32.0"
+    "nanocodex": "file:../../.cache/nanocodex/nanocodex.tgz",
+    "nanocodex-tools": "file:../../.cache/nanocodex/nanocodex-tools.tgz",
+    "quickjs-emscripten-core": "0.32.0",
+    "zod": "^4.5.4"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsdown",
     "pack-smoke": "tsx scripts/pack-smoke.ts",
-    "prepack": "node scripts/prepare-vendor.mjs prepack",
+    "prepack": "node --use-env-proxy scripts/prepare-vendor.mjs prepack",
     "postpack": "node scripts/prepare-vendor.mjs postpack"
   },
   "devDependencies": {
@@ -86,6 +89,7 @@
     "@deepseek-ai/dsh-command-compact": "catalog:",
     "@deepseek-ai/dsh-commands": "catalog:",
     "@deepseek-ai/dsh-fs": "catalog:",
+    "@deepseek-ai/dsh-storage-domain": "catalog:",
     "@deepseek-ai/dsh-token-meter": "catalog:",
     "@types/node": "^24.10.1",
     "@types/ws": "^8.18.1",

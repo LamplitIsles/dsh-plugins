@@ -27,19 +27,18 @@ The [architecture decision](adr/0001-nanocodex-companion-engine.md) keeps the ex
 
 The package is `@lamplitisles/dsh-nanocodex`, owned by
 `packages/dsh-nanocodex`. It is a public workspace package with an independent
-`0.1.0` version. Development consumes the sibling Nanocodex checkout.
-The original engine merge landed at
-`3dc3910af5ccb17d62f664dc03ea11789de339fd`; this historical revision is not the
-runtime packed by the current artifact. The accepted host-compaction artifact
-is built from sibling source `32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2` against
-baseline `e855ab2329a41824bf2d486bb0f259003f4f605d`. Its Nanocodex `0.5.0`
-tarball SHA-256 is
-`8b8fbab2d0ec68de9a7f09d050c8ddd388f6b3e59a2de71b0dca573823bcccf0`, and its
-generated pkg-web WASM SHA-256 is
-`1c56d2a6439f292761f112b17c79245b33d8cf9c3c5244faeb717106a8271c4e`.
-`prepack` vendors this runtime and the `nanocodex-tools` `0.1.0` closure into
-the packed artifact; the sibling checkout is a development-time source and
-packing input only.
+`0.1.0` version. Local development and CI consume the published
+[engine release `v0.5.0-lamplit.1`](https://github.com/LamplitIsles/nanocodex/releases/tag/v0.5.0-lamplit.1).
+Its source commit `f598d5714d9ed1ab25b53d32c6047dd10171cb88` has the same Git
+tree as the accepted build revision
+`32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2`.
+
+The package-owned `engine-release.json` pins both tarballs by release asset URL
+and SHA-256. The root installation hook verifies them before pnpm resolves the
+local cached archives. A dependency override keeps the SDK's internal tools
+import on the same fork artifact. Vendor prepack verifies the archives again,
+expands the runtime and tools into the plugin, and rewrites their internal
+imports. No sibling checkout or separate engine build is required.
 
 Business code remains with its current DSH plugin owner. Bind existing mail, tabletop, memory, relationship, and image-generation capabilities instead of copying their implementations into the engine plugin. Keet stays under its existing repository ownership; adding new communication features is separate from proving the engine replacement.
 
@@ -155,7 +154,7 @@ do not start a DSH instance. `artifact:smoke` remains an explicitly selected
 release/packaging diagnostic with its own temporary Host state, not a routine
 development or handoff prerequisite.
 
-Use packed plugin and nanocodex artifacts through the real Loader to prove dependency closure, including the agent WASM, QuickJS WASM, and generated bindings. Use local `link:` or `file:` dependencies for initial integration, including required workspace dependencies. Neither repository requires npm publication; local tarballs are sufficient for packed-artifact checks. Local links can speed iteration but are not artifact acceptance. No globally installed dependency or sibling checkout may be required by the packed result.
+Use the plugin packed from the pinned GitHub Release inputs through the real Loader to prove dependency closure, including the agent WASM, QuickJS WASM, and generated bindings. Nanocodex needs no npm publication. No globally installed dependency or sibling checkout may be required by the packed result.
 
 Neither a merge nor completion of this design changes staging automatically.
 The adapter implementation did not install, restart, or deploy staging.

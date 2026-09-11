@@ -111,6 +111,7 @@ export const PUBLIC_PACKAGES = [
       "README.md",
       "LICENSE",
       "THIRD_PARTY_NOTICES.md",
+      "engine-release.json",
     ],
   },
 ] as const;

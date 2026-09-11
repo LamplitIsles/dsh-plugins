@@ -10,9 +10,16 @@ import {
   canonicalHeader,
   headerEquals,
   SessionSeq,
+  type SessionId,
   type RequestContext,
   type Session,
 } from "@deepseek-ai/dsh-session";
+import {
+  defineDomain,
+  domainTable,
+  type KvTable,
+} from "@deepseek-ai/dsh-storage-domain";
+import { z } from "zod";
 import {
   createToolResultMessage,
   ToolCallId,
@@ -128,13 +135,29 @@ interface SurfaceBoundary {
   readonly fingerprint: string;
 }
 
-interface NanocodexCheckpoint {
+export interface NanocodexCheckpoint {
   readonly version: 1;
   readonly provider: string;
   readonly model: NanocodexModel;
   readonly boundary: SurfaceBoundary;
   readonly snapshot: SessionSnapshot;
 }
+
+export type NanocodexCheckpointStore = Pick<
+  KvTable<SessionId, NanocodexCheckpoint>,
+  "get" | "put"
+>;
+
+export const nanocodexCheckpointDomain = defineDomain({
+  name: "nanocodex_checkpoints",
+  version: 1,
+  layout: "per-record",
+  tables: {
+    sessions: domainTable<SessionId, NanocodexCheckpoint>(
+      z.custom<NanocodexCheckpoint>((value) => checkpoint(value) !== undefined),
+    ),
+  },
+});
 
 type NodeAgentHandle = Awaited<ReturnType<typeof NodeAgent.create>>;
 
@@ -310,23 +333,20 @@ function checkpoint(value: unknown): NanocodexCheckpoint | undefined {
 }
 
 function findMatchingCheckpoint(
+  store: NanocodexCheckpointStore,
   session: Session,
   messages: readonly Message[],
   provider: string,
   model: NanocodexModel,
 ): NanocodexCheckpoint | undefined {
-  for (const event of [...session.snapshotEvents()].reverse()) {
-    if (event.type !== "request/context") continue;
-    const value = record(event.data)?.nanocodexCheckpoint;
-    const candidate = checkpoint(value);
-    if (
-      candidate !== undefined &&
-      candidate.provider === provider &&
-      candidate.model === model &&
-      boundaryMatches(candidate.boundary, session, messages)
-    ) {
-      return candidate;
-    }
+  const candidate = checkpoint(store.get(session.id));
+  if (
+    candidate !== undefined &&
+    candidate.provider === provider &&
+    candidate.model === model &&
+    boundaryMatches(candidate.boundary, session, messages)
+  ) {
+    return candidate;
   }
   return undefined;
 }
@@ -1017,7 +1037,10 @@ export class NanocodexEngine {
   private readonly requestSurfaceGeneration = new WeakMap<Session, number>();
   private readonly runtimes = new Map<string, LiveRuntime>();
 
-  constructor(private readonly ctx: Context) {}
+  constructor(
+    private readonly ctx: Context,
+    private readonly checkpoints: NanocodexCheckpointStore,
+  ) {}
 
   private quickJs(): Promise<CodeEvaluator> {
     this.quickJsPromise ??= (async () => {
@@ -1145,6 +1168,7 @@ export class NanocodexEngine {
         },
       }).filter((tool) => visibleToolNames.has(tool.name));
       const checkpoint = findMatchingCheckpoint(
+        this.checkpoints,
         agent.session,
         previousMessages,
         route.provider,
@@ -1244,9 +1268,16 @@ export class NanocodexEngine {
       }
     } catch (error) {
       discardRuntime = true;
-      await projection.catch(() => undefined);
-      output.interrupt();
-      throw error;
+      let failure = error;
+      try {
+        await projection;
+      } catch (projectionError) {
+        // Cancellation is a consequence of an unrecordable event. Preserve
+        // the original failure so the user can act on the actual cause.
+        failure = projectionError;
+      }
+      output.interrupt(failure);
+      throw failure;
     } finally {
       signal.removeEventListener("abort", abort);
       removeListener();
@@ -1642,13 +1673,11 @@ export class NanocodexEngine {
       boundary,
       snapshot,
     };
-    const context: RequestContext & {
-      readonly nanocodexCheckpoint: NanocodexCheckpoint;
-    } = {
+    await this.checkpoints.put(session.id, checkpoint);
+    const context: RequestContext = {
       provider,
       model,
       contextWindow: MODEL_CONTEXT_WINDOW,
-      nanocodexCheckpoint: checkpoint,
     };
     session.append("request/context", context);
     await this.ctx.sessions.flush(session);

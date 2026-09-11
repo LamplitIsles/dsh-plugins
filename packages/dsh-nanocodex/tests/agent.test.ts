@@ -1,3 +1,4 @@
+import { memoryCheckpoints } from "./checkpoint-store-fixture.js";
 import { Context } from "@deepseek-ai/cordis";
 import AgentRegistry from "@deepseek-ai/dsh-agent";
 import {
@@ -68,7 +69,7 @@ describe("NanocodexAgent queue boundary", () => {
     await Promise.all([sessions, agents, prompts]);
     const id = SessionId("018f1f9a-7b3c-7a10-8000-000000000099");
     const preparation = SessionPreparation.create(root.sessions.prepare(id));
-    const engine = new BlockingEngine(root);
+    const engine = new BlockingEngine(root, memoryCheckpoints());
     const agent = new NanocodexAgent(root, id, {}, preparation.session, engine);
     const detachSession = root.sessions.enter(preparation.session);
     const detachAgent = root.agents.enter(agent, undefined);

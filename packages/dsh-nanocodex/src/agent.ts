@@ -17,6 +17,7 @@ import {
   type PromptAssembly,
 } from "@deepseek-ai/dsh-system-prompt";
 import type { AgentOptions } from "@deepseek-ai/dsh-agent";
+import { closeInterruptedToolCalls } from "./interrupted-tools.js";
 import { NanocodexEngine } from "./engine.js";
 import type { NanocodexCompactionEngine } from "./compaction-engine.js";
 
@@ -124,6 +125,7 @@ export class NanocodexAgent implements Agent {
     this.id = id;
     this.options = options;
     this.session = session;
+    closeInterruptedToolCalls(session);
     this.engine = engine;
     this.dispatch = agentEvents(loopCtx, this);
     this.inbox = new Inbox(session, {

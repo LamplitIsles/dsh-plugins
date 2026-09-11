@@ -44,6 +44,9 @@ let server;
 let sessionFollow;
 let providerRequests = [];
 let upgradeCount = 0;
+let mediaScenario;
+const pixelPng =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
 function responseEvent(id, text) {
   return {
@@ -88,8 +91,13 @@ async function waitForRequests(count) {
   const deadline = Date.now() + 10_000;
   while (providerRequests.length < count) {
     if (Date.now() >= deadline) {
+      const page = await sessionFollow?.page();
+      const endings = page?.records
+        .filter((record) => record.event?.type === "turn/end")
+        .slice(-2)
+        .map((record) => record.event.data.reason);
       throw new Error(
-        `timed out waiting for provider request ${count}; got ${providerRequests.length}`,
+        `timed out waiting for provider request ${count}; got ${providerRequests.length}; latest endings: ${JSON.stringify(endings)}`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -170,9 +178,8 @@ function openSessionFollow({ baseUrl, cookie, sessionId }) {
     if (value?.type === "event") records = [...records, value];
   });
   socket.once("error", settleFailure);
-  socket.once("close", () => {
-    if (socket.readyState !== WebSocket.CLOSED) return;
-    if (!readySettled) settleFailure(new Error("session follow closed"));
+  socket.once("close", (code) => {
+    settleFailure(new Error(`session follow closed (${code})`));
   });
 
   return {
@@ -205,6 +212,61 @@ async function handleProviderRequest(request, response) {
   const body = await requestBody(request);
   const parsed = JSON.parse(body);
   providerRequests.push({ body: parsed, raw: body });
+  if (mediaScenario === "read-image" || mediaScenario === "invalid-image") {
+    const valid = mediaScenario === "read-image";
+    mediaScenario = valid ? "read-image-result" : "invalid-image-result";
+    const event = responseEvent(`web-media-${providerRequests.length}`, "");
+    event.response.output = [
+      {
+        type: "custom_tool_call",
+        id: valid ? "ctc_read_image" : "ctc_invalid_image",
+        call_id: valid ? "call_read_image" : "call_invalid_image",
+        name: "exec",
+        input: valid
+          ? 'image(await tools.read_image({file_path:"pixel.png"}));'
+          : 'image("data:image/png;base64,dHJ1bmNhdGVk");',
+      },
+    ];
+    await sendSse(response, event);
+    return;
+  }
+  if (mediaScenario === "read-image-result") {
+    const output = parsed.input.find(
+      (item) =>
+        item.call_id === "call_read_image" && item.type.endsWith("_output"),
+    );
+    assert.ok(
+      output?.output.some(
+        (part) =>
+          part.type === "input_image" &&
+          part.image_url.startsWith("data:image/"),
+      ),
+      "read_image must reach the next model request as an image",
+    );
+    mediaScenario = undefined;
+  } else if (mediaScenario === "invalid-image-result") {
+    const output = parsed.input.find(
+      (item) =>
+        item.call_id === "call_invalid_image" && item.type.endsWith("_output"),
+    );
+    if (
+      Array.isArray(output?.output) &&
+      output.output.some(
+        (part) =>
+          part.type === "input_image" &&
+          part.image_url === "data:image/png;base64,dHJ1bmNhdGVk",
+      )
+    ) {
+      // Event projection is asynchronous. Keep this provider request pending
+      // until failed attachment admission cancels it; never return success.
+      return;
+    }
+    assert.match(
+      JSON.stringify(output?.output),
+      /Unsupported or malformed image data/iu,
+    );
+    mediaScenario = undefined;
+  }
   const isCompaction = body.includes(
     "You are creating a compact continuity checkpoint",
   );
@@ -281,6 +343,7 @@ async function main() {
     "- id: agent-default-model\n  config:\n    provider: openai\n    model: gpt-5.6-sol\n",
   );
 
+  await writeFile(join(cwd, "pixel.png"), Buffer.from(pixelPng, "base64"));
   runtime = await startRuntime(cli, env, cwd);
   const cookie = await authenticateRuntime(runtime);
   async function rpc(path, method, args) {
@@ -304,6 +367,14 @@ async function main() {
     return waitForFinalizedAssistant({
       expectedText: text,
       loadPage: () => sessionFollow.page(),
+      isIdle: async () => {
+        const sessions = await rpc("/api/session/list", "session/list", {
+          _request: {},
+        });
+        return sessions.items.some(
+          (session) => session.sessionId === sessionId && !session.running,
+        );
+      },
     });
   }
 
@@ -375,9 +446,83 @@ async function main() {
     providerRequests.at(-1)?.body?.client_metadata?.thread_id,
     normalizedId,
   );
+  mediaScenario = "read-image";
+  let expectedRequests = providerRequests.length + 2;
+  await rpc("/api/session/prompt", "session/prompt", {
+    request: {
+      sessionId,
+      requestId: "read-image-fixture",
+      content: [{ type: "text", text: "Inspect pixel.png with read_image." }],
+      mode: "queue",
+    },
+  });
+  await waitForRequests(expectedRequests);
+  await waitForAssistant(`Web composed reply ${expectedRequests}`);
+  assert.equal(mediaScenario, undefined);
+  for (const record of (await sessionFollow.page()).records) {
+    if (record.event?.type === "request/context") {
+      assert.ok(
+        JSON.stringify(record).length < 1024,
+        "browser history must not carry private engine snapshots",
+      );
+    }
+  }
+
+  const beforeFailure = (await sessionFollow.page()).records.length;
+  mediaScenario = "invalid-image";
+  await rpc("/api/session/prompt", "session/prompt", {
+    request: {
+      sessionId,
+      requestId: "invalid-image-fixture",
+      content: [
+        { type: "text", text: "Exercise the malformed-image failure." },
+      ],
+      mode: "queue",
+    },
+  });
+  let ended;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const records = (await sessionFollow.page()).records.slice(beforeFailure);
+    ended = records.find((record) => record.event?.type === "turn/end");
+    if (ended) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(
+    ended,
+    `invalid image turn must terminate; providerRequests=${providerRequests.length}, scenario=${mediaScenario}, latest=${JSON.stringify((await sessionFollow.page()).records.slice(-5).map((record) => ({ type: record.event?.type, reason: record.event?.data?.reason })))}`,
+  );
+  assert.equal(ended.event.data.reason.kind, "error");
+  assert.match(
+    ended.event.data.reason.error.message,
+    /Unsupported or malformed image data/iu,
+  );
+  const failedResult = (await sessionFollow.page()).records.find(
+    (record) =>
+      record.event?.type === "tool/result" &&
+      record.event.data.message.source.callId === "call_invalid_image",
+  );
+  assert.equal(failedResult?.event.data.message.content[0].isError, true);
+
+  expectedRequests = providerRequests.length + 1;
+  await rpc("/api/session/prompt", "session/prompt", {
+    request: {
+      sessionId,
+      requestId: "after-invalid-image",
+      content: [
+        { type: "text", text: "Continue after the interrupted image call." },
+      ],
+      mode: "queue",
+    },
+  });
+  await waitForRequests(expectedRequests);
+  await waitForAssistant(`Web composed reply ${expectedRequests}`);
+  assert.equal(mediaScenario, undefined);
   console.log(
     JSON.stringify(
       {
+        imageRead: true,
+        invalidImageRecovery: true,
         webComposed: true,
         standardPreset: true,
         customCompaction: true,

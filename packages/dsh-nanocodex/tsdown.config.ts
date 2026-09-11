@@ -19,6 +19,7 @@ export default defineConfig({
       "@deepseek-ai/dsh-scope",
       "@deepseek-ai/dsh-session",
       "@deepseek-ai/dsh-settings",
+      "@deepseek-ai/dsh-storage-domain",
       "@deepseek-ai/dsh-system-prompt",
       "@deepseek-ai/dsh-tools",
       "@deepseek-ai/schemastery",

@@ -1,3 +1,4 @@
+import { memoryCheckpoints } from "./checkpoint-store-fixture.js";
 import { Context } from "@deepseek-ai/cordis";
 import {
   createAssistantMessage,
@@ -60,7 +61,10 @@ describe("Nanocodex compaction history mapping", () => {
         [latest],
       );
 
-      const selection = await new NanocodexEngine(root).mapCompactionOutcome(
+      const selection = await new NanocodexEngine(
+        root,
+        memoryCheckpoints(),
+      ).mapCompactionOutcome(
         { session },
         outcome,
         new AbortController().signal,
@@ -114,7 +118,10 @@ describe("Nanocodex compaction history mapping", () => {
       reply();
 
       const nodes = [...session.surface.nodes];
-      const selection = await new NanocodexEngine(root).mapCompactionOutcome(
+      const selection = await new NanocodexEngine(
+        root,
+        memoryCheckpoints(),
+      ).mapCompactionOutcome(
         { session },
         outcomeFor(
           [
@@ -260,7 +267,10 @@ describe("Nanocodex compaction history mapping", () => {
         },
       ] as unknown as HistoryItem[];
       const outcome = outcomeFor(retained, contextHistory);
-      const selection = await new NanocodexEngine(root).mapCompactionOutcome(
+      const selection = await new NanocodexEngine(
+        root,
+        memoryCheckpoints(),
+      ).mapCompactionOutcome(
         { session },
         outcome,
         new AbortController().signal,
@@ -283,7 +293,7 @@ describe("Nanocodex compaction history mapping", () => {
         ],
       } as unknown as HistoryItem;
       await expect(
-        new NanocodexEngine(root).mapCompactionOutcome(
+        new NanocodexEngine(root, memoryCheckpoints()).mapCompactionOutcome(
           { session },
           outcomeFor(retained, mismatchedHistory),
           new AbortController().signal,
@@ -335,7 +345,10 @@ describe("Nanocodex compaction history mapping", () => {
         );
       }
 
-      const selection = await new NanocodexEngine(root).mapCompactionOutcome(
+      const selection = await new NanocodexEngine(
+        root,
+        memoryCheckpoints(),
+      ).mapCompactionOutcome(
         { session },
         outcomeFor(
           [
@@ -461,7 +474,10 @@ describe("Nanocodex compaction history mapping", () => {
         id: item.id ?? null,
         call_id: "call_id" in item ? item.call_id : null,
       }));
-      const selection = await new NanocodexEngine(root).mapCompactionOutcome(
+      const selection = await new NanocodexEngine(
+        root,
+        memoryCheckpoints(),
+      ).mapCompactionOutcome(
         { session },
         outcomeFor(retained, history.slice(1)),
         new AbortController().signal,
@@ -597,7 +613,7 @@ describe("Nanocodex compaction history mapping", () => {
           ],
         );
 
-        const engine = new NanocodexEngine(root);
+        const engine = new NanocodexEngine(root, memoryCheckpoints());
         const selection = await engine.mapCompactionOutcome(
           { session },
           outcome,
@@ -746,7 +762,7 @@ describe("Nanocodex compaction history mapping", () => {
         },
       ];
       const outcome = outcomeFor(retained, contextHistory);
-      const engine = new NanocodexEngine(root);
+      const engine = new NanocodexEngine(root, memoryCheckpoints());
       await expect(
         engine.mapCompactionOutcome(
           { session },
@@ -935,7 +951,7 @@ describe("Nanocodex compaction history mapping", () => {
         session.header,
         session.inheritedEventCount,
       );
-      const engine = new NanocodexEngine(root);
+      const engine = new NanocodexEngine(root, memoryCheckpoints());
       await expect(
         engine.mapCompactionOutcome(
           { session: restored },
@@ -1141,7 +1157,7 @@ describe("Nanocodex compaction history mapping", () => {
         session.header,
         session.inheritedEventCount,
       );
-      const engine = new NanocodexEngine(root);
+      const engine = new NanocodexEngine(root, memoryCheckpoints());
       await expect(
         engine.mapCompactionOutcome(
           { session: restored },

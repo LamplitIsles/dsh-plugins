@@ -1,0 +1,14 @@
+{
+  "tag": "v0.5.0-lamplit.1",
+  "sourceCommit": "f598d5714d9ed1ab25b53d32c6047dd10171cb88",
+  "artifacts": {
+    "nanocodex": {
+      "url": "https://api.github.com/repos/LamplitIsles/nanocodex/releases/assets/556864553?download=1",
+      "sha256": "3500dcb304e157970ff3979280b0c08e5d97f792c275e1fc3426241688869c98"
+    },
+    "nanocodex-tools": {
+      "url": "https://api.github.com/repos/LamplitIsles/nanocodex/releases/assets/556864550?download=1",
+      "sha256": "27d984ecc36f00a74e7463a6985019ab2b56f852b202ad7b1cabb5c20d8ce25c"
+    }
+  }
+}

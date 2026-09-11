@@ -48,6 +48,12 @@ Install once from the repository root:
 pnpm install --frozen-lockfile
 ```
 
+Installation automatically downloads and verifies the Nanocodex engine archives
+pinned in [`engine-release.json`](packages/dsh-nanocodex/engine-release.json).
+Local development and CI share those cached release inputs; no sibling engine
+checkout or GitHub credential is required. The initial download requires access
+to GitHub's public release API and respects the host's proxy environment.
+
 Run the complete local checks in this order:
 
 ```sh
