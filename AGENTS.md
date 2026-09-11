@@ -125,5 +125,4 @@ Preserve the imported product behavior and optional cross-plugin contracts.
 Do not add compatibility layers for retired workflows, broaden Host peers into
 runtime dependencies, or couple unrelated package versions. Keep source
 provenance in `docs/IMPORTS.md`; keep temporary plans and deferred ideas under
-`.scratch/` without adding them to Git. Do not edit the sibling source
-repositories as part of this workspace task.
+`.scratch/` without adding them to Git.
