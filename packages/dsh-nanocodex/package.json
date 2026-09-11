@@ -1,0 +1,97 @@
+{
+  "name": "@lamplitisles/dsh-nanocodex",
+  "version": "0.1.0",
+  "description": "Nanocodex Node/WASM engine adapter for DeepSeek Harness",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LamplitIsles/dsh-plugins.git",
+    "directory": "packages/dsh-nanocodex"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./standard-preset": {
+      "types": "./dist/standard-preset.d.ts",
+      "default": "./dist/standard-preset.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+    "presets",
+    "vendor"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/cordis-plugin-include": "catalog:",
+    "@deepseek-ai/dsh-agent": "catalog:",
+    "@deepseek-ai/dsh-agent-presets": "catalog:",
+    "@deepseek-ai/dsh-attachment": "catalog:",
+    "@deepseek-ai/dsh-command-compact": "catalog:",
+    "@deepseek-ai/dsh-commands": "catalog:",
+    "@deepseek-ai/dsh-compaction": "catalog:",
+    "@deepseek-ai/dsh-credentials": "catalog:",
+    "@deepseek-ai/dsh-fs": "catalog:",
+    "@deepseek-ai/dsh-llm": "catalog:",
+    "@deepseek-ai/dsh-scope": "catalog:",
+    "@deepseek-ai/dsh-session": "catalog:",
+    "@deepseek-ai/dsh-session-persistence": "catalog:",
+    "@deepseek-ai/dsh-settings": "catalog:",
+    "@deepseek-ai/dsh-system-prompt": "catalog:",
+    "@deepseek-ai/dsh-tools": "catalog:",
+    "@deepseek-ai/schemastery": "catalog:"
+  },
+  "dependencies": {
+    "@jitl/quickjs-wasmfile-release-asyncify": "0.32.0",
+    "nanocodex": "file:../../../nanocodex/js/nanocodex",
+    "nanocodex-tools": "file:../../../nanocodex/js/nanocodex-tools",
+    "quickjs-emscripten-core": "0.32.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsdown",
+    "pack-smoke": "tsx scripts/pack-smoke.ts",
+    "prepack": "node scripts/prepare-vendor.mjs prepack",
+    "postpack": "node scripts/prepare-vendor.mjs postpack"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis-plugin-include": "catalog:",
+    "@deepseek-ai/dsh-command-compact": "catalog:",
+    "@deepseek-ai/dsh-commands": "catalog:",
+    "@deepseek-ai/dsh-agent-presets": "catalog:",
+    "@deepseek-ai/dsh-fs": "catalog:",
+    "@deepseek-ai/cordis-plugin-loader": "catalog:",
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "tsdown": "catalog:",
+    "tsx": "^4.23.13",
+    "typescript": "catalog:",
+    "vitest": "^4.1.11",
+    "ws": "^8.21.3"
+  }
+}

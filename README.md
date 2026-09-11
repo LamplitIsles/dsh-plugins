@@ -1,33 +1,41 @@
 # dsh-plugins
 
-**Eight independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, image generation, dice rolling, and Codex code mode—in one pnpm workspace.**
+**Eight independently installable DeepSeek Harness plugins—companion UI, email, Matrix, speech, memory, image generation, dice rolling, and the Nanocodex engine—in one pnpm workspace.**
 
 ```sh
-corepack pnpm install --frozen-lockfile
-corepack pnpm run lint
-corepack pnpm run format:check
-corepack pnpm run typecheck
-corepack pnpm run test
-corepack pnpm run build
-corepack pnpm run pack:check
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run format:check
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run pack:check
 ```
 
 The workspace targets Node.js `>=24.11.0`, Corepack pnpm `12.3.4`, and the DSH
 `0.1.2-rc.1` contract family (Cordis `4.0.2`, Schemastery `3.18.2`). The
 public package identities and versions remain independent.
 
+Enable the Corepack pnpm shim once on a new host, then use plain `pnpm`
+commands. The root `packageManager` field remains the version pin:
+
+```sh
+corepack enable pnpm
+pnpm --version
+```
+
 ## Packages
 
-| Package                             | Purpose                                                                                                           |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `@lamplitisles/dsh-companion`       | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior.                   |
-| `@lamplitisles/dsh-mail`            | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.                       |
-| `@lamplitisles/dsh-matrix`          | Matrix room reading, search, and explicit message delivery through DSH tools.                                     |
-| `@lamplitisles/dsh-speech`          | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                                       |
-| `@lamplitisles/dsh-hindsight`       | Companion-oriented Hindsight recall, retention, and deliberate reflection.                                        |
-| `@lamplitisles/dsh-imagegen`        | DSH image generation and editing under the active workspace.                                                      |
-| `@lamplitisles/dsh-tabletop`        | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                                             |
-| `@lamplitisles/dsh-codex-code-mode` | An opt-in Codex Responses route with raw TypeScript `run_code` and direct Codex Add/Update `apply_patch` editing. |
+| Package                       | Purpose                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@lamplitisles/dsh-companion` | A focused Svelte chat surface at `/companion/`, with durable session and relationship behavior.                                     |
+| `@lamplitisles/dsh-mail`      | A single Settings-owned Agent mailbox with six purpose-built mail tools and loopback OAuth.                                         |
+| `@lamplitisles/dsh-matrix`    | Matrix room reading, search, and explicit message delivery through DSH tools.                                                       |
+| `@lamplitisles/dsh-speech`    | Tagged TTS playback and optional Qwen ASR through an isolated Host service.                                                         |
+| `@lamplitisles/dsh-hindsight` | Companion-oriented Hindsight recall, retention, and deliberate reflection.                                                          |
+| `@lamplitisles/dsh-imagegen`  | DSH image generation and editing under the active workspace.                                                                        |
+| `@lamplitisles/dsh-tabletop`  | Host-only `roll_dice` with structured inputs and unbiased dice rolls.                                                               |
+| `@lamplitisles/dsh-nanocodex` | The selected-profile Nanocodex Node/WASM agent engine with guarded DSH tools, raw Add/Update `apply_patch`, and private compaction. |
 
 Imagegen keeps its provider and workspace-boundary core as ordinary internal
 modules in the public package; there is no separate private workspace package.
@@ -37,18 +45,18 @@ modules in the public package; there is no separate private workspace package.
 Install once from the repository root:
 
 ```sh
-corepack pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile
 ```
 
 Run the complete local checks in this order:
 
 ```sh
-corepack pnpm run lint
-corepack pnpm run format:check
-corepack pnpm run typecheck
-corepack pnpm run test
-corepack pnpm run build
-corepack pnpm run pack:check
+pnpm run lint
+pnpm run format:check
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run pack:check
 ```
 
 `lint` uses Oxlint's correctness and type-aware rules across the authored
@@ -60,15 +68,35 @@ coverage.
 Run one package from the same workspace:
 
 ```sh
-corepack pnpm --filter @lamplitisles/dsh-mail run test
-corepack pnpm --filter @lamplitisles/dsh-mail run build
+pnpm --filter @lamplitisles/dsh-mail run test
+pnpm --filter @lamplitisles/dsh-mail run build
 ```
+
+For normal Host development, deploy only the affected package artifacts to the
+existing persistent development DSH and restart its service:
+
+```sh
+pnpm run dev:deploy -- @lamplitisles/dsh-nanocodex
+```
+
+The command reuses the installed rc.1 executable, DSH home, `web` profile,
+settings, credentials, and sessions at the host-local `dsh-dev` target. It
+does not install DSH, create a new profile, or start a disposable Host. Pass
+multiple public package names when one change spans plugins; pass `--all` only
+when every public plugin already present in that profile is affected. HTTP
+readiness is only a service check, so UI changes still need the task-scoped
+browser review. The executable, home, runtime, profile, and service are fixed
+to that target; inconsistent `DSH_CLI`, `DSH_HOME`, or `DSH_RUNTIME`
+environment overrides fail before build or service mutation. The install child
+is explicitly bound to the dev `DSH_HOME`, and the script compares the
+installed package bytes (including client, patch, and vendored files) with each
+new tarball.
 
 The Companion browser suite is opt-in because it needs Playwright's browser
 installation:
 
 ```sh
-corepack pnpm run test:e2e
+pnpm run test:e2e
 ```
 
 ## Packed-artifact verification
@@ -79,17 +107,24 @@ Loader entry points, Cordis patches, declarations, required notices, peer
 versions, and dependency closure. It also confirms that Imagegen is
 self-contained and has no runtime dependency.
 
-For the full installed-Host gate, point the command at an existing official
-DSH `0.1.2-rc.1` executable. The check creates isolated homes, caches, profiles,
-and loopback ports and removes them when it finishes:
+For an explicit release or packaging diagnostic, point the command at an
+existing official DSH `0.1.2-rc.1` executable. This selected diagnostic creates
+isolated homes, caches, profiles, and loopback ports; it is not part of normal
+development or the ordinary handoff loop:
 
 ```sh
-DSH_CLI=/absolute/path/to/dsh corepack pnpm run artifact:smoke
+DSH_CLI=/absolute/path/to/dsh pnpm run artifact:smoke
 ```
 
-This gate activates all eight packed artifacts through the real DSH Host/Loader
+This diagnostic activates the packed artifacts through the real DSH Host/Loader
 and uses fakes for provider behavior. It does not send mail or Matrix traffic,
-call a paid image provider, use credentials, or mutate a live profile.
+call a paid image provider, use credentials, or mutate the persistent dev
+profile. Reuse unchanged results unless a packaging or Host contract changed.
+
+The filtered `@lamplitisles/dsh-nanocodex` packed smoke additionally runs the
+actual WASM/QuickJS engine against a test-owned loopback provider that rejects
+WebSocket upgrades and completes through HTTP/SSE. It checks DSH tool and
+continuation behavior plus the sanitized queryable Host transport diagnostic.
 
 ## Independent releases
 
@@ -119,7 +154,7 @@ To prepare and inspect a single package locally, select its exact manifest
 version using `v<semver>`:
 
 ```sh
-DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
+DSH_CLI=/absolute/path/to/dsh pnpm run release:prepare -- \
   @lamplitisles/dsh-mail v0.1.0 .release-artifacts/dsh-mail
 ```
 
@@ -140,11 +175,10 @@ import boundary and pinned source snapshots are recorded in
 [`docs/IMPORTS.md`](docs/IMPORTS.md). Contributor and agent workflow guidance
 is in [`AGENTS.md`](AGENTS.md).
 
-For an explicitly requested host-local update, follow the seven-package live
-profile build, link, restart, and verification procedure in
-[`docs/local-deployment.md`](docs/local-deployment.md).
-The Codex code-mode package is intentionally opt-in and is not added to that
-existing live profile by the workspace checks.
+For persistent development and the separately managed staging profile, follow
+[`docs/local-deployment.md`](docs/local-deployment.md). Nanocodex owns the
+selected profile's raw Add/Update `apply_patch` tool; DSH remains authoritative
+for filesystem policy and ordinary tools.
 
 ## License
 

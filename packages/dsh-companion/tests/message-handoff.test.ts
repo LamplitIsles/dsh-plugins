@@ -28,6 +28,57 @@ function outgoingCount(snapshot: unknown): number {
 }
 
 describe("SubmissionHandoff", () => {
+  it("carries a structured ImageGen result through the Session-to-Chat bridge", () => {
+    const image = {
+      attachmentId: "generated-image",
+      mediaType: "image/png",
+      name: "kepos-image.png",
+    };
+    const handoff = new SubmissionHandoff();
+    const bridged = handoff.merge(
+      {
+        sessionId: "session-image",
+        pendingSubmissions: [],
+        queue: [],
+      },
+      {
+        legacy: {
+          nodes: [
+            {
+              kind: "tool-result",
+              seq: 1,
+              time: 1,
+              callId: "image-call",
+              call: { name: "kepos_image_generate", argsRaw: "{}" },
+              content: [
+                { type: "image", attachment: image },
+                {
+                  type: "text",
+                  text: "Generated image saved to .dsh/kepos-imagegen/result.png.",
+                },
+              ],
+              isError: false,
+              subCalls: [],
+            },
+          ],
+        },
+      },
+    );
+
+    const projected = projectConversation(bridged);
+
+    expect(projected.items).toContainEqual(
+      expect.objectContaining({
+        id: "imagegen:image-call:generated-image",
+        projectionKey: "imagegen:image-call",
+        kind: "image",
+        side: "incoming",
+        state: "ready",
+        attachment: image,
+      }),
+    );
+  });
+
   it("keeps an idle transcript echo until Chat publishes its durable node", () => {
     const handoff = new SubmissionHandoff();
     const pending = [

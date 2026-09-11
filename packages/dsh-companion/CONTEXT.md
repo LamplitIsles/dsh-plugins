@@ -4,6 +4,21 @@ This context describes how Companion keeps a private conversation coherent as it
 
 ## Language
 
+**Companion**:
+A one-to-one conversational agent with a stable persona, relationship state, memory, and selected capabilities. Its identity is independent of the engine used to continue the conversation.
+
+**对话记录**:
+The human-readable record of the conversation, including messages and visible activity. It remains readable after 整理记忆 changes what the model currently sees.
+_Avoid_: 当前上下文
+
+**当前上下文**:
+The conversation material currently available to the model, including its 连续性摘要 and retained recent exchanges. It is not the complete 对话记录.
+_Avoid_: 完整聊天记录
+
+**恢复点**:
+The committed conversation state from which Companion can continue after a restart. A 连续性摘要 alone is not a complete 恢复点.
+_Avoid_: 连续性摘要
+
 **对话容量**:
 The approximate share of the current model context available to continue this Companion conversation. It is a user-facing reference, not a promise that the next request will be accepted.
 _Avoid_: Token 余额, context window 占用
@@ -13,7 +28,7 @@ The user-facing name for automatic compaction: older model-visible conversation 
 _Avoid_: 删除聊天记录, 压缩聊天
 
 **连续性摘要**:
-The private checkpoint produced by 整理记忆 for the next model request. It is model-only and never rendered to the user.
+The private summary produced by 整理记忆 for subsequent model requests. It is model-only and never rendered to the user.
 _Avoid_: 对话总结, 整理结果
 
 **整理记录**:
@@ -21,7 +36,7 @@ The small, non-expandable timeline notice that a 整理记忆 completed. It reve
 _Avoid_: 压缩摘要卡片
 
 **普通发送**:
-One ordinary Companion composer submission, containing optional text and zero or more selected images. The alpha Session controller owns its transient pending echo while the Host conversation projection remains authoritative.
+One ordinary Companion composer submission, containing optional text and zero or more selected images. A submission made during a reply remains a separate queued turn.
 
 **消息单元**:
 One speaker's contribution presented as a single conversational unit. It may contain text, a 图片组, or both, while retaining one speaker identity and alignment.

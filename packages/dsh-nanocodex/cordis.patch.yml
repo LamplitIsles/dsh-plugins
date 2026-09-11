@@ -1,0 +1,51 @@
+# Nanocodex is the selected profile's only agent driver. The rows disabled here
+# are the old request/compaction/code-mode owners; ordinary DSH tools and their
+# business integrations remain composed by the profile.
+- id: agent-loop
+  disabled: true
+
+- id: llm-pi-ai
+  disabled: true
+
+- id: llm-deepseek
+  disabled: true
+
+- id: compaction-basic
+  disabled: true
+
+- id: command-compact
+  disabled: true
+
+# Replace only the shipped standard preset with the package-owned wrapper. The
+# wrapper includes the installed official composition and disables the nested
+# Basic owner through cordis-plugin-include's public patch seam. Other shipped
+# presets remain discoverable from the official root, and the user root remains
+# enabled by the agent-presets defaults.
+- id: agent-presets
+  name: "@deepseek-ai/dsh-agent-presets"
+  config:
+    default: standard
+    includeShippedRoot: false
+    includeUserRoot: true
+    roots:
+      - path: !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@lamplitisles/dsh-nanocodex/package.json')), 'presets')"
+        trust: system
+      - path: !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets')"
+        trust: system
+
+- insert:
+    - id: dsh-nanocodex
+      name: "@lamplitisles/dsh-nanocodex"
+      inject:
+        [
+          agents,
+          sessions,
+          settings,
+          credentials,
+          attachments,
+          commands,
+          systemPrompt,
+          tools,
+          fs,
+          llm,
+        ]

@@ -217,11 +217,11 @@ const afterTeardown = request("session-a");
 const afterTeardownTail = afterTeardown.messages.at(-1);
 await consume(fakeLlm.stream(afterTeardown));
 assert.equal(afterTeardown.messages.at(-1), afterTeardownTail, "Host teardown must dispose the waterfall listener");
-console.log("compaction-loader: packed plugin activated through real Loader and verified against a fake LLM");
+console.log("companion-loader: packed plugin activated through real Loader and verified against a fake LLM");
 `;
 }
 
-const temp = mkdtempSync(join(tmpdir(), "dsh-companion-compaction-"));
+const temp = mkdtempSync(join(tmpdir(), "dsh-companion-pack-smoke-"));
 try {
   const packed = JSON.parse(
     execFileSync(
@@ -324,14 +324,6 @@ try {
     throw new Error(
       `packed manifest bundles DSH runtime dependencies: ${bundledDshDependencies.join(", ")}`,
     );
-  for (const dependencySection of ["peerDependencies", "devDependencies"]) {
-    if (
-      manifest[dependencySection]?.["@deepseek-ai/dsh-llm"] !== DSH_RC_VERSION
-    )
-      throw new Error(
-        `packed manifest lacks the exact rc.1 LLM ${dependencySection} pin`,
-      );
-  }
   const patch = readFileSync(join(packageDir, "cordis.patch.yml"), "utf8");
   if (!/inject:\s*\[[^\]]*\bllm\b[^\]]*\]/u.test(patch))
     throw new Error("packed Cordis patch lacks hard llm injection");

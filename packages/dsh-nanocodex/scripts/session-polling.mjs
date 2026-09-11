@@ -1,0 +1,33 @@
+const defaultSleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+/**
+ * Wait for the durable assistant event that follows a provider response.
+ * Provider receipt alone is not evidence that DSH has finalized the reply.
+ */
+export async function waitForFinalizedAssistant({
+  loadPage,
+  expectedText,
+  timeoutMs = 10_000,
+  intervalMs = 20,
+  sleep = defaultSleep,
+  now = Date.now,
+}) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const page = await loadPage();
+    if (
+      page.records?.some(
+        (record) =>
+          record.event?.type === "assistant/message" &&
+          JSON.stringify(record.event).includes(expectedText),
+      )
+    ) {
+      return page;
+    }
+    await sleep(intervalMs);
+  }
+  throw new Error(
+    `timed out waiting for finalized assistant message ${JSON.stringify(expectedText)}`,
+  );
+}

@@ -42,6 +42,10 @@ function requireCondition(
   if (!condition) throw new Error(message);
 }
 
+function safePackedPath(entry: PublicPackage, path: string): boolean {
+  return !path.includes("node_modules") && !path.endsWith(".tgz");
+}
+
 function checkExpandedManifest(
   entry: PublicPackage,
   manifest: Record<string, any>,
@@ -127,15 +131,35 @@ try {
       );
     }
     requireCondition(
-      [...paths].every(
-        (path) => !path.includes("node_modules") && !path.endsWith(".tgz"),
-      ),
+      [...paths].every((path) => safePackedPath(entry, path)),
       `${entry.name} artifact contains an unsafe file.`,
     );
     const manifest = JSON.parse(
       archiveText(artifact, "package.json"),
     ) as Record<string, any>;
     failures.push(...checkExpandedManifest(entry, manifest));
+    if (entry.name === "@lamplitisles/dsh-nanocodex") {
+      const requiredVendorFiles = [
+        "vendor/nanocodex/package.json",
+        "vendor/nanocodex/node/index.mjs",
+        "vendor/nanocodex/pkg-node/nanocodex.js",
+        "vendor/nanocodex/pkg-web/nanocodex_bg.wasm",
+        "vendor/nanocodex-tools/package.json",
+        "vendor/nanocodex-tools/runtime/code-runtime.mjs",
+      ];
+      for (const required of requiredVendorFiles) {
+        requireCondition(
+          paths.has(required),
+          `${entry.name} artifact omits ${required}.`,
+        );
+      }
+      requireCondition(
+        ![...paths].some(
+          (path) => path.startsWith("vendor/") && path.endsWith(".tgz"),
+        ),
+        `${entry.name} must unpack its Nanocodex runtime into vendor/.`,
+      );
+    }
     const packagePath = packageDirectory(root, entry);
     const sourceManifest = JSON.parse(
       await readFile(join(packagePath, "package.json"), "utf8"),

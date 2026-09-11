@@ -37,12 +37,37 @@ metadata points to its public GitHub mirror for npm provenance:
 `packages/dsh-tabletop` (`@lamplitisles/dsh-tabletop`) was authored directly in
 this workspace; it has no imported source snapshot.
 
-`packages/dsh-codex-code-mode` (`@lamplitisles/dsh-codex-code-mode`) was also
-authored directly in this workspace. Its provider seam is a minimal wrapper
-around the published `@earendil-works/pi-ai@0.84.4` Codex Responses API and
-the DSH `0.1.2-rc.1` Host contracts; no external source snapshot was copied.
-Its direct patch parser and matcher are narrow Apache-2.0 ports of the OpenAI
-Codex `apply-patch` implementation at commit
-`8e6a44b428e31f91b21edc97904fcdf4f0931ade`; the supported operation set removes
-Codex delete and move operations. The package carries the attribution and
-license references in `NOTICE` and `THIRD_PARTY_NOTICES.md`.
+`packages/dsh-nanocodex` (`@lamplitisles/dsh-nanocodex`) was authored directly
+in this workspace as the DSH adapter for the sibling Nanocodex engine checkout.
+The original engine merge landed at
+`3dc3910af5ccb17d62f664dc03ea11789de339fd`. The Owner-accepted
+host-compaction artifact is built from sibling source
+`32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2` against baseline
+`e855ab2329a41824bf2d486bb0f259003f4f605d`; its Nanocodex `0.5.0` tarball
+SHA-256 is
+`8b8fbab2d0ec68de9a7f09d050c8ddd388f6b3e59a2de71b0dca573823bcccf0`, and its
+generated pkg-web WASM SHA-256 is
+`1c56d2a6439f292761f112b17c79245b33d8cf9c3c5244faeb717106a8271c4e`.
+The packed artifact vendors the Nanocodex runtime and `nanocodex-tools` `0.1.0`
+closure; the sibling checkout is a development-time source and packing input
+only.
+
+Companion continuity remains owned by the original `dsh-companion` middleware.
+The Nanocodex adapter selects that middleware through a non-generating
+`purpose: "compaction"` waterfall request, consumes each live
+`model.compaction.replaced` outcome once, and maps exact retained item
+identities to the DSH prefix before the latest real user-led tail. It does not
+carry a duplicate product prompt or create a second summary runtime. An
+arbitrary `compactRegion` middle range is rejected before mutation; successful
+manual and automatic replacements use the warm runtime and the standard DSH
+private checkpoint projection.
+
+The retired Codex code-mode package was authored directly in this workspace and
+is no longer a supported or shipped package. Its direct patch parser and
+matcher now live in `packages/dsh-nanocodex` as the one maintained DSH-owned
+editor. They remain narrow Apache-2.0 ports of the OpenAI Codex `apply-patch`
+implementation at commit `8e6a44b428e31f91b21edc97904fcdf4f0931ade`; the
+supported operation set removes Codex delete and move operations. Nanocodex
+carries the attribution and license references in `NOTICE` and
+`THIRD_PARTY_NOTICES.md`. The retired provider, PTC wrapper, settings and
+transport were not moved.

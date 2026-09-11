@@ -4,7 +4,9 @@
 
 - Treat the root `package.json`, `pnpm-workspace.yaml`, and `pnpm-lock.yaml` as
   the workspace source of truth. Use Node.js `>=24.11.0` and pnpm 12.3.4 through
-  Corepack; keep dependency ownership in the package that imports it.
+  Corepack; keep dependency ownership in the package that imports it. One-time
+  host setup is `corepack enable pnpm`; thereafter use the plain `pnpm` command
+  and verify `pnpm --version` resolves to the root `packageManager` pin.
 - The eight public packages under `packages/` keep independent names and
   versions. Imagegen's core is an internal module in `packages/dsh-imagegen`;
   there is no separate private workspace package.
@@ -15,47 +17,69 @@
 ## Change and verification loop
 
 Make an end-to-end change that leaves the main path usable, then run the
-smallest relevant filtered check. Before handoff, run the complete workspace
-commands from the root README:
+smallest relevant filtered check. For Host or rendered-client changes, the
+normal development acceptance target is the already-provisioned persistent
+`dsh-dev.service` environment:
 
 ```sh
-corepack pnpm install --frozen-lockfile
-corepack pnpm run lint
-corepack pnpm run format:check
-corepack pnpm run typecheck
-corepack pnpm run test
-corepack pnpm run build
-corepack pnpm run pack:check
+pnpm run dev:deploy -- @lamplitisles/dsh-nanocodex
+```
+
+Replace the package selector with the affected public package(s). The command
+builds and packs only the selected artifacts, updates only matching plugins
+already present in the persistent `web` profile, and restarts only
+`dsh-dev.service`. It reuses the installed DSH executable, DSH home, profile,
+settings, credentials, and sessions; it never provisions a runtime or a fresh
+DSH environment. The script is bound to the documented executable, home,
+runtime, `web` profile, and service; inconsistent `DSH_CLI`, `DSH_HOME`, or
+`DSH_RUNTIME` overrides fail before build or service mutation, and the install
+child receives the exact dev `DSH_HOME`. Follow it with task-scoped browser
+acceptance when the change affects the client. Before handoff, run the complete
+workspace commands from the root README:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run format:check
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run pack:check
 ```
 
 `lint:fix` and `format` are local, explicitly requested write operations; CI
 and handoff checks use only `lint` and `format:check`. Oxlint covers authored
 JavaScript/TypeScript/TSX with the configured Svelte environment and Oxfmt also
 formats Svelte, CSS Modules, config, and docs. These static gates do not
-replace rendered-client acceptance or the real DSH artifact smoke.
+replace rendered-client acceptance on the persistent dev Host.
 
-For packaging or Host changes, also run the real packed gate with an existing
-official DSH `0.1.2-rc.1` executable:
+`artifact:smoke` is an explicit release and packaging diagnostic, not a normal
+development or handoff prerequisite. Run it only when the packed Host/Loader
+contract needs fresh evidence, using an existing official DSH `0.1.2-rc.1`
+executable:
 
 ```sh
-DSH_CLI=/absolute/path/to/dsh corepack pnpm run artifact:smoke
+DSH_CLI=/absolute/path/to/dsh pnpm run artifact:smoke
 ```
 
-Smoke checks own their temporary homes, caches, profiles, and ports. Provider
-calls, credentials, live DSH profiles, user workspaces, mailboxes, Matrix
-rooms, and paid image generation remain outside tests.
+The selected packed smoke owns its temporary homes, caches, profiles, and
+ports. Provider calls, credentials, the persistent development profile, user
+workspaces, mailboxes, Matrix rooms, and paid image generation remain outside
+tests. Ordinary tests never target the persistent dev state.
 
-For explicitly requested host-local deployment, follow
-[`docs/local-deployment.md`](docs/local-deployment.md). Completion requires
-all seven links to resolve to this checkout and the restarted Host and cold
-client to load successfully.
+For the persistent development workflow and the separate staging procedure,
+follow [`docs/local-deployment.md`](docs/local-deployment.md). HTTP readiness
+from `dev:deploy` is only a service check; client behavior still needs the
+task-scoped browser acceptance described below.
 
 ### Rendered-client acceptance
 
-For plugin UI, CSS injection, or client Loader changes, use the host-local
-DSH with the `agent-browser` skill to inspect the actual served client.
-Deployment and service restarts still require explicit user authorization;
-if the running instance does not contain the changes, ask before updating it.
+For plugin UI, CSS injection, or client Loader changes, use the persistent
+host-local development DSH with the `agent-browser` skill to inspect the actual
+served client. Deployment and service restarts still require explicit user
+authorization; if the running instance does not contain the changes, use
+`dev:deploy` after authorization. Do not create a disposable DSH/browser
+environment for ordinary acceptance.
 Check a representative affected surface, including expanded/collapsed states
 and applied styles where relevant, and record the observed result. Keep this
 as task-scoped browser acceptance, separate from isolated automated tests;
@@ -70,12 +94,12 @@ the packaging, Host, or client-loading contracts they verify.
 
 ## Artifacts and releases
 
-Use `corepack pnpm run pack:check` or the package's filtered `pack-smoke` to
+Use `pnpm run pack:check` or the package's filtered `pack-smoke` to
 inspect actual `pnpm pack` output. Local `release:prepare` selects exactly one
 public package and its exact manifest version as a `v<semver>` argument:
 
 ```sh
-DSH_CLI=/absolute/path/to/dsh corepack pnpm run release:prepare -- \
+DSH_CLI=/absolute/path/to/dsh pnpm run release:prepare -- \
   @lamplitisles/dsh-mail v0.1.0 .release-artifacts/dsh-mail
 ```
 

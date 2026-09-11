@@ -102,16 +102,14 @@ export const PUBLIC_PACKAGES = [
     ],
   },
   {
-    directory: "dsh-codex-code-mode",
-    name: "@lamplitisles/dsh-codex-code-mode",
+    directory: "dsh-nanocodex",
+    name: "@lamplitisles/dsh-nanocodex",
     requiredFiles: [
       "dist/index.js",
       "dist/index.d.ts",
       "cordis.patch.yml",
       "README.md",
-      "CONTEXT.md",
       "LICENSE",
-      "NOTICE",
       "THIRD_PARTY_NOTICES.md",
     ],
   },
@@ -191,13 +189,22 @@ export function packageDirectory(root: string, entry: PublicPackage): string {
 
 function parsePnpmPackOutput(output: string): PackedManifest {
   const trimmed = output.trim();
-  try {
-    return JSON.parse(trimmed) as PackedManifest;
-  } catch {
-    throw new Error(
-      `pnpm pack returned invalid JSON: ${trimmed.slice(0, 200)}`,
-    );
+  const starts = [0];
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] === "\n") {
+      const next = index + 1;
+      if (trimmed[next] === "{" || trimmed[next] === "[") starts.push(next);
+    }
   }
+  for (const start of starts.reverse()) {
+    try {
+      const parsed = JSON.parse(trimmed.slice(start)) as PackedManifest;
+      if (packedManifest(parsed)?.filename !== undefined) return parsed;
+    } catch {
+      // pnpm may print lifecycle reporter lines before its final JSON object.
+    }
+  }
+  throw new Error(`pnpm pack returned invalid JSON: ${trimmed.slice(0, 200)}`);
 }
 
 export function pnpmPack(
@@ -297,6 +304,8 @@ export function checkPackedFiles(root: string, entry: PublicPackage): string[] {
     return [
       `${entry.name} could not produce a pnpm packed manifest: ${String(error)}`,
     ];
+  } finally {
+    cleanupPackPreparation(directory, entry);
   }
   const packageManifest = readJson(join(directory, "package.json"));
   const packedEntry = packedManifest(packed);
@@ -311,7 +320,13 @@ export function checkPackedFiles(root: string, entry: PublicPackage): string[] {
   }
   if (
     [...files].some(
-      (file) => file.includes("node_modules") || file.endsWith(".tgz"),
+      (file) =>
+        file.includes("node_modules") ||
+        (file.endsWith(".tgz") &&
+          !(
+            entry.name === "@lamplitisles/dsh-nanocodex" &&
+            file.startsWith("vendor/")
+          )),
     )
   ) {
     errors.push(
@@ -327,12 +342,26 @@ export function packRelease(
   destination: string,
 ): string {
   const directory = packageDirectory(root, entry);
-  const packed = pnpmPack(directory, { destination });
-  const metadata = packedManifest(packed);
-  if (metadata?.name !== entry.name) {
-    throw new Error(
-      `${entry.name} did not produce the expected release tarball.`,
-    );
+  try {
+    const packed = pnpmPack(directory, { destination });
+    const metadata = packedManifest(packed);
+    if (metadata?.name !== entry.name) {
+      throw new Error(
+        `${entry.name} did not produce the expected release tarball.`,
+      );
+    }
+    return packedArtifactPath(packed, destination);
+  } finally {
+    cleanupPackPreparation(directory, entry);
   }
-  return packedArtifactPath(packed, destination);
+}
+
+function cleanupPackPreparation(directory: string, entry: PublicPackage): void {
+  if (entry.name !== "@lamplitisles/dsh-nanocodex") return;
+  const script = join(directory, "scripts", "prepare-vendor.mjs");
+  if (!existsSync(script)) return;
+  execFileSync(process.execPath, [script, "postpack"], {
+    cwd: directory,
+    stdio: "ignore",
+  });
 }

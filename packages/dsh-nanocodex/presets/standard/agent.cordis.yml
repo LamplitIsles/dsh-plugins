@@ -1,0 +1,6 @@
+# Keep the official standard agent composition as the source of truth. The
+# include applies only the selected-profile compaction ownership patch, so the
+# remaining tools, prompt sections, and application integrations stay aligned
+# with the installed rc.1 Host.
+- id: official-standard
+  name: "@lamplitisles/dsh-nanocodex/standard-preset"
