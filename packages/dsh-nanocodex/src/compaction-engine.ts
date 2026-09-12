@@ -5,29 +5,31 @@ import {
   CompactionId,
   ManualCompactionError,
   compactCheckpointSource,
-  toolPairingBalancedAfter,
-  toolPairingBalancedBefore,
   type CompactionAgentContext,
   type CompactionResult,
   type ManualCompactAgentContext,
 } from "@deepseek-ai/dsh-compaction";
-import { createUserMessage, type ContentBlock } from "@deepseek-ai/dsh-llm";
+import {
+  createUserMessage,
+  type AssistantMessage,
+  type ContentBlock,
+  type Message,
+  type UserMessage,
+} from "@deepseek-ai/dsh-llm";
 import { SessionSeq, type Session } from "@deepseek-ai/dsh-session";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-token-meter";
 import {
   NanocodexEngine,
-  type NanocodexCompactionSelection,
   type NanocodexAutomaticCompaction,
+  type NanocodexCompactionSelection,
 } from "./engine.js";
+import {
+  compactionPlaceholderMessage,
+  type NanocodexCompactionSurfaceSegment,
+} from "./compaction-policy.js";
 
 type CommandId = NonNullable<Parameters<typeof compactCheckpointSource>[1]>;
-
-interface Selection {
-  readonly start: SessionSeq;
-  readonly end: SessionSeq;
-  readonly shadowedSeqs: SessionSeq[];
-}
 
 interface CompactionAttempt {
   readonly compactionId: ReturnType<typeof CompactionId>;
@@ -41,54 +43,6 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function supportedPrefix(session: Session): Selection | null {
-  const nodes = [...session.surface.nodes];
-  const messages = session.deriveMessages();
-  if (nodes.length !== messages.length) {
-    throw new Error(
-      "Nanocodex compaction cannot select a mismatched DSH surface",
-    );
-  }
-  let retainedIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === "user" && message.source.kind === "user") {
-      retainedIndex = index;
-      break;
-    }
-  }
-  if (retainedIndex <= 0) return null;
-  const start = nodes[0];
-  const end = nodes[retainedIndex - 1];
-  if (
-    start === undefined ||
-    end === undefined ||
-    !toolPairingBalancedBefore(session, start) ||
-    !toolPairingBalancedAfter(session, end)
-  ) {
-    throw new Error(
-      "Nanocodex compaction prefix would split a DSH tool exchange",
-    );
-  }
-  return {
-    start,
-    end,
-    shadowedSeqs: nodes.slice(0, retainedIndex),
-  };
-}
-
-function sameSelection(
-  left: Selection,
-  right: NanocodexCompactionSelection,
-): boolean {
-  return (
-    left.start === right.shadowedRange.start &&
-    left.end === right.shadowedRange.end &&
-    left.shadowedSeqs.length === right.shadowedSeqs.length &&
-    left.shadowedSeqs.every((seq, index) => right.shadowedSeqs[index] === seq)
-  );
-}
-
 function openTurn(session: Session): number | null {
   let turn: number | null = null;
   for (const event of session.snapshotEvents()) {
@@ -99,9 +53,9 @@ function openTurn(session: Session): number | null {
 }
 
 /**
- * Minimal DSH compaction owner. The checkpoint is model-private and lands only
- * as the normal non-expandable compact checkpoint message. The selected range
- * and all transaction markers remain fully durable in DSH's event log.
+ * DSH lifecycle owner for Nanocodex's host-selected private compaction.
+ * Nanocodex owns summary generation and the private checkpoint; DSH owns the
+ * durable transcript surface and records each exact filtered span.
  */
 export class NanocodexCompactionEngine extends CompactionEngine {
   constructor(
@@ -117,10 +71,9 @@ export class NanocodexCompactionEngine extends CompactionEngine {
     signal: AbortSignal,
   ): Promise<CompactionResult | null> {
     signal.throwIfAborted();
-    // Nanocodex owns automatic pressure/overflow detection and carries its
-    // exact private boundary back through EngineRunResult. DSH's generic
-    // trigger has no corresponding engine boundary, so selecting an arbitrary
-    // surface suffix here could discard facts the engine retained.
+    // Nanocodex admits automatic pressure and overflow compaction itself. The
+    // generic DSH trigger has no operation snapshot with which to make the
+    // same host selection, so it must not guess a surface range.
     void agent;
     return null;
   }
@@ -137,23 +90,15 @@ export class NanocodexCompactionEngine extends CompactionEngine {
       return await agent.runMaintenance(async (agentSignal) => {
         const operationSignal = AbortSignal.any([agentSignal, signal]);
         operationSignal.throwIfAborted();
-        const selection = supportedPrefix(agent.session);
-        if (selection === null) return null;
-        let committed = false;
         try {
           const result = await this.compactSelection(
             agent,
-            selection,
             operationSignal,
             sourceCommandId,
           );
-          committed = true;
           await this.ctx.sessions.flush(agent.session);
           return result;
         } catch (error) {
-          if (committed) {
-            await this.engine.invalidate(agent as Agent).catch(() => undefined);
-          }
           if (operationSignal.aborted) {
             cancelled = true;
             cancellationReason = operationSignal.reason;
@@ -179,120 +124,29 @@ export class NanocodexCompactionEngine extends CompactionEngine {
     }
   }
 
+  /**
+   * The host policy owns the complete selected replacement. An explicit range
+   * cannot be translated into that immutable Nanocodex operation snapshot, so
+   * reject it before starting maintenance or touching the session.
+   */
   async compactRegion(
-    start: SessionSeq,
-    end: SessionSeq,
-    agent: CompactionAgentContext,
-    signal: AbortSignal = new AbortController().signal,
+    _start: SessionSeq,
+    _end: SessionSeq,
+    _agent: CompactionAgentContext,
+    _signal: AbortSignal = new AbortController().signal,
   ): Promise<CompactionResult> {
-    const maintenanceAgent = agent as CompactionAgentContext & {
-      runMaintenance: ManualCompactAgentContext["runMaintenance"];
-    };
-    if (typeof maintenanceAgent.runMaintenance !== "function") {
-      throw new ManualCompactionError(
-        "busy",
-        "region compaction requires an idle agent maintenance boundary",
-      );
-    }
-    const initialNodes = [...agent.session.surface.nodes];
-    const initialStartIndex = initialNodes.indexOf(start);
-    const initialEndIndex = initialNodes.indexOf(end);
-    const initialSupported = supportedPrefix(agent.session);
-    if (
-      initialStartIndex < 0 ||
-      initialEndIndex < initialStartIndex ||
-      initialSupported === null ||
-      initialSupported.start !== start ||
-      initialSupported.end !== end ||
-      initialSupported.shadowedSeqs.length !==
-        initialEndIndex - initialStartIndex + 1 ||
-      initialSupported.shadowedSeqs.some(
-        (seq, index) => initialNodes[initialStartIndex + index] !== seq,
-      )
-    ) {
-      throw new ManualCompactionError(
-        "changed",
-        "Nanocodex compactRegion only supports the current prefix before the latest real user tail",
-      );
-    }
-    let cancelled = false;
-    let cancellationReason: unknown;
-    try {
-      return await maintenanceAgent.runMaintenance(async (agentSignal) => {
-        const operationSignal = AbortSignal.any([agentSignal, signal]);
-        operationSignal.throwIfAborted();
-        const nodes = [...agent.session.surface.nodes];
-        const startIndex = nodes.indexOf(start);
-        const endIndex = nodes.indexOf(end);
-        if (startIndex < 0 || endIndex < 0 || startIndex > endIndex) {
-          throw new Error(
-            "Nanocodex compaction range is not a current surface span",
-          );
-        }
-        const supported = supportedPrefix(agent.session);
-        if (
-          supported === null ||
-          supported.start !== start ||
-          supported.end !== end ||
-          supported.shadowedSeqs.length !== endIndex - startIndex + 1 ||
-          supported.shadowedSeqs.some(
-            (seq, index) => nodes[startIndex + index] !== seq,
-          )
-        ) {
-          throw new ManualCompactionError(
-            "changed",
-            "Nanocodex compactRegion only supports the current prefix before the latest real user tail",
-          );
-        }
-        let committed = false;
-        try {
-          const result = await this.compactSelection(
-            agent,
-            {
-              start,
-              end,
-              shadowedSeqs: nodes.slice(startIndex, endIndex + 1),
-            },
-            operationSignal,
-          );
-          committed = true;
-          await this.ctx.sessions.flush(agent.session);
-          return result;
-        } catch (error) {
-          if (committed) {
-            await this.engine.invalidate(agent as Agent).catch(() => undefined);
-          }
-          if (operationSignal.aborted) {
-            cancelled = true;
-            cancellationReason = operationSignal.reason;
-            throw operationSignal.reason;
-          }
-          throw error;
-        }
-      });
-    } catch (error) {
-      if (cancelled || signal.aborted) {
-        throw cancellationReason ?? signal.reason;
-      }
-      if (error instanceof ManualCompactionError) throw error;
-      throw new ManualCompactionError(
-        "summary",
-        "Nanocodex could not create a continuity checkpoint",
-        { cause: error },
-      );
-    }
+    throw new ManualCompactionError(
+      "changed",
+      "Nanocodex compaction uses its complete host-selected surface policy; use compactNow",
+    );
   }
 
-  /**
-   * Commit a summary produced by Nanocodex's automatic private compaction.
-   * Nanocodex owns the model call; DSH still owns the durable surface and the
-   * non-expandable checkpoint visible to Companion.
-   */
+  /** Commit one automatic outcome after Nanocodex has installed its private history. */
   async commitAutomaticSummary(
     agent: CompactionAgentContext,
     automatic: NanocodexAutomaticCompaction,
     signal: AbortSignal,
-  ): Promise<CompactionResult> {
+  ): Promise<CompactionResult | null> {
     signal.throwIfAborted();
     const summary = automatic.outcome.summary?.trim() ?? "";
     if (!summary) {
@@ -318,11 +172,7 @@ export class NanocodexCompactionEngine extends CompactionEngine {
     try {
       const result = this.commitSummary(
         agent,
-        {
-          start: selection.shadowedRange.start,
-          end: selection.shadowedRange.end,
-          shadowedSeqs: [...selection.shadowedSeqs],
-        },
+        selection,
         [{ type: "text", text: summary }],
         signal,
         attempt,
@@ -340,25 +190,26 @@ export class NanocodexCompactionEngine extends CompactionEngine {
 
   private async compactSelection(
     agent: CompactionAgentContext,
-    selection: Selection,
     signal: AbortSignal,
     sourceCommandId?: CommandId,
-  ): Promise<CompactionResult> {
+  ): Promise<CompactionResult | null> {
     signal.throwIfAborted();
     const attempt = this.beginCompaction(agent, sourceCommandId);
     let generated = false;
     try {
       const result = await this.engine.compact(agent as Agent, signal);
       generated = true;
-      if (!sameSelection(selection, result.selection)) {
-        throw new ManualCompactionError(
-          "changed",
-          "Nanocodex compacted a different DSH prefix than the requested range",
+      if (result.selection.segments.length === 0) {
+        const noOp = new Error(
+          "Nanocodex compaction found no safe DSH surface reduction",
         );
+        this.endFailedCompaction(agent, attempt, noOp);
+        await this.engine.invalidate(agent as Agent).catch(() => undefined);
+        return null;
       }
       const committed = this.commitSummary(
         agent,
-        selection,
+        result.selection,
         [{ type: "text", text: result.summary }],
         signal,
         attempt,
@@ -370,12 +221,14 @@ export class NanocodexCompactionEngine extends CompactionEngine {
         result.model,
         result.snapshot,
         signal,
+        result.context,
       );
       return committed;
     } catch (error) {
       this.endFailedCompaction(agent, attempt, error);
-      if (generated)
+      if (generated) {
         await this.engine.invalidate(agent as Agent).catch(() => undefined);
+      }
       throw error;
     }
   }
@@ -409,8 +262,7 @@ export class NanocodexCompactionEngine extends CompactionEngine {
         error: errorText(error),
       });
     } catch {
-      // Preserve the original summary/commit failure if closing the marker
-      // itself fails; persistence recovery can still see the open attempt.
+      // Preserve the original failure if the closing marker also fails.
     } finally {
       attempt.ended = true;
     }
@@ -418,7 +270,7 @@ export class NanocodexCompactionEngine extends CompactionEngine {
 
   private commitSummary(
     agent: CompactionAgentContext,
-    selection: Selection,
+    selection: NanocodexCompactionSelection,
     summary: ContentBlock[],
     signal: AbortSignal,
     attempt: CompactionAttempt,
@@ -431,10 +283,34 @@ export class NanocodexCompactionEngine extends CompactionEngine {
         "Nanocodex compaction requires an explicit provider/model",
       );
     }
-    signal.throwIfAborted();
+    const summaryIndex = selection.segments.findIndex(
+      (segment) => segment.kind === "remove",
+    );
+    if (summaryIndex < 0) {
+      throw new Error(
+        "Nanocodex compaction has no removable surface span for its private summary",
+      );
+    }
+    // All segments are measured against the same pre-installation surface.
+    // Replacements below intentionally make the original sequence IDs stale,
+    // so the aggregate shadow price must be captured before the first DSH
+    // surface mutation.
     const shadowedTokenCount = this.estimateShadowedTokens(
       agent.session,
       selection.shadowedSeqs,
+    );
+
+    // A text-only rewrite before the summary is still a model-free prune. It
+    // must be paired with its own shadow price before the summary event, while
+    // the summary itself remains immediately adjacent to its checkpoint.
+    for (const segment of selection.segments.slice(0, summaryIndex)) {
+      this.commitPrune(agent, segment, signal);
+    }
+
+    const summarySegment = selection.segments[summaryIndex]!;
+    const summaryTokenCount = this.estimateShadowedTokens(
+      agent.session,
+      summarySegment.shadowedSeqs,
     );
     const summaryEvent = agent.session.append("compaction/summary", {
       compactionId: attempt.compactionId,
@@ -443,9 +319,12 @@ export class NanocodexCompactionEngine extends CompactionEngine {
         : { sourceCommandId: attempt.sourceCommandId }),
       summary,
       rawOutput: summary,
-      shadowedRange: { start: selection.start, end: selection.end },
-      shadowedSeqs: selection.shadowedSeqs,
-      shadowedTokenCount,
+      shadowedRange: {
+        start: summarySegment.start,
+        end: summarySegment.end,
+      },
+      shadowedSeqs: [...summarySegment.shadowedSeqs],
+      shadowedTokenCount: summaryTokenCount,
       provider,
       model,
     });
@@ -459,15 +338,20 @@ export class NanocodexCompactionEngine extends CompactionEngine {
     agent.session.append("user/message", checkpoint, {
       surfaceOp: {
         op: "replace",
-        start: selection.start,
-        end: selection.end,
+        start: summarySegment.start,
+        end: summarySegment.end,
       },
       sourceEventSeqs: [
         attempt.startSeq,
         summaryEvent.seq,
-        ...selection.shadowedSeqs,
+        ...summarySegment.shadowedSeqs,
       ],
     });
+
+    for (const segment of selection.segments.slice(summaryIndex + 1)) {
+      this.commitPrune(agent, segment, signal);
+    }
+
     const endEvent = agent.session.append("compaction/end", {
       compactionId: attempt.compactionId,
       ...(attempt.sourceCommandId === undefined
@@ -485,10 +369,83 @@ export class NanocodexCompactionEngine extends CompactionEngine {
       summarySeq: summaryEvent.seq,
       endSeq: endEvent.seq,
       summary,
-      shadowedRange: { start: selection.start, end: selection.end },
+      shadowedRange: {
+        start: summarySegment.start,
+        end: summarySegment.end,
+      },
       shadowedSeqs: [...selection.shadowedSeqs],
       shadowedTokenCount,
     };
+  }
+
+  private commitPrune(
+    agent: CompactionAgentContext,
+    segment: NanocodexCompactionSurfaceSegment,
+    signal: AbortSignal,
+  ): void {
+    signal.throwIfAborted();
+    const shadowedTokenCount = this.estimateShadowedTokens(
+      agent.session,
+      segment.shadowedSeqs,
+    );
+    const prune = agent.session.append("compaction/prune", {
+      shadowedRange: { start: segment.start, end: segment.end },
+      shadowedSeqs: [...segment.shadowedSeqs],
+      shadowedTokenCount,
+    });
+    const message =
+      segment.kind === "replace" && segment.message !== undefined
+        ? segment.message
+        : compactionPlaceholderMessage();
+    this.appendSurfaceReplacement(agent.session, segment, message, [
+      prune.seq,
+      ...segment.shadowedSeqs,
+    ]);
+  }
+
+  private appendSurfaceReplacement(
+    session: Session,
+    segment: NanocodexCompactionSurfaceSegment,
+    message: Message,
+    sourceEventSeqs: readonly SessionSeq[],
+  ): void {
+    const original = session.eventAt(segment.start);
+    if (message.role === "user") {
+      session.append("user/message", message as UserMessage, {
+        surfaceOp: {
+          op: "replace",
+          start: segment.start,
+          end: segment.end,
+        },
+        sourceEventSeqs: [...sourceEventSeqs],
+      });
+      return;
+    }
+    if (
+      original?.type === "assistant/message" &&
+      message.role === "assistant"
+    ) {
+      session.append(
+        "assistant/message",
+        {
+          turn: original.data.turn,
+          step: original.data.step,
+          message: message as AssistantMessage,
+        },
+        {
+          surfaceOp: {
+            op: "replace",
+            start: segment.start,
+            end: segment.end,
+          },
+          sourceEventSeqs: [...sourceEventSeqs],
+        },
+      );
+      return;
+    }
+    throw new Error(
+      "Nanocodex compaction replacement does not begin at a user or assistant surface event",
+    );
   }
 
   private estimateShadowedTokens(

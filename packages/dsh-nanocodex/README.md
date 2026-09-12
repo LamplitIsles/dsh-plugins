@@ -6,8 +6,11 @@ credentials, workspace policy, and tool execution; Nanocodex owns model
 execution, Code Mode, QuickJS, and model-context compaction.
 
 The workspace install hook downloads the Nanocodex SDK and tools from the
-GitHub release pinned in `engine-release.json`, verifies their SHA-256 hashes,
-and caches them under the repository's `.cache/nanocodex/`. Local development
+release pinned in `engine-release.json`, verifies their SHA-256 hashes, and
+caches them under the repository's `.cache/nanocodex/`. The current handoff
+pins the reviewed `v0.5.0-lamplit.2` proposal; its public URLs are not yet
+published, so local verification uses the task-owned verified archives and a
+clean-cache installation remains an Owner publication gate. Local development
 and CI use these same archives without a sibling checkout. During packing,
 `prepack` copies both archives into `vendor/`, rewrites their internal imports,
 and removes the local dependency entries from the packed manifest. The packed
@@ -97,18 +100,30 @@ Nanocodex performs manual and automatic custom compaction on the retained live
 runtime. Before each summary it sends a non-generating `purpose: "compaction"`
 request through DSH's existing `llm/stream` waterfall, ending at an empty
 stream. The original Companion middleware therefore selects its product-owned
-continuity instruction for configured sessions; this package does not copy
-that prompt. Unconfigured sessions use the adapter's short generic continuity
-instruction.
+continuity instruction for configured sessions; this package does not copy or
+rewrite that prompt. Unconfigured sessions use the adapter's short generic
+continuity instruction. Selection failure, cancellation, or an empty
+instruction aborts the operation without a default prompt fallback.
+
+The DSH policy keeps the newest suffix of at most five complete visible
+user/assistant text rounds, subject to a 4,000-token soft budget at whole-round
+boundaries. The newest complete round remains intact even when it is oversized.
+The current unfinished input and progress—including pending attachments and
+tool exchanges—remain outside that historical budget. Historical plugin
+context, reasoning, completed attachments, and tool calls/results are removed;
+selected mixed messages are replaced by text-only copies. The human-readable
+DSH transcript remains available through ordinary replacement events, while
+the private Nanocodex continuity summary is not rendered as assistant text.
 
 The adapter consumes Nanocodex's `model.compaction.replaced` outcome exactly
-once per live runtime/revision. Its half-open model-history range and ordered
-retained-tail identities are mapped to DSH messages by exact history-item
-`kind`, `id`, and `call_id`, including complete retained tool exchanges. The
-DSH surface then replaces the prefix before the latest real user-led tail with
-the normal private compaction checkpoint. A public `compactRegion` request is
-supported only for that current prefix; arbitrary middle ranges fail with a
-`changed` error before any model or surface mutation.
+once per live runtime/revision. The immutable callback decision and the public
+`installed_history` provenance (`kind`, `id`, and `call_id`) are the authority;
+the adapter does not infer a range from a history length or contiguous numeric
+sequence tail. DSH surface segments are validated in current surface order,
+including non-contiguous segments and nonmonotonic sequence numbers. Manual
+compaction is exposed through the normal `/compact`/`compactNow` path; the
+arbitrary `compactRegion` range entry point is rejected before model or
+surface mutation because it cannot carry this complete immutable policy.
 
 The successful replacement stays in the same Nanocodex runtime, preserving its
 model/tool configuration and transport policy. If mapping or DSH persistence
@@ -124,14 +139,18 @@ The pinned Nanocodex engine has a 272,000-token context window. The adapter
 publishes that same value in resolved model metadata and the `request/context`
 facts written with private checkpoints. The value is deliberately fixed to the
 pinned artifact; it is not discovered from a live provider or inferred from a
-model name.
+model name. At compaction outcome and snapshot boundaries, the adapter consumes
+Nanocodex's public `context_window_tokens` and `active_context_tokens` values;
+the DSH event contains only route and window metadata, not a large engine
+snapshot or a fabricated context breakdown.
 
 Compaction records `shadowedTokenCount` from the DSH token-meter estimator for
-the exact messages removed from the active surface. This includes role and
-content framing as well as tool-call and tool-result structure. The emitted
-summary event and the returned compaction result use the same estimate, and
-the active surface order is authoritative even when replacement sequence
-numbers are not numerically ordered.
+the exact messages removed or rewritten on the active surface. This includes
+role and content framing as well as tool-call and tool-result structure. The
+aggregate returned result is measured before any replacement mutates sequence
+IDs, and each emitted prune/summary event records its own corresponding
+surface estimate. The active surface order is authoritative even when
+replacement sequence numbers are not numerically ordered.
 
 Provider usage is normalized into disjoint DSH buckets in both ordinary model
 events and ancillary one-shot calls: cache-read and cache-write tokens are

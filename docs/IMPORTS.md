@@ -38,27 +38,35 @@ metadata points to its public GitHub mirror for npm provenance:
 this workspace; it has no imported source snapshot.
 
 `packages/dsh-nanocodex` (`@lamplitisles/dsh-nanocodex`) was authored directly
-in this workspace as the DSH adapter for our Nanocodex fork. It consumes
-[GitHub Release `v0.5.0-lamplit.1`](https://github.com/LamplitIsles/nanocodex/releases/tag/v0.5.0-lamplit.1),
-whose source commit is `f598d5714d9ed1ab25b53d32c6047dd10171cb88`.
-The accepted build revision `32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2`
-and the squash-merged source commit have the same Git tree. The SDK's
-publication refreshes only its build provenance record; executable code,
-types, and WASM are unchanged from the accepted artifact.
+in this workspace as the DSH adapter for our Nanocodex fork. The reviewed
+implementation handoff pins proposed release `v0.5.0-lamplit.2`, built from
+source commit `8b37d5fdd650e7b897bb387724cdec0077f4a6f8`. Its verified local
+SDK archive has SHA-256
+`e07636e6ca2e416d734aa530a14245be2bf81e72b1934c5e3a92bc1fe8c8eb04`, and its
+tools archive has SHA-256
+`27d984ecc36f00a74e7463a6985019ab2b56f852b202ad7b1cabb5c20d8ce25c`.
+The proposed public release URLs remain unpublished; local verification uses
+the task-owned archives, and a clean-cache fetch from those URLs is an Owner
+publication gate.
 
 [`engine-release.json`](../packages/dsh-nanocodex/engine-release.json) pins the
-`nanocodex` `0.5.0` and `nanocodex-tools` `0.1.0` release asset URLs and SHA-256
-checksums. Local installation, CI, and vendor prepack use those same verified
-tarballs. The final plugin contains the expanded runtime and tools; neither
-building nor installing it requires a sibling engine checkout.
+`nanocodex` `0.5.0` and `nanocodex-tools` `0.1.0` proposed release asset URLs
+and SHA-256 checksums. Local installation, CI, and vendor prepack use the
+verified task-owned tarballs. The final plugin contains the expanded runtime
+and tools; neither building nor installing it requires a sibling engine
+checkout. Until the proposed assets are published, the URL pin is provenance
+for the reviewed artifact rather than evidence of a remote clean-cache install.
 
 Companion continuity remains owned by the original `dsh-companion` middleware.
 The Nanocodex adapter selects that middleware through a non-generating
 `purpose: "compaction"` waterfall request, consumes each live
 `model.compaction.replaced` outcome once, and maps exact retained item
-identities to the DSH prefix before the latest real user-led tail. It does not
-carry a duplicate product prompt or create a second summary runtime. An
-arbitrary `compactRegion` middle range is rejected before mutation; successful
+identities to the DSH surface through the immutable installed-history
+provenance contract. It does not carry a duplicate product prompt or create a
+second summary runtime. The DSH policy retains at most five complete visible
+rounds under a 4,000-token soft budget, preserves the current unfinished turn
+and its attachments, and removes historical tool/reasoning/plugin material.
+An arbitrary `compactRegion` range is rejected before mutation; successful
 manual and automatic replacements use the warm runtime and the standard DSH
 private checkpoint projection.
 

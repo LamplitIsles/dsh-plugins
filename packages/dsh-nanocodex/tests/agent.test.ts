@@ -46,6 +46,10 @@ class BlockingEngine extends NanocodexEngine {
     return {
       provider: "openai",
       model: "gpt-5.6-sol",
+      context: {
+        contextWindowTokens: 272_000,
+        activeContextTokens: 0,
+      },
       automaticCompactions: [],
       snapshot: {
         version: 1,

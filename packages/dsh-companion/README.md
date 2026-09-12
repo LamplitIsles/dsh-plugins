@@ -62,7 +62,15 @@ The configured Workspace is resolved by id and the live Session cwd. A missing i
 
 Mood, affinity, and signature are Host-owned state stored as append-only records under the configured Workspace at `.dsh/dsh-companion/state.jsonl`. Each successful change adds one timestamped complete state; the newest record drives the UI and Agent context, while earlier notes and per-field reasons remain available as relationship history. Session logs are not the runtime state authority. Tests use only test-owned state and never mutate a live Workspace. The Host validates and bounds every load and mutation. The Companion exposes only a read-only relationship RPC to the browser; the agent's `companion_update_relationship` Tool atomically changes mood, affinity, or both, while `companion_set_signature` independently changes its durable signature. `companion_read_history` deliberately validates the full bounded JSONL and returns 1–20 recent records newest first without mutation; history is never injected automatically into every turn. All three Tools remain hidden from the chat timeline. Cross-field and numeric bounds are enforced by Host TypeScript rather than advanced provider-facing JSON Schema. Affinity movement is clamped to ±10 net per accepted turn, and the dynamic prompt context is bounded descriptive metadata—not instructions, permissions, or a score to maximize.
 
-For Sessions in that configured Workspace only, the package replaces DSH basic compaction's final instruction with its fixed companion continuity checkpoint. Other Sessions and LLM calls are unchanged. A request that is otherwise eligible but no longer has DSH basic compaction's expected final message fails visibly, rather than applying the companion prompt to an unknown backend; the runtime instruction is the single source of truth for its wording.
+For Sessions in that configured Workspace only, the package's existing DSH
+basic-compaction middleware remains the source of the fixed companion
+continuity checkpoint. The Nanocodex adapter reaches that middleware through
+the non-generating `llm/stream` path and supplies the expected
+`dsh-compaction-basic` marker; it does not duplicate or rewrite the prompt.
+Other Sessions and LLM calls are unchanged. A request that is otherwise
+eligible but no longer has DSH basic compaction's expected final message fails
+visibly, rather than applying the companion prompt to an unknown backend; the
+runtime instruction is the single source of truth for its wording.
 
 The execution posture is fixed to `workspace-write` with escalation disabled. Operations requiring broader authority fail; no approval or permission picker is presented.
 

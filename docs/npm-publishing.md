@@ -61,10 +61,13 @@ be committed locally first. The selected package must be part of that commit.
 The original checkout, versions, and Git state remain unchanged.
 
 The temporary workspace obtains Nanocodex from the same pinned GitHub Release
-as local development and CI. The root `pnpm:devPreinstall` hook downloads and
-SHA-256-verifies the two engine tarballs before dependency resolution. It uses
-the public GitHub API with environment proxy support; no GitHub credential or
-sibling checkout is required. See
+as local development and CI once the proposed release assets are published.
+The current handoff's `v0.5.0-lamplit.2` URLs are an Owner publication gate;
+local verification used task-owned archives and does not prove a clean-cache
+fetch. The root `pnpm:devPreinstall` hook downloads and SHA-256-verifies the
+two engine tarballs before dependency resolution. It uses the public GitHub API
+with environment proxy support; no GitHub credential or sibling checkout is
+required. See
 [`engine-release.json`](../packages/dsh-nanocodex/engine-release.json) for the
 exact release, asset URLs, and checksums.
 

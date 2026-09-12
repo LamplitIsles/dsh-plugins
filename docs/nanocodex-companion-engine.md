@@ -27,11 +27,15 @@ The [architecture decision](adr/0001-nanocodex-companion-engine.md) keeps the ex
 
 The package is `@lamplitisles/dsh-nanocodex`, owned by
 `packages/dsh-nanocodex`. It is a public workspace package with an independent
-`0.1.0` version. Local development and CI consume the published
-[engine release `v0.5.0-lamplit.1`](https://github.com/LamplitIsles/nanocodex/releases/tag/v0.5.0-lamplit.1).
-Its source commit `f598d5714d9ed1ab25b53d32c6047dd10171cb88` has the same Git
-tree as the accepted build revision
-`32f5f6e4031040f4b7fac7aefd2a64d7d4baedf2`.
+`0.1.0` version. The reviewed handoff pins proposed engine release
+`v0.5.0-lamplit.2`, built from source commit
+`8b37d5fdd650e7b897bb387724cdec0077f4a6f8`. The SDK and tools archive hashes
+are respectively
+`e07636e6ca2e416d734aa530a14245be2bf81e72b1934c5e3a92bc1fe8c8eb04` and
+`27d984ecc36f00a74e7463a6985019ab2b56f852b202ad7b1cabb5c20d8ce25c`.
+Those proposed public URLs are not yet published; the local packed/Loader
+acceptance used task-owned verified archives. Public availability and a
+clean-cache installation remain Owner gates.
 
 The package-owned `engine-release.json` pins both tarballs by release asset URL
 and SHA-256. The root installation hook verifies them before pnpm resolves the
@@ -72,13 +76,15 @@ WASM does not directly access the operating system filesystem, but a JavaScript 
 ### Existing nanocodex persistence interfaces
 
 Nanocodex exposes opaque durability and completed-turn snapshot APIs. The
-adapter associates each successful snapshot with DSH's public event log by
-appending a versioned `nanocodexCheckpoint` field to `request/context` and
-awaiting the official session flush. The record contains the provider/model,
-snapshot, and an exact active-surface boundary: replacement generation, ordered
-surface sequence numbers, message count, and a SHA-256 message fingerprint.
-There is no private sidecar or second transcript. Recovery uses the
-DSH-owned event log as the durable association:
+adapter stores each successful snapshot in DSH's private
+`nanocodex_checkpoints` storage domain and awaits the official session flush.
+The record contains the provider/model, snapshot, and an exact active-surface
+boundary: replacement generation, ordered surface sequence numbers, message
+count, and a SHA-256 message fingerprint. The DSH event log remains the
+authoritative transcript; the private record is only an opaque engine
+checkpoint, while browser-visible `request/context` contains route and
+context-window metadata only. Recovery uses the DSH-owned surface as the
+semantic authority:
 
 - `Session.deriveMessages()` supplies the current active surface, including
   prior replacements.
@@ -89,13 +95,20 @@ DSH-owned event log as the durable association:
   current active surface, so opaque engine state cannot replace newer DSH facts.
 - A successful Nanocodex compaction is represented by the existing DSH
   compaction events and private checkpoint message; the summary never becomes
-  assistant text or an expandable card.
+  assistant text or an expandable card. Failed, canceled, or persistence-failed
+  operations are not reported as successful and never restore removed content.
 - Manual and automatic custom replacements use the current live Nanocodex
   runtime. The adapter consumes each `model.compaction.replaced` outcome once,
-  maps its exact retained item identities to the DSH surface, and replaces the
-  prefix before the latest real user-led tail. The public `compactRegion`
-  surface accepts only that current prefix; arbitrary middle ranges fail with
-  a `changed` error before model or surface mutation.
+  validates its immutable operation decision and exact `installed_history`
+  provenance, and applies the DSH surface segments in current surface order.
+  It does not infer a contiguous numeric tail. The policy retains at most five
+  complete visible user/assistant text rounds under a 4,000-token soft budget;
+  the newest intact round may exceed that budget, and the current unfinished
+  input/progress—including pending attachments and tool exchanges—stays
+  outside it. Historical tool calls/results, reasoning, completed attachments,
+  and plugin context are removed or represented only by text-only replacements.
+  The public `compactRegion` range entry point is rejected before mutation;
+  `/compact`/`compactNow` invokes the complete immutable host policy.
 - `SessionPersistence` remains responsible for awaited append/flush and its
   official interrupted-turn recovery behavior.
 
@@ -123,6 +136,15 @@ only public rc.1 storage contract that can be associated with the exact session
 boundary. Recovery preserves official DSH's conversation and completed-tool
 guarantees; it does not promise exactly-once execution across every crash
 window.
+
+At Nanocodex outcome and snapshot boundaries, the adapter consumes the public
+`context_window_tokens` and `active_context_tokens` values. It carries the
+window into DSH request facts and uses the active value for current accounting;
+it does not fabricate a native Host conversation-message breakdown. Compaction
+shadow estimates are taken from the exact pre-replacement DSH surface, and
+cache-read/cache-write usage is normalized into disjoint DSH buckets. Warmup,
+ancillary, and compaction requests do not establish the ordinary current-turn
+pressure anchor.
 
 Compaction changes active model context, not the human-readable conversation. Its private 连续性摘要 must never become a visible assistant reply or expandable summary card. Failed or canceled compaction must preserve the last committed engine state and must not publish a successful 整理记录.
 

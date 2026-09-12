@@ -230,7 +230,15 @@ async function replay(
           },
         }),
       },
-      session: { shutdown: async () => {} },
+      session: {
+        shutdown: async () => {},
+        context: async () => ({
+          workspace: "/tmp",
+          history: [],
+          context_window_tokens: 272_000,
+          active_context_tokens: 0,
+        }),
+      },
       dispose() {},
     } as unknown as Awaited<ReturnType<typeof Agent.create>>;
   });

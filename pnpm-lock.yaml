@@ -4415,7 +4415,7 @@ packages:
     engines: {node: '>=22.13.0'}
 
   nanocodex@file:.cache/nanocodex/nanocodex.tgz:
-    resolution: {integrity: sha512-bxucLqkUrB5CjOZd7sT6BYESHI6kTl6yLftQdje+RjsgsWYBr3/O8SVGcrIlE4nBsgcquSm7VhPXWoCv8qrYVw==, tarball: file:.cache/nanocodex/nanocodex.tgz}
+    resolution: {integrity: sha512-/1NjBH9H0Dd9vX6mdX0EVV7BmzHkkxZbsb5QCgBC8BuTM21yfoRsFUTIfFsRpC9k4m9SuMOpLPBhBCYl9SmgnQ==, tarball: file:.cache/nanocodex/nanocodex.tgz}
     version: 0.5.0
     engines: {node: '>=22.13.0'}
 

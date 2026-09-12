@@ -104,6 +104,16 @@ function textOfCheckpoint(message: Message): string {
     .join("\n");
 }
 
+/** A model-only surface tombstone used when a filtered range has no retained text. */
+export function isNanocodexSurfacePlaceholder(message: Message): boolean {
+  return (
+    message.role === "user" &&
+    message.content.length === 0 &&
+    message.source.kind === "plugin" &&
+    message.source.plugin === "dsh-nanocodex"
+  );
+}
+
 /** Pi Responses IDs store call_id|item_id; only the call part pairs results. */
 export function historyToolCallId(value: string): string {
   return value
@@ -226,6 +236,7 @@ export async function buildHistoryProjection(
 
   for (const message of messages) {
     signal?.throwIfAborted();
+    if (isNanocodexSurfacePlaceholder(message)) continue;
     if (message.role === "user" && isCompactCheckpointSource(message.source)) {
       continuitySummary = textOfCheckpoint(message);
       continue;

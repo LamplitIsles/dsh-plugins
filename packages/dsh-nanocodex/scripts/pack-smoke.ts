@@ -813,28 +813,14 @@ assert.equal(
 );
 assert.equal(changedAgent.session.snapshotEvents().filter((event) => event.type === "tool/result").length, 4);
 
-const changedNodes = [...changedAgent.session.surface.nodes];
-const changedMessages = changedAgent.session.deriveMessages();
-let latestRealUserIndex = -1;
-for (let index = changedMessages.length - 1; index >= 0; index -= 1) {
-  const message = changedMessages[index];
-  if (message?.role === "user" && message.source.kind === "user") {
-    latestRealUserIndex = index;
-    break;
-  }
-}
-assert.ok(latestRealUserIndex > 0);
-const firstSurfaceNode = changedNodes[0];
-const supportedPrefixEnd = changedNodes[latestRealUserIndex - 1];
-assert.ok(firstSurfaceNode !== undefined);
-assert.ok(supportedPrefixEnd !== undefined);
-const compacted = await changedHost.root.compaction.compactRegion(
-  firstSurfaceNode,
-  supportedPrefixEnd,
+const compacted = await changedHost.root.commands.execute(
   changedAgent,
+  "/compact",
+  [],
   new AbortController().signal,
 );
-assert.match(compacted.summary[0]?.type === "text" ? compacted.summary[0].text : "", /The User/u);
+assert.ok(compacted, "the post-resume command plane must resolve /compact");
+assert.equal(compacted.result.kind, "success", JSON.stringify(compacted));
 assert.equal(
   changedAgent.session.deriveMessages().some(
     (message) => message.source.kind === "plugin" && message.source.plugin === "compact",

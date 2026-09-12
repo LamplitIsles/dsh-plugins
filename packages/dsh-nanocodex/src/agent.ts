@@ -398,6 +398,7 @@ export class NanocodexAgent implements Agent {
               engineResult.model,
               engineResult.snapshot,
               signal,
+              engineResult.context,
             );
           } catch (error) {
             await this.engine.invalidate(this).catch(() => undefined);

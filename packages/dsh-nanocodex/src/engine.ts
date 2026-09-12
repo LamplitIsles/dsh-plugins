@@ -1,11 +1,6 @@
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import {
-  toolPairingBalancedAfter,
-  toolPairingBalancedBefore,
-} from "@deepseek-ai/dsh-compaction";
 import {
   canonicalHeader,
   headerEquals,
@@ -24,7 +19,6 @@ import {
   createToolResultMessage,
   ToolCallId,
   createUserMessage,
-  type ContentBlock,
   type GenerateOptions,
   type Message,
   type ToolSchema,
@@ -34,22 +28,19 @@ import {
   renderPrompt,
   type PromptAssembly,
 } from "@deepseek-ai/dsh-system-prompt";
-import type {
-  PtcDispatchEventData,
-  PtcDispatchStartEventData,
-  ToolExecutionResult,
-} from "@deepseek-ai/dsh-tools";
+import type { ToolExecutionResult } from "@deepseek-ai/dsh-tools";
 import {
   Agent as NodeAgent,
   createQuickJsEvaluator,
   Transport,
   type AgentEvent,
   type CodeEvaluator,
+  type CompactionContext,
+  type CompactionDecision,
   type CompactionInstructionContext,
   type CompactionItemIdentity,
   type CompactionOutcome,
   type CompactionReplacedEventPayload,
-  type HistoryItem,
   type ToolDefinition as NanocodexToolDefinition,
   type SessionSnapshot,
 } from "nanocodex/node";
@@ -62,13 +53,13 @@ import {
   MODEL_CONTEXT_WINDOW,
   type NanocodexModel,
 } from "./constants.js";
+import { buildHistorySeed, buildPromptInput, plainText } from "./history.js";
 import {
-  buildHistoryProjection,
-  buildHistorySeed,
-  buildPromptInput,
-  historyToolCallId,
-  plainText,
-} from "./history.js";
+  buildNanocodexCompactionPlan,
+  compactionPlaceholderMessage,
+  type NanocodexCompactionPlan,
+  type NanocodexCompactionSurfaceSegment,
+} from "./compaction-policy.js";
 import { normalizeNanocodexSessionId } from "./session-id.js";
 import {
   resolveNanocodexRoute,
@@ -92,19 +83,24 @@ export interface NanocodexCompactionResult {
   readonly snapshot: SessionSnapshot;
   readonly provider: string;
   readonly model: NanocodexModel;
+  readonly context: NanocodexContextAccounting;
+}
+
+export interface NanocodexContextAccounting {
+  readonly contextWindowTokens: number;
+  readonly activeContextTokens: number;
 }
 
 export interface NanocodexAutomaticCompaction {
   readonly outcome: CompactionOutcome;
   readonly phase: CompactionReplacedEventPayload["phase"];
   readonly afterModelCallIndex: number;
-  /** DSH surface nodes admitted to the engine at this compaction boundary. */
-  readonly admittedSurfaceSeqs: readonly SessionSeq[];
+  /** Nanocodex's public phase/call boundary for the accepted replacement. */
 }
 
 type NanocodexCompactionMappingBoundary = Pick<
   NanocodexAutomaticCompaction,
-  "phase" | "afterModelCallIndex" | "admittedSurfaceSeqs"
+  "phase" | "afterModelCallIndex"
 >;
 
 export interface NanocodexCompactionSelection {
@@ -113,6 +109,9 @@ export interface NanocodexCompactionSelection {
     readonly end: SessionSeq;
   };
   readonly shadowedSeqs: readonly SessionSeq[];
+  /** Every contiguous DSH surface operation needed to install the policy. */
+  readonly segments: readonly NanocodexCompactionSurfaceSegment[];
+  readonly context: NanocodexContextAccounting;
 }
 
 export interface EngineRunResult {
@@ -120,6 +119,8 @@ export interface EngineRunResult {
   readonly model: NanocodexModel;
   /** The exact public Nanocodex snapshot at the successful DSH boundary. */
   readonly snapshot: SessionSnapshot;
+  /** Current engine capacity and active model-context usage at this boundary. */
+  readonly context: NanocodexContextAccounting;
   /**
    * Nanocodex may compact its private model context during a normal turn. The
    * adapter projects the validated private checkpoint into DSH only after the
@@ -173,6 +174,8 @@ interface LiveRuntime {
   active?: ActiveTurn | undefined;
   boundary?: SurfaceBoundary;
   readonly consumedCompactionRevisions: Set<string>;
+  readonly pendingCompactionPlans: NanocodexCompactionPlan[];
+  context?: NanocodexContextAccounting;
 }
 
 const RAW_APPLICATION_DEFINITIONS: ReadonlyMap<
@@ -258,19 +261,6 @@ function boundaryMatches(
     boundary.surfaceSeqs.every((seq, index) => nodes[index] === seq) &&
     boundary.fingerprint === fingerprint(messages)
   );
-}
-
-function surfacePrefix(
-  session: Session,
-  messageCount: number,
-): readonly SessionSeq[] {
-  const nodes = [...session.surface.nodes];
-  if (messageCount > nodes.length) {
-    throw new Error(
-      "Nanocodex compaction cannot capture a DSH admission boundary",
-    );
-  }
-  return nodes.slice(0, messageCount);
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -359,14 +349,6 @@ const DEFAULT_COMPACTION_INSTRUCTION = [
 
 async function* emptyLlmStream(): AsyncGenerator<never, void, void> {}
 
-interface SurfaceHistoryItem {
-  readonly surfaceIndex: number;
-  readonly message: Message;
-  readonly item: HistoryItem;
-}
-
-type PublicHistoryItem = HistoryItem;
-
 function integer(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
@@ -392,12 +374,27 @@ function parseCompactionIdentity(
   return candidate as unknown as CompactionItemIdentity;
 }
 
+function parseCompactionInstalledItem(
+  value: unknown,
+): CompactionOutcome["installed_history"][number] | undefined {
+  const candidate = record(value);
+  if (!candidate || !record(candidate.item)) return undefined;
+  const origin =
+    candidate.origin === null
+      ? null
+      : parseCompactionIdentity(candidate.origin);
+  if (origin === undefined) return undefined;
+  return {
+    origin,
+    item: candidate.item as Record<string, unknown>,
+  };
+}
+
 function parseCompactionOutcome(value: unknown): CompactionOutcome | undefined {
   const candidate = record(value);
-  const range = record(candidate?.replaced_history);
   const context = record(candidate?.context);
-  const retained = Array.isArray(candidate?.retained_tail)
-    ? candidate.retained_tail.map(parseCompactionIdentity)
+  const installed = Array.isArray(candidate?.installed_history)
+    ? candidate.installed_history.map(parseCompactionInstalledItem)
     : undefined;
   if (
     !candidate ||
@@ -405,14 +402,13 @@ function parseCompactionOutcome(value: unknown): CompactionOutcome | undefined {
     candidate.revision.length === 0 ||
     (candidate.trigger !== "manual" && candidate.trigger !== "automatic") ||
     !nullableString(candidate.summary) ||
-    !range ||
-    !integer(range.start) ||
-    !integer(range.end) ||
-    range.start > range.end ||
-    !retained ||
-    retained.some((item): item is undefined => item === undefined) ||
+    !installed ||
+    installed.some((item): item is undefined => item === undefined) ||
     !context ||
     typeof context.workspace !== "string" ||
+    !integer(context.context_window_tokens) ||
+    context.context_window_tokens === 0 ||
+    !integer(context.active_context_tokens) ||
     !Array.isArray(context.history) ||
     !context.history.every((item) => record(item) !== undefined)
   ) {
@@ -434,601 +430,6 @@ function parseCompactionReplacedEvent(
     return undefined;
   }
   return event.payload as unknown as CompactionReplacedEventPayload;
-}
-
-function projectedIdentityMatches(
-  identity: CompactionItemIdentity,
-  item: PublicHistoryItem,
-): boolean {
-  const identityKind =
-    identity.kind === "custom_tool_call"
-      ? "function_call"
-      : identity.kind === "custom_tool_call_output"
-        ? "function_call_output"
-        : identity.kind;
-  const itemKind =
-    item.type === "custom_tool_call"
-      ? "function_call"
-      : item.type === "custom_tool_call_output"
-        ? "function_call_output"
-        : item.type;
-  if (identityKind !== itemKind) return false;
-  const callId = "call_id" in item ? item.call_id : null;
-  if (identity.call_id !== callId) return false;
-  // Nanocodex may assign a new id to a retained message while preserving its
-  // authoritative history index. Function-call identities have no such
-  // replacement and remain exact.
-  return (
-    identityKind === "message" ||
-    identityKind === "function_call" ||
-    identityKind === "function_call_output" ||
-    identity.id === (item.id ?? null)
-  );
-}
-
-type HistoryImageDetail = "auto" | "low" | "high" | "original";
-
-function historyImageDetail(
-  value: unknown,
-): value is HistoryImageDetail | undefined {
-  return (
-    value === undefined ||
-    value === "auto" ||
-    value === "low" ||
-    value === "high" ||
-    value === "original"
-  );
-}
-
-function historyInputItemMatches(left: unknown, right: unknown): boolean {
-  const leftObject = record(left);
-  const rightObject = record(right);
-  if (leftObject === undefined || rightObject === undefined) return false;
-  if (leftObject.type !== rightObject.type) return false;
-  switch (leftObject.type) {
-    case "input_text":
-      return (
-        typeof leftObject.text === "string" &&
-        leftObject.text === rightObject.text
-      );
-    case "input_image":
-      return (
-        typeof leftObject.image_url === "string" &&
-        leftObject.image_url === rightObject.image_url &&
-        historyImageDetail(leftObject.detail) &&
-        historyImageDetail(rightObject.detail) &&
-        leftObject.detail === rightObject.detail
-      );
-    case "input_audio":
-      return (
-        typeof leftObject.audio_url === "string" &&
-        leftObject.audio_url === rightObject.audio_url
-      );
-    case "encrypted_content":
-      return (
-        typeof leftObject.encrypted_content === "string" &&
-        leftObject.encrypted_content === rightObject.encrypted_content
-      );
-    default:
-      return false;
-  }
-}
-
-function historyContentItemMatches(left: unknown, right: unknown): boolean {
-  const leftObject = record(left);
-  const rightObject = record(right);
-  if (leftObject === undefined || rightObject === undefined) return false;
-  if (leftObject.type !== rightObject.type) return false;
-  if (leftObject.type === "output_text") {
-    return (
-      typeof leftObject.text === "string" &&
-      leftObject.text === rightObject.text
-    );
-  }
-  if (
-    leftObject.type === "input_text" ||
-    leftObject.type === "input_image" ||
-    leftObject.type === "input_audio"
-  ) {
-    return historyInputItemMatches(left, right);
-  }
-  return false;
-}
-
-function historyContentMatches(left: unknown, right: unknown): boolean {
-  return (
-    Array.isArray(left) &&
-    Array.isArray(right) &&
-    left.length === right.length &&
-    left.every((item, index) => historyContentItemMatches(item, right[index]))
-  );
-}
-
-function historyToolOutputMatches(left: unknown, right: unknown): boolean {
-  if (typeof left === "string" || typeof right === "string") {
-    return typeof left === "string" && left === right;
-  }
-  return (
-    Array.isArray(left) &&
-    Array.isArray(right) &&
-    left.length === right.length &&
-    left.every((item, index) => historyInputItemMatches(item, right[index]))
-  );
-}
-
-function historyMessageMatches(
-  left: PublicHistoryItem | undefined,
-  right: HistoryItem,
-): boolean {
-  return (
-    left?.type === "message" &&
-    right.type === "message" &&
-    left.role === right.role &&
-    historyContentMatches(left.content, right.content)
-  );
-}
-
-function historyItemsMatch(
-  left: PublicHistoryItem | undefined,
-  right: PublicHistoryItem,
-): boolean {
-  if (left === undefined) return false;
-  const leftType = historyKind(left);
-  const rightType = historyKind(right);
-  if (leftType !== rightType) return false;
-  switch (leftType) {
-    case "message":
-      return (
-        left.type === "message" &&
-        right.type === "message" &&
-        left.role === right.role &&
-        historyContentMatches(left.content, right.content)
-      );
-    case "function_call": {
-      const leftCall = functionCallFields(left);
-      const rightCall = functionCallFields(right);
-      return (
-        leftCall !== undefined &&
-        rightCall !== undefined &&
-        leftCall.name === rightCall.name &&
-        leftCall.input === rightCall.input &&
-        leftCall.call_id === rightCall.call_id
-      );
-    }
-    case "function_call_output": {
-      const leftOutput = functionCallOutputFields(left);
-      const rightOutput = functionCallOutputFields(right);
-      return (
-        leftOutput !== undefined &&
-        rightOutput !== undefined &&
-        leftOutput.call_id === rightOutput.call_id &&
-        historyToolOutputMatches(leftOutput.output, rightOutput.output)
-      );
-    }
-    case "compaction":
-      return (
-        left.type === "compaction" &&
-        right.type === "compaction" &&
-        left.encrypted_content === right.encrypted_content
-      );
-    default:
-      return false;
-  }
-}
-
-function historyKind(item: PublicHistoryItem): string {
-  if (item.type === "custom_tool_call") return "function_call";
-  if (item.type === "custom_tool_call_output") return "function_call_output";
-  return item.type;
-}
-
-function functionCallFields(
-  item: PublicHistoryItem,
-): { name: string; input: string; call_id: string } | undefined {
-  if (item.type === "function_call") {
-    return { name: item.name, input: item.arguments, call_id: item.call_id };
-  }
-  if (item.type === "custom_tool_call") {
-    return { name: item.name, input: item.input, call_id: item.call_id };
-  }
-  return undefined;
-}
-
-function functionCallOutputFields(
-  item: PublicHistoryItem,
-): { call_id: string; output: unknown } | undefined {
-  if (
-    item.type === "function_call_output" ||
-    item.type === "custom_tool_call_output"
-  ) {
-    return { call_id: item.call_id, output: item.output };
-  }
-  return undefined;
-}
-
-function validateRetainedApplyPatchPairs(
-  items: readonly PublicHistoryItem[],
-): ReadonlySet<string> {
-  const callIds = new Set<string>();
-  const resultIds = new Set<string>();
-  for (const item of items) {
-    if (item.type === "custom_tool_call" && item.name === APPLY_PATCH_NAME) {
-      if (callIds.has(item.call_id)) {
-        throw new Error(
-          `Nanocodex compaction retained duplicate apply_patch call ${JSON.stringify(item.call_id)}`,
-        );
-      }
-      callIds.add(item.call_id);
-      continue;
-    }
-    if (item.type !== "custom_tool_call_output") continue;
-    const namedPatch = item.name === APPLY_PATCH_NAME;
-    const matchesPatchCall = callIds.has(item.call_id);
-    if (!namedPatch && !matchesPatchCall) continue;
-    if (!matchesPatchCall) {
-      throw new Error(
-        `Nanocodex compaction retained apply_patch output has no matching call ${JSON.stringify(item.call_id)}`,
-      );
-    }
-    if (item.name !== undefined && item.name !== APPLY_PATCH_NAME) {
-      throw new Error(
-        `Nanocodex compaction retained apply_patch output has a mismatched name ${JSON.stringify(item.call_id)}`,
-      );
-    }
-    if (resultIds.has(item.call_id)) {
-      throw new Error(
-        `Nanocodex compaction retained duplicate apply_patch output ${JSON.stringify(item.call_id)}`,
-      );
-    }
-    resultIds.add(item.call_id);
-  }
-  for (const callId of callIds) {
-    if (!resultIds.has(callId)) {
-      throw new Error(
-        `Nanocodex compaction retained apply_patch call without a result ${JSON.stringify(callId)}`,
-      );
-    }
-  }
-  return callIds;
-}
-
-interface CodeDispatchEvent<T> {
-  readonly seq: SessionSeq;
-  readonly data: T;
-}
-
-interface CodeDispatchState {
-  readonly starts: CodeDispatchEvent<PtcDispatchStartEventData>[];
-  readonly settles: CodeDispatchEvent<PtcDispatchEventData>[];
-}
-
-interface CodeDispatchChild {
-  readonly startSeq: SessionSeq;
-  readonly settleSeq: SessionSeq;
-  readonly subCallId: string;
-  readonly name: string;
-  readonly arguments: unknown;
-  readonly isError: boolean;
-  readonly content: readonly ContentBlock[];
-}
-
-interface CodeDispatchAssociation {
-  readonly children: CodeDispatchChild[];
-  invalid: boolean;
-}
-
-function codeDispatchAssociations(
-  session: Pick<Session, "snapshotEvents">,
-): ReadonlyMap<string, CodeDispatchAssociation> {
-  const bySubCallId = new Map<string, CodeDispatchState>();
-  for (const event of session.snapshotEvents()) {
-    if (
-      event.type !== "tool/code-dispatch-start" &&
-      event.type !== "tool/code-dispatch"
-    ) {
-      continue;
-    }
-    const subCallId = String(event.data.subCallId);
-    const state = bySubCallId.get(subCallId) ?? {
-      starts: [],
-      settles: [],
-    };
-    if (event.type === "tool/code-dispatch-start") {
-      state.starts.push({ seq: event.seq, data: event.data });
-    } else {
-      state.settles.push({ seq: event.seq, data: event.data });
-    }
-    bySubCallId.set(subCallId, state);
-  }
-
-  const associations = new Map<string, CodeDispatchAssociation>();
-  const associationFor = (parentCallId: string): CodeDispatchAssociation => {
-    const existing = associations.get(parentCallId);
-    if (existing !== undefined) return existing;
-    const created: CodeDispatchAssociation = { children: [], invalid: false };
-    associations.set(parentCallId, created);
-    return created;
-  };
-
-  for (const state of bySubCallId.values()) {
-    const parentCallIds = new Set([
-      ...state.starts.map((event) => String(event.data.parentCallId)),
-      ...state.settles.map((event) => String(event.data.parentCallId)),
-    ]);
-    for (const parentCallId of parentCallIds) {
-      const association = associationFor(parentCallId);
-      const start = state.starts[0];
-      const settle = state.settles[0];
-      if (
-        state.starts.length !== 1 ||
-        state.settles.length !== 1 ||
-        start === undefined ||
-        settle === undefined ||
-        String(start.data.parentCallId) !== parentCallId ||
-        String(settle.data.parentCallId) !== parentCallId ||
-        String(start.data.rootCallId) !== String(settle.data.rootCallId) ||
-        settle.seq <= start.seq ||
-        start.data.name !== settle.data.name ||
-        !isDeepStrictEqual(start.data.arguments, settle.data.arguments)
-      ) {
-        association.invalid = true;
-        continue;
-      }
-      association.children.push({
-        startSeq: start.seq,
-        settleSeq: settle.seq,
-        subCallId: String(settle.data.subCallId),
-        name: settle.data.name,
-        arguments: settle.data.arguments,
-        isError: settle.data.isError,
-        content: settle.data.content,
-      });
-    }
-  }
-  for (const association of associations.values()) {
-    association.children.sort((left, right) => left.startSeq - right.startSeq);
-  }
-  return associations;
-}
-
-interface DshToolEvidence {
-  readonly calls: { readonly name: string; readonly arguments: string }[];
-  readonly results: {
-    readonly isError: boolean;
-    readonly content: readonly ContentBlock[];
-  }[];
-}
-
-function dshToolEvidence(
-  session: Pick<Session, "snapshotEvents">,
-): ReadonlyMap<string, DshToolEvidence> {
-  const evidence = new Map<string, DshToolEvidence>();
-  const forCall = (callId: string): DshToolEvidence => {
-    const existing = evidence.get(callId);
-    if (existing !== undefined) return existing;
-    const created: DshToolEvidence = { calls: [], results: [] };
-    evidence.set(callId, created);
-    return created;
-  };
-  for (const event of session.snapshotEvents()) {
-    if (event.type === "tool/call") {
-      const callId = String(event.data.callId);
-      forCall(callId).calls.push({
-        name: event.data.name,
-        arguments: event.data.arguments,
-      });
-    } else if (event.type === "tool/result") {
-      const block = event.data.message.content[0];
-      const callId = String(event.data.message.source.callId);
-      forCall(callId).results.push({
-        isError: block?.isError === true,
-        content: block?.content ?? [],
-      });
-    }
-  }
-  return evidence;
-}
-
-function serializedToolArguments(value: unknown): string | undefined {
-  try {
-    return JSON.stringify(value ?? {}) ?? "{}";
-  } catch {
-    return undefined;
-  }
-}
-
-function codeDispatchCallMatches(
-  projected: readonly SurfaceHistoryItem[],
-  projectedIndex: number,
-  child: CodeDispatchChild,
-  evidence: ReadonlyMap<string, DshToolEvidence>,
-): boolean {
-  const call = projected[projectedIndex]?.item;
-  const callFields = call === undefined ? undefined : functionCallFields(call);
-  const tool = evidence.get(child.subCallId);
-  const expectedArguments = serializedToolArguments(child.arguments);
-  const expectedInput =
-    child.name === APPLY_PATCH_NAME
-      ? (() => {
-          try {
-            const value = JSON.parse(serializedToolArguments(child.arguments)!);
-            return value !== null &&
-              typeof value === "object" &&
-              !Array.isArray(value) &&
-              typeof (value as { patch?: unknown }).patch === "string" &&
-              Object.keys(value).length === 1
-              ? (value as { patch: string }).patch
-              : undefined;
-          } catch {
-            return undefined;
-          }
-        })()
-      : serializedToolArguments(child.arguments);
-  return (
-    (call?.type === "function_call" || call?.type === "custom_tool_call") &&
-    callFields !== undefined &&
-    callFields.call_id === historyToolCallId(child.subCallId) &&
-    callFields.name === child.name &&
-    expectedInput !== undefined &&
-    callFields.input === expectedInput &&
-    expectedArguments !== undefined &&
-    tool !== undefined &&
-    tool.calls.length === 1 &&
-    tool.results.length === 1 &&
-    tool.calls[0]!.name === child.name &&
-    tool.calls[0]!.arguments === expectedArguments
-  );
-}
-
-function codeDispatchResultMatches(
-  projected: readonly SurfaceHistoryItem[],
-  projectedIndex: number,
-  child: CodeDispatchChild,
-  evidence: ReadonlyMap<string, DshToolEvidence>,
-): boolean {
-  const output = projected[projectedIndex]?.item;
-  const outputFields =
-    output === undefined ? undefined : functionCallOutputFields(output);
-  const tool = evidence.get(child.subCallId);
-  return (
-    (output?.type === "function_call_output" ||
-      output?.type === "custom_tool_call_output") &&
-    outputFields !== undefined &&
-    outputFields.call_id === historyToolCallId(child.subCallId) &&
-    tool !== undefined &&
-    tool.calls.length === 1 &&
-    tool.results.length === 1 &&
-    tool.results[0]!.isError === child.isError &&
-    isDeepStrictEqual(tool.results[0]!.content, child.content)
-  );
-}
-
-interface CodeDispatchExpectation {
-  readonly seq: SessionSeq;
-  readonly kind: "call" | "result";
-  readonly child: CodeDispatchChild;
-}
-
-function codeDispatchProjectedCount(
-  projected: readonly SurfaceHistoryItem[],
-  projectedIndex: number,
-  association: CodeDispatchAssociation,
-  evidence: ReadonlyMap<string, DshToolEvidence>,
-): number {
-  if (association.invalid || association.children.length === 0) {
-    throw new Error(
-      "Nanocodex compaction retained Code Mode child tool association is incomplete",
-    );
-  }
-  const expectations = association.children
-    .flatMap((child) => [
-      { seq: child.startSeq, kind: "call" as const, child },
-      { seq: child.settleSeq, kind: "result" as const, child },
-    ])
-    .sort((left, right) => left.seq - right.seq) as CodeDispatchExpectation[];
-  let index = projectedIndex;
-  for (const expectation of expectations) {
-    const matches =
-      expectation.kind === "call"
-        ? codeDispatchCallMatches(projected, index, expectation.child, evidence)
-        : codeDispatchResultMatches(
-            projected,
-            index,
-            expectation.child,
-            evidence,
-          );
-    if (!matches) {
-      throw new Error(
-        "Nanocodex compaction retained Code Mode child tool does not match the DSH pair",
-      );
-    }
-    index += 1;
-  }
-  return index - projectedIndex;
-}
-
-function mergeSupplementaryContext(
-  entries: readonly SurfaceHistoryItem[],
-): HistoryItem | undefined {
-  const first = entries[0];
-  if (
-    first === undefined ||
-    first.item.type !== "message" ||
-    first.item.role !== "user" ||
-    first.message.role !== "user" ||
-    first.message.source.kind !== "user"
-  ) {
-    return undefined;
-  }
-  const pluginMessages = entries.slice(1).map((entry) => entry.message);
-  if (
-    pluginMessages.some(
-      (message) => message.role !== "user" || message.source.kind !== "plugin",
-    )
-  ) {
-    return undefined;
-  }
-  const text = pluginMessages
-    .map((message) => plainText([message]))
-    .filter(Boolean)
-    .join("\n\n");
-  if (!text) return undefined;
-  return {
-    ...first.item,
-    content: [...first.item.content, { type: "input_text", text }],
-  };
-}
-
-function isRealUserHistoryItem(entry: SurfaceHistoryItem | undefined): boolean {
-  return (
-    entry !== undefined &&
-    entry.item.type === "message" &&
-    entry.item.role === "user" &&
-    entry.message.role === "user" &&
-    entry.message.source.kind === "user"
-  );
-}
-
-function isPluginUserHistoryItem(
-  entry: SurfaceHistoryItem | undefined,
-): boolean {
-  return (
-    entry !== undefined &&
-    entry.item.type === "message" &&
-    entry.item.role === "user" &&
-    entry.message.role === "user" &&
-    entry.message.source.kind === "plugin"
-  );
-}
-
-function supplementaryGroupEnd(
-  projected: readonly SurfaceHistoryItem[],
-  start: number,
-): number {
-  let end = start + 1;
-  while (isPluginUserHistoryItem(projected[end])) end += 1;
-  return end;
-}
-
-function projectedCountForContext(
-  projected: readonly SurfaceHistoryItem[],
-  projectedIndex: number,
-  contextItem: PublicHistoryItem | undefined,
-): number | undefined {
-  const candidate = projected[projectedIndex];
-  if (candidate === undefined || contextItem === undefined) return undefined;
-  if (!isRealUserHistoryItem(candidate)) {
-    return historyItemsMatch(contextItem, candidate.item) ? 1 : undefined;
-  }
-
-  const groupEnd = supplementaryGroupEnd(projected, projectedIndex);
-  const merged = mergeSupplementaryContext(
-    projected.slice(projectedIndex, groupEnd),
-  );
-  if (merged !== undefined && historyMessageMatches(contextItem, merged)) {
-    return groupEnd - projectedIndex;
-  }
-  return historyItemsMatch(contextItem, candidate.item) ? 1 : undefined;
 }
 
 /** The only provider-facing owner in the DSH Nanocodex package. */
@@ -1076,10 +477,6 @@ export class NanocodexEngine {
       previousMessages,
       this.ctx,
       signal,
-    );
-    const preTurnSurfaceSeqs = surfacePrefix(
-      agent.session,
-      previousMessages.length,
     );
     // Host-injected prompt context belongs to this admitted input through
     // Nanocodex's supplementaryContext seam. It must not become a second
@@ -1193,6 +590,7 @@ export class NanocodexEngine {
         toolKey,
         bridge,
         consumedCompactionRevisions: new Set(),
+        pendingCompactionPlans: [],
       };
       this.runtimes.set(key, runtime);
     }
@@ -1205,6 +603,7 @@ export class NanocodexEngine {
       route.model,
       agent.options.reasoningEffort,
       system,
+      runtime.context,
       runtime.bridge,
     );
     const nodeAgent = runtime.nodeAgent;
@@ -1212,20 +611,18 @@ export class NanocodexEngine {
     const removeListener = watcher.onEvent((event) => {
       projection = projection.then(async () => {
         await output.accept(event);
+        if (event.type !== "model.compaction.replaced") return;
         const replaced = parseCompactionReplacedEvent(event);
-        if (
-          replaced !== undefined &&
-          replaced.trigger === "automatic" &&
-          this.consumeCompactionOutcome(runtime, replaced)
-        ) {
+        if (replaced === undefined || replaced.trigger !== "automatic") {
+          throw new Error(
+            "Nanocodex emitted an invalid automatic compaction replacement",
+          );
+        }
+        if (this.consumeCompactionOutcome(runtime, replaced)) {
           automaticCompactions.push({
             outcome: replaced,
             phase: replaced.phase,
             afterModelCallIndex: replaced.after_model_call_index,
-            admittedSurfaceSeqs:
-              replaced.phase === "pre_turn"
-                ? preTurnSurfaceSeqs
-                : [...agent.session.surface.nodes],
           });
         }
       });
@@ -1257,10 +654,13 @@ export class NanocodexEngine {
         signal.throwIfAborted();
         output.finish(result.finalMessage);
         const snapshot = await result.snapshot();
+        const context = await this.readContextAccounting(nodeAgent);
+        runtime.context = context;
         return {
           provider: route.provider,
           model: route.model,
           snapshot,
+          context,
           automaticCompactions,
         };
       } finally {
@@ -1336,9 +736,72 @@ export class NanocodexEngine {
     return runtime;
   }
 
+  private async readContextAccounting(
+    nodeAgent: NodeAgentHandle,
+  ): Promise<NanocodexContextAccounting> {
+    const context = await nodeAgent.session.context();
+    if (
+      !Number.isSafeInteger(context.context_window_tokens) ||
+      context.context_window_tokens <= 0 ||
+      !Number.isSafeInteger(context.active_context_tokens) ||
+      context.active_context_tokens < 0
+    ) {
+      throw new Error("Nanocodex returned invalid context accounting");
+    }
+    return {
+      contextWindowTokens: context.context_window_tokens,
+      activeContextTokens: context.active_context_tokens,
+    };
+  }
+
+  private async resolveCompaction(
+    agent: Agent,
+    context: CompactionContext,
+    signal: AbortSignal,
+  ): Promise<CompactionDecision> {
+    signal.throwIfAborted();
+    const plan = await buildNanocodexCompactionPlan(
+      agent.session,
+      context,
+      this.ctx,
+      signal,
+    );
+    signal.throwIfAborted();
+    let effectivePlan = plan;
+    if (!plan.segments.some((segment) => segment.kind === "remove")) {
+      // DSH's successful compaction lifecycle needs one surface span to carry
+      // the private checkpoint. A model-only empty node gives that lifecycle
+      // an anchor when all real visible rounds are retained or only rewritten
+      // (for example, a selected mixed assistant/tool message). It is skipped
+      // by the history projection and is replaced by the private checkpoint
+      // during the same operation.
+      const anchor = agent.session.append(
+        "user/message",
+        compactionPlaceholderMessage(),
+        { surfaceOp: "append" },
+      );
+      const anchorSegment: NanocodexCompactionSurfaceSegment = {
+        start: anchor.seq,
+        end: anchor.seq,
+        shadowedSeqs: [anchor.seq],
+        kind: "remove",
+      };
+      effectivePlan = {
+        ...plan,
+        segments: [...plan.segments, anchorSegment],
+        shadowedSeqs: [...plan.shadowedSeqs, anchor.seq],
+      };
+    }
+    const runtime = this.runtimeFor(agent);
+    runtime.pendingCompactionPlans.push(effectivePlan);
+    return effectivePlan.decision;
+  }
+
   /**
-   * Map Nanocodex's exact retained-tail identities to the current DSH surface.
-   * The engine owns the selection; DSH never guesses from a fixed message count.
+   * Consume the host plan that produced one accepted Nanocodex replacement.
+   * The plan is the immutable bridge between the callback's operation
+   * snapshot and the later public event; no range is inferred from a history
+   * length or from numeric sequence ordering.
    */
   async mapCompactionOutcome(
     agent: Pick<Agent, "session">,
@@ -1347,265 +810,112 @@ export class NanocodexEngine {
     mapping?: NanocodexCompactionMappingBoundary,
   ): Promise<NanocodexCompactionSelection> {
     signal.throwIfAborted();
-    const range = outcome.replaced_history;
-    const retained = outcome.retained_tail;
+    const runtime = this.runtimes.get(String(agent.session.id));
+    if (runtime === undefined) {
+      throw new Error(
+        "Nanocodex compaction outcome has no live host selection plan",
+      );
+    }
+    const plan = runtime.pendingCompactionPlans.shift();
+    if (plan === undefined) {
+      throw new Error(
+        "Nanocodex compaction outcome has no pending host selection plan",
+      );
+    }
+    if (outcome.trigger !== plan.trigger) {
+      throw new Error(
+        "Nanocodex compaction outcome trigger does not match its host selection",
+      );
+    }
+    const summaryItem = plan.decision.history[0];
     if (
-      range.start !== 0 ||
-      range.end <= 0 ||
-      retained.length === 0 ||
-      retained[0]?.index !== range.end ||
-      retained.some((item, index) => item.index !== range.end + index)
+      summaryItem?.kind !== "summary" ||
+      outcome.summary !== summaryItem.text
     ) {
       throw new Error(
-        "Nanocodex compaction returned a non-contiguous retained history boundary",
+        "Nanocodex compaction outcome summary does not match its host selection",
       );
     }
-
-    const nodes = [...agent.session.surface.nodes];
-    const messages = agent.session.deriveMessages();
-    if (nodes.length !== messages.length) {
+    if (
+      mapping !== undefined &&
+      (mapping.phase !== plan.phase ||
+        mapping.afterModelCallIndex !== plan.afterModelCallIndex)
+    ) {
       throw new Error(
-        "Nanocodex compaction cannot map a DSH surface with mismatched messages",
+        "Nanocodex compaction outcome phase does not match its host selection",
       );
     }
-    const admittedSurfaceSeqs =
-      mapping === undefined ? undefined : new Set(mapping.admittedSurfaceSeqs);
-    const historyProjection = await buildHistoryProjection(
-      messages,
-      this.ctx,
-      signal,
-    );
-    const surfaceIndexByMessageId = new Map(
-      messages.map((message, index) => [String(message.id), index]),
-    );
-    const projected: SurfaceHistoryItem[] = [];
-    for (const projectedItem of historyProjection.items) {
+    if (outcome.context.context_window_tokens !== plan.contextWindowTokens) {
+      throw new Error(
+        "Nanocodex compaction outcome capacity changed during host selection",
+      );
+    }
+    const expected = plan.decision.history;
+    if (outcome.installed_history.length !== expected.length) {
+      throw new Error(
+        "Nanocodex compaction installed history does not match its host selection",
+      );
+    }
+    for (const [index, replacement] of expected.entries()) {
       signal.throwIfAborted();
-      const surfaceIndex = surfaceIndexByMessageId.get(
-        String(projectedItem.message.id),
-      );
-      if (surfaceIndex === undefined) continue;
-      const surfaceSeq = nodes[surfaceIndex];
-      if (
-        surfaceSeq === undefined ||
-        (admittedSurfaceSeqs !== undefined &&
-          !admittedSurfaceSeqs.has(surfaceSeq))
-      ) {
-        continue;
+      const installed = outcome.installed_history[index];
+      if (installed === undefined) {
+        throw new Error("Nanocodex compaction installed history is incomplete");
       }
-      projected.push({
-        surfaceIndex,
-        message: projectedItem.message,
-        item: projectedItem.item,
-      });
-    }
-
-    const contextHistory = outcome.context
-      .history as readonly PublicHistoryItem[];
-    const retainedContextStart = contextHistory.length - retained.length;
-    if (retainedContextStart < 0) {
-      throw new Error(
-        "Nanocodex compaction context does not contain the retained tail",
-      );
-    }
-    const retainedContext = contextHistory.slice(retainedContextStart);
-    if (retainedContext.length !== retained.length) {
-      throw new Error(
-        "Nanocodex compaction context does not contain the retained tail",
-      );
-    }
-    const directPatchCallIds = validateRetainedApplyPatchPairs(retainedContext);
-    const surfaceCustomCallIds = new Set(
-      projected.flatMap(({ item }) =>
-        item.type === "custom_tool_call" ? [item.call_id] : [],
-      ),
-    );
-
-    let firstIndex = -1;
-    const firstIdentityPosition = retained.findIndex((identity, index) => {
-      const contextItem = retainedContext[index];
-      return (
-        identity.kind === "message" &&
-        contextItem?.type === "message" &&
-        contextItem.role === "user"
-      );
-    });
-    const firstIdentity =
-      firstIdentityPosition < 0 ? undefined : retained[firstIdentityPosition];
-    const firstContext =
-      firstIdentityPosition < 0
-        ? undefined
-        : retainedContext[firstIdentityPosition];
-    if (
-      firstIdentity === undefined ||
-      firstContext === undefined ||
-      !projectedIdentityMatches(firstIdentity, firstContext)
-    ) {
-      throw new Error(
-        "Nanocodex compaction retained tail does not begin at a real DSH user message",
-      );
-    }
-    for (let index = projected.length - 1; index >= 0; index -= 1) {
-      const candidate = projected[index];
-      if (
-        !isRealUserHistoryItem(candidate) ||
-        !projectedIdentityMatches(firstIdentity, candidate.item)
-      ) {
-        continue;
-      }
-      if (
-        projectedCountForContext(projected, index, firstContext) !== undefined
-      ) {
-        firstIndex = index;
-        break;
-      }
-    }
-    const first = firstIndex < 0 ? undefined : projected[firstIndex];
-    if (
-      first === undefined ||
-      !projectedIdentityMatches(firstIdentity, first.item) ||
-      first.surfaceIndex === 0 ||
-      !isRealUserHistoryItem(first)
-    ) {
-      throw new Error(
-        "Nanocodex compaction retained tail does not begin at a real DSH user message",
-      );
-    }
-
-    const codeDispatches = codeDispatchAssociations(agent.session);
-    const toolEvidence = dshToolEvidence(agent.session);
-    // Validate every DSH-backed identity in authoritative retained order.
-    // A retained Code Mode outer pair consumes only its own durable, balanced
-    // child pairs. Other engine-owned items have no DSH projection and are
-    // ignored, but missing or reordered DSH-backed items are unsafe to map.
-    let projectedIndex = firstIndex;
-    let pendingCustomCallId: string | null | undefined;
-    for (
-      let retainedPosition = 0;
-      retainedPosition < retained.length;
-      retainedPosition += 1
-    ) {
-      const identity = retained[retainedPosition]!;
-      const contextItem = retainedContext[retainedPosition]!;
-      const contextCallId =
-        "call_id" in contextItem ? contextItem.call_id : undefined;
-      const surfaceCustom =
-        contextCallId !== undefined &&
-        (directPatchCallIds.has(contextCallId) ||
-          surfaceCustomCallIds.has(contextCallId));
-      const dshBacked =
-        identity.kind === "message" ||
-        identity.kind === "function_call" ||
-        identity.kind === "function_call_output" ||
-        surfaceCustom;
-      const engineTool =
-        !surfaceCustom &&
-        (identity.kind === "custom_tool_call" ||
-          identity.kind === "custom_tool_call_output");
-      if (!dshBacked && !engineTool) {
-        if (pendingCustomCallId !== undefined) {
+      if (replacement.kind === "original") {
+        const origin = installed.origin;
+        if (
+          origin === null ||
+          origin.index !== replacement.origin.index ||
+          origin.kind !== replacement.origin.kind ||
+          origin.id !== replacement.origin.id ||
+          origin.call_id !== replacement.origin.call_id
+        ) {
           throw new Error(
-            "Nanocodex compaction retained Code Mode tool pair is incomplete",
+            "Nanocodex compaction installed provenance does not match its host selection",
           );
         }
-        continue;
+      } else if (installed.origin !== null) {
+        throw new Error(
+          "Nanocodex compaction assigned original provenance to a new item",
+        );
       }
+    }
+    if (plan.segments.length === 0) {
+      throw new Error("Nanocodex compaction produced no DSH surface reduction");
+    }
+    const nodes = [...agent.session.surface.nodes];
+    for (const segment of plan.segments) {
+      signal.throwIfAborted();
+      const startIndex = nodes.indexOf(segment.start);
+      const endIndex = nodes.indexOf(segment.end);
+      if (startIndex < 0 || endIndex < startIndex) {
+        throw new Error(
+          "Nanocodex compaction selection is no longer a current surface span",
+        );
+      }
+      const current = nodes.slice(startIndex, endIndex + 1);
       if (
-        !projectedIdentityMatches(identity, retainedContext[retainedPosition]!)
+        current.length !== segment.shadowedSeqs.length ||
+        current.some((seq, index) => seq !== segment.shadowedSeqs[index])
       ) {
         throw new Error(
-          "Nanocodex compaction retained history does not match its public context",
+          "Nanocodex compaction selection changed before DSH installation",
         );
       }
-      if (engineTool) {
-        if (identity.kind === "custom_tool_call") {
-          if (pendingCustomCallId !== undefined) {
-            throw new Error(
-              "Nanocodex compaction retained Code Mode tool pair is incomplete",
-            );
-          }
-          if (typeof identity.call_id === "string") {
-            const association = codeDispatches.get(identity.call_id);
-            if (association !== undefined) {
-              projectedIndex += codeDispatchProjectedCount(
-                projected,
-                projectedIndex,
-                association,
-                toolEvidence,
-              );
-            }
-          }
-          pendingCustomCallId = identity.call_id;
-          continue;
-        }
-        if (pendingCustomCallId !== identity.call_id) {
-          throw new Error(
-            "Nanocodex compaction retained Code Mode tool pair is incomplete",
-          );
-        }
-        pendingCustomCallId = undefined;
-        continue;
-      }
-      if (pendingCustomCallId !== undefined) {
-        throw new Error(
-          "Nanocodex compaction retained Code Mode tool pair is incomplete",
-        );
-      }
-      const candidate = projected[projectedIndex];
-      const projectedCount =
-        candidate === undefined
-          ? undefined
-          : projectedCountForContext(
-              projected,
-              projectedIndex,
-              retainedContext[retainedPosition],
-            );
-      if (
-        candidate === undefined ||
-        !projectedIdentityMatches(identity, candidate.item)
-      ) {
-        throw new Error(
-          "Nanocodex compaction retained history order does not match the active DSH surface",
-        );
-      }
-      if (candidate.surfaceIndex < first.surfaceIndex) {
-        throw new Error(
-          "Nanocodex compaction retained tail reaches before its DSH user boundary",
-        );
-      }
-      if (projectedCount === undefined) {
-        throw new Error(
-          "Nanocodex compaction retained history order does not match the active DSH surface",
-        );
-      }
-      projectedIndex += projectedCount;
     }
-    if (pendingCustomCallId !== undefined) {
-      throw new Error(
-        "Nanocodex compaction retained Code Mode tool pair is incomplete",
-      );
-    }
-    if (projectedIndex !== projected.length) {
-      throw new Error(
-        "Nanocodex compaction retained tail omits an active DSH history item",
-      );
-    }
-
-    const start = nodes[0];
-    const end = nodes[first.surfaceIndex - 1];
-    if (
-      start === undefined ||
-      end === undefined ||
-      !toolPairingBalancedBefore(agent.session, start) ||
-      !toolPairingBalancedAfter(agent.session, end)
-    ) {
-      throw new Error(
-        "Nanocodex compaction retained boundary splits a DSH tool exchange",
-      );
+    const first = plan.segments[0];
+    if (first === undefined) {
+      throw new Error("Nanocodex compaction selection has no surface segment");
     }
     return {
-      shadowedRange: { start, end },
-      shadowedSeqs: nodes.slice(0, first.surfaceIndex),
+      shadowedRange: { start: first.start, end: first.end },
+      shadowedSeqs: [...plan.shadowedSeqs],
+      segments: plan.segments,
+      context: {
+        contextWindowTokens: outcome.context.context_window_tokens,
+        activeContextTokens: outcome.context.active_context_tokens,
+      },
     };
   }
 
@@ -1662,6 +972,7 @@ export class NanocodexEngine {
     model: NanocodexModel,
     snapshot: SessionSnapshot,
     signal: AbortSignal,
+    accounting?: NanocodexContextAccounting,
   ): Promise<void> {
     signal.throwIfAborted();
     const session = agent.session;
@@ -1677,12 +988,15 @@ export class NanocodexEngine {
     const context: RequestContext = {
       provider,
       model,
-      contextWindow: MODEL_CONTEXT_WINDOW,
+      contextWindow: accounting?.contextWindowTokens ?? MODEL_CONTEXT_WINDOW,
     };
     session.append("request/context", context);
     await this.ctx.sessions.flush(session);
     const runtime = this.runtimes.get(runtimeKey(agent));
-    if (runtime !== undefined) runtime.boundary = boundary;
+    if (runtime !== undefined) {
+      runtime.boundary = boundary;
+      if (accounting !== undefined) runtime.context = accounting;
+    }
   }
 
   private async createNodeAgent(
@@ -1712,6 +1026,8 @@ export class NanocodexEngine {
         context: CompactionInstructionContext,
         signal: AbortSignal,
       ) => this.resolveCompactionInstruction(agent, route, context, signal),
+      resolveCompaction: (context: CompactionContext, signal: AbortSignal) =>
+        this.resolveCompaction(agent, context, signal),
       codeEvaluator: quickJs,
       tools: bridge,
       subagents: false,
@@ -1736,6 +1052,7 @@ export class NanocodexEngine {
   }
 
   private async closeRuntime(runtime: LiveRuntime): Promise<void> {
+    runtime.pendingCompactionPlans.length = 0;
     await runtime.nodeAgent.session.shutdown().catch(() => undefined);
     runtime.nodeAgent.dispose();
   }
@@ -1748,13 +1065,13 @@ export class NanocodexEngine {
     signal.throwIfAborted();
     const runtime = this.runtimeFor(agent);
     const watcher = runtime.nodeAgent.events.watch();
-    let eventOutcome: CompactionOutcome | undefined;
+    let eventOutcome: CompactionReplacedEventPayload | undefined;
     let installed = false;
     let succeeded = false;
     const removeListener = watcher.onEvent((event) => {
+      if (event.type === "model.compaction.replaced") installed = true;
       const replaced = parseCompactionReplacedEvent(event);
       if (replaced === undefined || replaced.trigger !== "manual") return;
-      installed = true;
       if (this.consumeCompactionOutcome(runtime, replaced)) {
         eventOutcome = replaced;
       }
@@ -1800,6 +1117,12 @@ export class NanocodexEngine {
         agent,
         returned,
         signal,
+        eventOutcome === undefined
+          ? undefined
+          : {
+              phase: eventOutcome.phase,
+              afterModelCallIndex: eventOutcome.after_model_call_index,
+            },
       );
       succeeded = true;
       return {
@@ -1809,6 +1132,7 @@ export class NanocodexEngine {
         snapshot,
         provider: runtime.provider,
         model: runtime.model,
+        context: selection.context,
       };
     } finally {
       signal.removeEventListener("abort", abort);
@@ -1827,6 +1151,7 @@ export class NanocodexEngine {
     model: NanocodexModel,
     reasoningEffort: Agent["options"]["reasoningEffort"],
     system: string,
+    accounting: NanocodexContextAccounting | undefined,
     bridge: readonly {
       readonly name: string;
       readonly description: string;
@@ -1881,7 +1206,7 @@ export class NanocodexEngine {
     const requestContext = {
       provider,
       model,
-      contextWindow: MODEL_CONTEXT_WINDOW,
+      contextWindow: accounting?.contextWindowTokens ?? MODEL_CONTEXT_WINDOW,
     };
     const previousContext = session.requestContext();
     if (
