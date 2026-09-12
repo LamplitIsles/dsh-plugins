@@ -48,5 +48,6 @@
           tools,
           fs,
           storageDomain,
+          tokenMeter,
           llm,
         ]

@@ -584,10 +584,10 @@ assert.equal(usageChunks.length, 2, "each model request must publish usage, excl
 assert.deepEqual(usageChunks.map((event) => event.data.chunk.usage.inputTokens), [18, 6]);
 assert.deepEqual(usageChunks.map((event) => event.data.chunk.usage.cacheReadTokens), [0, 12]);
 for (const event of events.filter((event) => event.type === "request/context")) {
-  assert.equal(event.data.contextWindow, 200_000, "checkpoints must preserve the model window");
+  assert.equal(event.data.contextWindow, 272_000, "checkpoints must preserve the model window");
 }
 const pressure = firstHost.root.sessionProjections.snapshot(firstAgent.session).values.contextPressure;
-assert.equal(pressure.contextWindow, 200_000);
+assert.equal(pressure.contextWindow, 272_000);
 assert.equal(pressure.pressureTokens, 18, "context pressure must use the latest request, not the turn total");
 assert.ok(pressure.projectedTokens > 0, "both clients must receive a visible context meter value");
 const checkpointStore = firstHost.root.storageDomain.get("nanocodex_checkpoints").table("sessions");
@@ -684,6 +684,9 @@ firstAgent.followup(createUserMessage({
   source: { kind: "user" },
 }));
 await firstAgent.whenIdle();
+const automaticPressure = firstHost.root.sessionProjections.snapshot(firstAgent.session).values.contextPressure;
+assert.equal(automaticPressure.contextWindow, 272_000);
+assert.equal(automaticPressure.pressureTokens, 18, "the next normal turn must replace the pressure anchor");
 assert.equal(
   firstAgent.session.deriveMessages().at(-1)?.content[0]?.type === "text"
     ? firstAgent.session.deriveMessages().at(-1)?.content[0]?.text
@@ -720,7 +723,7 @@ const resumedAgent = resumedHandle.agent;
 const loadedCheckpoint = resumedHost.root.storageDomain.get("nanocodex_checkpoints").table("sessions").get(resumedAgent.session.id);
 assert.ok(loadedCheckpoint, "cold Host must load the persisted Nanocodex checkpoint");
 const resumedPressure = resumedHost.root.sessionProjections.snapshot(resumedAgent.session).values.contextPressure;
-assert.equal(resumedPressure.contextWindow, 200_000);
+assert.equal(resumedPressure.contextWindow, 272_000);
 assert.ok(resumedPressure.pressureTokens > 0, "cold replay must retain the usage anchor");
 assert.ok(resumedPressure.projectedTokens > 0, "cold replay must retain a visible meter");
 assert.equal(

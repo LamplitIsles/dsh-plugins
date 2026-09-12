@@ -21,6 +21,7 @@ export default defineConfig({
       "@deepseek-ai/dsh-settings",
       "@deepseek-ai/dsh-storage-domain",
       "@deepseek-ai/dsh-system-prompt",
+      "@deepseek-ai/dsh-token-meter",
       "@deepseek-ai/dsh-tools",
       "@deepseek-ai/schemastery",
     ],

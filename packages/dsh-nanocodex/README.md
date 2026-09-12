@@ -118,6 +118,32 @@ does not publish a successful checkpoint. The next ordinary request may miss
 the provider cache after replacement; cache-hit evidence requires authorized
 Owner acceptance and is not inferred from the local smoke.
 
+## Context and usage accounting
+
+The pinned Nanocodex engine has a 272,000-token context window. The adapter
+publishes that same value in resolved model metadata and the `request/context`
+facts written with private checkpoints. The value is deliberately fixed to the
+pinned artifact; it is not discovered from a live provider or inferred from a
+model name.
+
+Compaction records `shadowedTokenCount` from the DSH token-meter estimator for
+the exact messages removed from the active surface. This includes role and
+content framing as well as tool-call and tool-result structure. The emitted
+summary event and the returned compaction result use the same estimate, and
+the active surface order is authoritative even when replacement sequence
+numbers are not numerically ordered.
+
+Provider usage is normalized into disjoint DSH buckets in both ordinary model
+events and ancillary one-shot calls: cache-read and cache-write tokens are
+removed from `inputTokens`, while reasoning tokens remain a subset of
+`outputTokens`. Warmup and compaction events do not establish the normal
+current-request pressure anchor; a completed ordinary model call does.
+
+This fix does not rewrite historical Host records or claim to repair the old
+Host conversation-message breakdown, which can remain inflated until the
+planned official Host upgrade. The separate companion-context-accounting work
+and any future Nanocodex metrics API are outside this package change.
+
 ## Hosted transport fallback
 
 The adapter passes the configured `baseURL` and `websocketURL` to Nanocodex's

@@ -63,7 +63,7 @@ it("keeps image-heavy snapshots private and replaces the previous session checkp
       expect(context.data).toEqual({
         provider: "openai",
         model: "gpt-5.6-sol",
-        contextWindow: 200_000,
+        contextWindow: 272_000,
       });
       expect(JSON.stringify(context).length).toBeLessThan(1024);
     }

@@ -2,6 +2,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-settings";
 import type {} from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-fs";
+import type {} from "@deepseek-ai/dsh-token-meter";
 import { NanocodexCompactionEngine } from "./compaction-engine.js";
 import { NanocodexEngine, nanocodexCheckpointDomain } from "./engine.js";
 import { NanocodexFactory } from "./factory.js";
@@ -27,6 +28,7 @@ export const inject = [
   "tools",
   "fs",
   "storageDomain",
+  "tokenMeter",
 ] as const;
 
 /** Install the selected Nanocodex AgentFactory and private compaction owner. */

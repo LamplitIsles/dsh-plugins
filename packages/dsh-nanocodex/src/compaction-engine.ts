@@ -14,6 +14,7 @@ import {
 import { createUserMessage, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SessionSeq, type Session } from "@deepseek-ai/dsh-session";
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-token-meter";
 import {
   NanocodexEngine,
   type NanocodexCompactionSelection,
@@ -431,6 +432,10 @@ export class NanocodexCompactionEngine extends CompactionEngine {
       );
     }
     signal.throwIfAborted();
+    const shadowedTokenCount = this.estimateShadowedTokens(
+      agent.session,
+      selection.shadowedSeqs,
+    );
     const summaryEvent = agent.session.append("compaction/summary", {
       compactionId: attempt.compactionId,
       ...(attempt.sourceCommandId === undefined
@@ -440,10 +445,7 @@ export class NanocodexCompactionEngine extends CompactionEngine {
       rawOutput: summary,
       shadowedRange: { start: selection.start, end: selection.end },
       shadowedSeqs: selection.shadowedSeqs,
-      shadowedTokenCount: Math.max(
-        1,
-        Math.ceil(textOfBlocks(summary).length / 4),
-      ),
+      shadowedTokenCount,
       provider,
       model,
     });
@@ -474,10 +476,6 @@ export class NanocodexCompactionEngine extends CompactionEngine {
       turn: attempt.turn,
     });
     attempt.ended = true;
-    const shadowedTokenCount = Math.max(
-      1,
-      Math.ceil(textOfBlocks(summary).length / 4),
-    );
     return {
       compactionId: attempt.compactionId,
       ...(attempt.sourceCommandId === undefined
@@ -492,10 +490,42 @@ export class NanocodexCompactionEngine extends CompactionEngine {
       shadowedTokenCount,
     };
   }
-}
 
-function textOfBlocks(blocks: readonly ContentBlock[]): string {
-  return blocks
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n");
+  private estimateShadowedTokens(
+    session: Session,
+    shadowedSeqs: readonly SessionSeq[],
+  ): number {
+    const nodes = [...session.surface.nodes];
+    const messages = session.deriveMessages();
+    if (nodes.length !== messages.length) {
+      throw new Error(
+        "Nanocodex compaction cannot estimate a mismatched DSH surface",
+      );
+    }
+    const selected = new Set(shadowedSeqs);
+    if (selected.size !== shadowedSeqs.length) {
+      throw new Error(
+        "Nanocodex compaction cannot estimate duplicate surface nodes",
+      );
+    }
+    let matched = 0;
+    let total = 0;
+    for (const [index, seq] of nodes.entries()) {
+      if (!selected.has(seq)) continue;
+      const message = messages[index];
+      if (message === undefined) {
+        throw new Error(
+          "Nanocodex compaction cannot estimate a missing surface message",
+        );
+      }
+      total += this.ctx.tokenMeter.estimateMessage(message);
+      matched += 1;
+    }
+    if (matched !== selected.size) {
+      throw new Error(
+        "Nanocodex compaction cannot estimate a stale surface selection",
+      );
+    }
+    return total;
+  }
 }

@@ -1,16 +1,24 @@
 import { Context } from "@deepseek-ai/cordis";
 import { type ManualCompactAgentContext } from "@deepseek-ai/dsh-compaction";
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import {
+  createAssistantMessage,
+  createToolResultMessage,
+  createUserMessage,
+  ToolCallId,
+  type Message,
+} from "@deepseek-ai/dsh-llm";
 import {
   SessionId,
   SessionPreparation,
   SessionStore,
+  type Session,
 } from "@deepseek-ai/dsh-session";
 import type { SessionSeq } from "@deepseek-ai/dsh-session";
 import { describe, expect, it } from "vitest";
 import { NanocodexCompactionEngine } from "../src/compaction-engine.js";
 import {
   NanocodexEngine,
+  type NanocodexAutomaticCompaction,
   type NanocodexCompactionResult,
 } from "../src/engine.js";
 import type { SessionSnapshot } from "nanocodex/node";
@@ -79,6 +87,12 @@ class PersistingEngine {
     };
   }
 
+  async mapCompactionOutcome(
+    agent: Parameters<NanocodexEngine["mapCompactionOutcome"]>[0],
+  ) {
+    return (await this.compact(agent, new AbortController().signal)).selection;
+  }
+
   markSurfaceBoundary(): void {
     this.calls.push("mark");
   }
@@ -98,7 +112,11 @@ class PersistingEngine {
   }
 }
 
-async function fixture(id: string, engine: unknown) {
+async function fixture(
+  id: string,
+  engine: unknown,
+  beforeTail?: (session: Session) => void,
+) {
   const root = new Context();
   const sessions = root.plugin(SessionStore);
   await sessions;
@@ -107,6 +125,16 @@ async function fixture(id: string, engine: unknown) {
   );
   const session = preparation.session;
   const detachSession = root.sessions.enter(session);
+  root.provide("tokenMeter", {
+    estimateMessage: (message: Message): number =>
+      10 +
+      message.content.reduce(
+        (total: number, block: Message["content"][number]) =>
+          total + (block.type === "text" ? block.text.length : 50),
+        0,
+      ),
+  } as unknown as Context["tokenMeter"]);
+  beforeTail?.(session);
   for (const text of ["one", "two", "three", "four", "five"]) {
     session.append(
       "user/message",
@@ -235,9 +263,14 @@ describe("Nanocodex compaction failure boundaries", () => {
         value.compaction.compactNow(value.agent, new AbortController().signal),
       ).resolves.toMatchObject({
         summary: [{ type: "text", text: "persisted summary" }],
+        shadowedTokenCount: 55,
       });
       expect(engine.calls).toEqual(["compact", "mark", "persist"]);
       expect(engine.persistedNodes).toEqual(value.session.surface.nodes);
+      const summary = value.session
+        .snapshotEvents()
+        .find((event) => event.type === "compaction/summary");
+      expect(summary?.data.shadowedTokenCount).toBe(55);
       expect(
         value.session
           .snapshotEvents()
@@ -266,4 +299,97 @@ describe("Nanocodex compaction failure boundaries", () => {
       await close(value);
     }
   });
+});
+
+it("estimates tool-heavy messages through the Host token meter", async () => {
+  const callId = ToolCallId("fixture-tool");
+  const value = await fixture(
+    "018f1f9a-7b3c-7a10-8000-000000000106",
+    new PersistingEngine(),
+    (session) => {
+      const call = session.append(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: createAssistantMessage({
+            content: [
+              {
+                type: "tool-call",
+                id: callId,
+                name: "exec",
+                arguments: JSON.stringify({ code: "return 1" }),
+              },
+            ],
+            source: { provider: "openai", model: "gpt-5.6-sol" },
+          }),
+        },
+        { surfaceOp: "append" },
+      );
+      session.append(
+        "tool/result",
+        {
+          turn: 1,
+          step: 1,
+          message: createToolResultMessage({
+            callId,
+            content: [{ type: "text", text: "one" }],
+            isError: false,
+          }),
+        },
+        { surfaceOp: "append", sourceEventSeqs: [call.seq] },
+      );
+    },
+  );
+  try {
+    await expect(
+      value.compaction.commitAutomaticSummary(
+        value.agent,
+        {
+          outcome: { summary: "automatic summary" },
+          phase: "post_turn",
+          afterModelCallIndex: 0,
+          admittedSurfaceSeqs: [...value.session.surface.nodes],
+        } as unknown as NanocodexAutomaticCompaction,
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ shadowedTokenCount: 175 });
+    expect(
+      value.session
+        .snapshotEvents()
+        .find((event) => event.type === "compaction/summary")?.data
+        .shadowedTokenCount,
+    ).toBe(175);
+  } finally {
+    await close(value);
+  }
+});
+
+it("estimates selected surface order after a replacement creates nonmonotonic seqs", async () => {
+  const value = await fixture(
+    "018f1f9a-7b3c-7a10-8000-000000000107",
+    new PersistingEngine(),
+  );
+  try {
+    const nodes = [...value.session.surface.nodes];
+    value.session.append(
+      "user/message",
+      createUserMessage({
+        content: [{ type: "text", text: "preexisting" }],
+        source: { kind: "plugin", plugin: "compact" },
+      }),
+      {
+        surfaceOp: { op: "replace", start: nodes[0]!, end: nodes[1]! },
+        sourceEventSeqs: nodes.slice(0, 2),
+      },
+    );
+    expect(value.session.surface.nodes[0]).toBeGreaterThan(
+      value.session.surface.nodes[1]!,
+    );
+    await expect(
+      value.compaction.compactNow(value.agent, new AbortController().signal),
+    ).resolves.toMatchObject({ shadowedTokenCount: 50 });
+  } finally {
+    await close(value);
+  }
 });

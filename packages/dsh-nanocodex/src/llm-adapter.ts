@@ -7,6 +7,7 @@ import {
   type LlmModelInfo,
   type LlmResolvedModelInfo,
   type StreamChunk,
+  type TokenUsage,
 } from "@deepseek-ai/dsh-llm";
 import { Agent as NodeAgent, Transport, type TurnUsage } from "nanocodex/node";
 import {
@@ -23,6 +24,7 @@ import {
   type SettingsContext,
   type NanocodexProvider,
 } from "./settings.js";
+import { normalizeTokenUsage } from "./output.js";
 import { observeTransportFallback } from "./transport-diagnostic.js";
 
 const REASONING_EFFORTS = [
@@ -35,26 +37,15 @@ const REASONING_EFFORTS = [
   ["pro", "Pro"],
 ] as const;
 
-function usage(value: TurnUsage) {
-  return {
+function usage(value: TurnUsage): TokenUsage | undefined {
+  return normalizeTokenUsage({
     inputTokens: value.input_tokens,
     outputTokens: value.output_tokens,
-    ...(Number.isFinite(value.total_tokens)
-      ? { totalTokens: value.total_tokens }
-      : {}),
-    ...(Number.isFinite(value.cached_input_tokens) &&
-    value.cached_input_tokens > 0
-      ? { cacheReadTokens: value.cached_input_tokens }
-      : {}),
-    ...(Number.isFinite(value.cache_write_input_tokens) &&
-    value.cache_write_input_tokens > 0
-      ? { cacheWriteTokens: value.cache_write_input_tokens }
-      : {}),
-    ...(Number.isFinite(value.reasoning_output_tokens) &&
-    value.reasoning_output_tokens > 0
-      ? { reasoningTokens: value.reasoning_output_tokens }
-      : {}),
-  };
+    totalTokens: value.total_tokens,
+    cacheReadTokens: value.cached_input_tokens,
+    cacheWriteTokens: value.cache_write_input_tokens,
+    reasoningTokens: value.reasoning_output_tokens,
+  });
 }
 
 function providerName(provider: string): string {
@@ -232,7 +223,9 @@ export class NanocodexLlmAdapter extends LlmAdapter {
           };
         }
         const turnUsage = await result.usage();
-        yield { type: "usage", usage: usage(turnUsage) };
+        const normalizedUsage = usage(turnUsage);
+        if (normalizedUsage !== undefined)
+          yield { type: "usage", usage: normalizedUsage };
         yield { type: "finish", reason: { kind: "stop" } };
       } finally {
         result.dispose();

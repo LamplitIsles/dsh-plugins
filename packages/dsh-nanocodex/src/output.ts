@@ -30,21 +30,26 @@ function count(value: unknown): number | undefined {
     : undefined;
 }
 
-/** Responses input includes cache buckets; DSH input excludes them. */
-export function modelCallUsage(event: AgentEvent): TokenUsage | undefined {
-  if (event.type !== "model.call.completed") return undefined;
-  const value = record(event.payload.usage);
-  const input = count(value?.input_tokens);
-  const output = count(value?.output_tokens);
-  if (value === undefined || input === undefined || output === undefined)
-    return undefined;
-  const details = record(value.input_tokens_details);
-  const cacheReadTokens = count(details?.cached_tokens);
-  const cacheWriteTokens = count(details?.cache_write_tokens);
-  const reasoningTokens = count(
-    record(value.output_tokens_details)?.reasoning_tokens,
-  );
-  const totalTokens = count(value.total_tokens);
+type RawTokenUsage = Readonly<{
+  inputTokens: unknown;
+  outputTokens: unknown;
+  totalTokens?: unknown;
+  cacheReadTokens?: unknown;
+  cacheWriteTokens?: unknown;
+  reasoningTokens?: unknown;
+}>;
+
+/** Normalize cache-inclusive provider usage into disjoint DSH buckets. */
+export function normalizeTokenUsage(
+  value: RawTokenUsage,
+): TokenUsage | undefined {
+  const input = count(value.inputTokens);
+  const output = count(value.outputTokens);
+  if (input === undefined || output === undefined) return undefined;
+  const cacheReadTokens = count(value.cacheReadTokens);
+  const cacheWriteTokens = count(value.cacheWriteTokens);
+  const reasoningTokens = count(value.reasoningTokens);
+  const totalTokens = count(value.totalTokens);
   return {
     inputTokens: Math.max(
       0,
@@ -56,6 +61,21 @@ export function modelCallUsage(event: AgentEvent): TokenUsage | undefined {
     ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
     ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
   };
+}
+
+/** Responses input includes cache buckets; DSH input excludes them. */
+export function modelCallUsage(event: AgentEvent): TokenUsage | undefined {
+  if (event.type !== "model.call.completed") return undefined;
+  const value = record(event.payload.usage);
+  const details = record(value?.input_tokens_details);
+  return normalizeTokenUsage({
+    inputTokens: value?.input_tokens,
+    outputTokens: value?.output_tokens,
+    totalTokens: value?.total_tokens,
+    cacheReadTokens: details?.cached_tokens,
+    cacheWriteTokens: details?.cache_write_tokens,
+    reasoningTokens: record(value?.output_tokens_details)?.reasoning_tokens,
+  });
 }
 
 function outputBlock(item: Record<string, unknown>): ContentBlock | undefined {
