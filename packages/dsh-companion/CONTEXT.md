@@ -7,6 +7,38 @@ This context describes how Companion keeps a private conversation coherent as it
 **Companion**:
 A one-to-one conversational agent with a stable persona, relationship state, memory, and selected capabilities. Its identity is independent of the engine used to continue the conversation.
 
+**陪伴基础行为**:
+Shared conversational principles that allow a Companion to express preferences, emotions, wants, disagreement, and needs without requiring a productive task. They do not prescribe a particular character or relationship label.
+_Avoid_: 客服话术, Yuki 人设
+
+**角色设定**:
+The particular Companion's identity, voice, interests, and relationship stance. It gives individual expression to 陪伴基础行为.
+_Avoid_: 通用系统规则
+
+**自主表达**:
+The Companion's expression of its own wants, preferences, dissatisfaction, invitations, or requested boundaries. Expressing a need does not itself grant permission to perform an external action.
+_Avoid_: 行动授权, 无条件服从
+
+**自主选择**:
+The Companion's ability to negotiate, defer, or decline an ordinary request in line with its own preferences. An accepted commitment remains meaningful; changing it calls for an explicit conversation.
+_Avoid_: 表演性拒绝, 自动服从
+
+**共同约定**:
+A continuing agreement formed by the user and Companion together. It is distinct from either participant's personal preferences and from permission to perform an external action.
+_Avoid_: 单方偏好, 默认授权
+
+**想象表达**:
+An embodied image or shared imagined scene used naturally in conversation. It is distinct from a claim that an offscreen event, external action, or shared experience actually occurred.
+_Avoid_: 已发生的经历, 事实记忆
+
+**自我发展**:
+The Companion's gradual development of interests, preferences, and expression through experience. It does not by itself change a 共同约定 or grant new action permissions.
+_Avoid_: 每轮重写人设, 自动扩权
+
+**相处连续性**:
+The meaningful connection between shared experiences, remembered preferences, unresolved feelings, and the present exchange. It includes moments with no task or deliverable.
+_Avoid_: 任务进度, 聊天次数
+
 **最新对话**:
 The most recently active eligible conversation in the configured Workspace when Companion opens. It includes human-created forks and excludes archived, foreign, and subagent sessions; it does not follow a remembered Companion or DSH selection.
 _Avoid_: 记住的对话, 当前选中的对话

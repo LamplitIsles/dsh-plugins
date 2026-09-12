@@ -225,3 +225,9 @@ WASM/QuickJS fallback path and the queryable Host diagnostic.
 ## License
 
 [Apache-2.0](LICENSE).
+
+## Host prompt ownership
+
+The adapter passes the assembled DSH system prompt as an explicit Nanocodex instruction replacement, including when it is empty. It does not append the model-specific coding-agent default. Conversation execution adds only the adapter's embedded Code Mode guidance; the current tool definitions remain authoritative for available names and schemas. Ancillary LLM calls use their supplied system prompt directly.
+
+Code Mode results must be emitted: `text(value)` exposes text and `image(result)` exposes a supported image result or image content block to the model. These helpers do not deliver messages or media to external channels. Product behavior and persona belong to the Host composition, including dsh-companion; custom compaction instructions remain a separate contract.

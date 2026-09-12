@@ -44,6 +44,7 @@ import {
   validateIdentitySettings,
 } from "./domain.js";
 import { rewriteCompanionCompactionRequest } from "./compaction.js";
+import { applyCompanionPrompt } from "./prompt.js";
 import {
   isVoiceAudioWithinDataUrlLimit,
   maxVoiceBase64CharsForMediaType,
@@ -1397,6 +1398,7 @@ export class CompanionHostController {
           contribution.text = "";
           return next();
         }
+        applyCompanionPrompt(assembly);
         const store = this.storeFor(configured.workspace);
         const state =
           store.getLoadedSnapshot() ?? (await store.load(context.signal));

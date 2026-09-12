@@ -1227,6 +1227,17 @@ async function handleProviderRequest(
         );
       } else if (modelRequestCount === 12) {
         assert.equal(request.previous_response_id, undefined);
+        assert.ok(
+          request.input.some(
+            (item: JsonObject) =>
+              item.role === "developer" &&
+              item.content?.some(
+                (part: JsonObject) =>
+                  part.text === "Use the ancillary Nanocodex route.",
+              ),
+          ),
+          "the Host system must replace rather than append to engine defaults",
+        );
         assert.match(
           JSON.stringify(request.input),
           /ancillary session-title request/iu,

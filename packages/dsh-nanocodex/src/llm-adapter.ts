@@ -196,7 +196,7 @@ export class NanocodexLlmAdapter extends LlmAdapter {
       sessionId: runtimeSessionId,
       subagents: false,
       historySeed,
-      ...(options.system ? { additionalInstructions: options.system } : {}),
+      instructions: options.system ?? "",
     });
     const removeTransportFallback = observeTransportFallback(
       this.ctx,

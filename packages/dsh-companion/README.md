@@ -128,3 +128,9 @@ npm publish .release-artifacts/dsh-companion/lamplitisles-dsh-companion-0.1.0.tg
 Stable and prerelease versions remain independent package decisions. Use `og`
 for Forgejo operations; this repository does not provision publishing trust or
 credentials.
+
+## Companion base behavior
+
+For the configured Companion workspace, the plugin contributes a shared base prompt for Sol and Astra. It replaces the Harness identity section and removes the Harness source-location and Web-development sections while preserving the selected persona, registered tool guidance, and dynamic context. The base supports independent preferences, emotional expression, negotiation of ordinary requests, and continuity beyond tasks; accepted commitments remain meaningful. Persona-specific names, interests, voice, and relationship labels stay in the persona. Imagined scenes are distinct from claims about actual memories or completed actions.
+
+A preset marked as a complete system prompt retains the Host's complete-prompt override semantics and therefore owns its entire static prompt. Regular persona sections compose with the Companion base. Existing relationship and compaction middleware remain independent. See the Companion expression and prompt ownership ADR for the design boundary.

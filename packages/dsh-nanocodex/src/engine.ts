@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import { RUNTIME_INSTRUCTIONS } from "./runtime-prompt.js";
 import {
   canonicalHeader,
   headerEquals,
@@ -1021,7 +1022,7 @@ export class NanocodexEngine {
         ? { reasoningMode: "pro" as const }
         : {}),
       sessionId: normalizeNanocodexSessionId(String(agent.id)),
-      ...(system ? { additionalInstructions: system } : {}),
+      instructions: [system, RUNTIME_INSTRUCTIONS].filter(Boolean).join("\n\n"),
       resolveCompactionInstruction: (
         context: CompactionInstructionContext,
         signal: AbortSignal,

@@ -936,6 +936,26 @@ describe("Host accepted-turn relationship contract", () => {
     );
     expect(result.contexts[0]?.text).toContain('signature="第二个"');
     expect(result.contexts[0]?.text).not.toContain("affinity=67");
+    expect(result.sections.map((section) => section.name)).toContain(
+      "dsh-companion:base",
+    );
+    const foreignAssembly: PromptAssembly = {
+      sections: [{ name: "harness:identity", text: "foreign identity" }],
+      contexts: [{ name: "dsh-companion:relationship", text: "" }],
+      tools: [],
+      variables: {},
+    };
+    await assemble!(
+      foreignAssembly,
+      {
+        signal: new AbortController().signal,
+        agent: { session: { header: { cwd: firstDirectory } } },
+      },
+      async () => foreignAssembly,
+    );
+    expect(foreignAssembly.sections).toEqual([
+      { name: "harness:identity", text: "foreign identity" },
+    ]);
     await loaded.value?.();
     await lifecycle.next();
   });
